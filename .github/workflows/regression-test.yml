@@ -1,0 +1,144 @@
+# Regression test — protects pipeline contracts from prompt/config drift.
+#
+# Trigger: PRs touching prompts/, config/, scripts/, examples/, or workflow YAMLs.
+# Does NOT run real Claude (expensive). Instead validates structural contracts:
+#   - All examples have input + expected-output + expected-plan files
+#   - KB IDs are unique across knowledge-base.md
+#   - migration-rules.md has all sections referenced from prompts
+#   - prompts/ files exist and are non-empty
+#   - scripts/ pass tsc strict mode
+#
+# Semantic regression (does Claude still produce equivalent output?) is too
+# expensive for per-PR CI. Run `gh workflow run regression-semantic.yml` manually
+# before tagging a release (TODO: v0.5 scope).
+
+name: Regression — structural contracts
+
+on:
+  pull_request:
+    paths:
+      - 'prompts/**'
+      - 'config/**'
+      - 'scripts/**'
+      - 'examples/**'
+      - '.github/workflows/**'
+      - 'tsconfig.json'
+      - 'outputs/tests/tsconfig.json'
+
+permissions:
+  contents: read
+
+jobs:
+  structural-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Examples contract check
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every examples/<framework>-<n>/ dir MUST contain input, expected-output, expected-plan.
+          MISSING=0
+          for dir in examples/*/; do
+            if [[ "$dir" == "examples/reference/" ]]; then continue; fi
+            BASENAME=$(basename "$dir")
+            if ! ls "$dir"input.* >/dev/null 2>&1; then
+              echo "::error file=$dir::missing input.* file"
+              MISSING=$((MISSING + 1))
+            fi
+            if ! ls "$dir"expected-output.* >/dev/null 2>&1; then
+              echo "::error file=$dir::missing expected-output.* file"
+              MISSING=$((MISSING + 1))
+            fi
+            if [ ! -f "$dir"expected-plan.md ]; then
+              echo "::error file=$dir::missing expected-plan.md"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::$MISSING example contract violations"
+            exit 1
+          fi
+          echo "All examples have contract-complete file sets."
+
+      - name: KB unique IDs check
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Anti-pattern IDs are KB-N.N.N format. No duplicates allowed.
+          DUPES=$(grep -oE 'KB-[0-9]+\.[0-9]+\.[0-9]+' config/knowledge-base.md \
+            | sort | uniq -d || true)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate KB IDs detected in config/knowledge-base.md:"
+            echo "$DUPES"
+            exit 1
+          fi
+          COUNT=$(grep -cE 'KB-[0-9]+\.[0-9]+\.[0-9]+' config/knowledge-base.md || true)
+          echo "KB has $COUNT unique IDs."
+
+      - name: Prompt files non-empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in prompts/analyze.md prompts/generate.md prompts/verify.md; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::prompt file missing or empty"
+              exit 1
+            fi
+          done
+          echo "Prompts present + non-empty."
+
+      - name: migration-rules schema sections
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Plan validation step in plan.yml requires these sections. If migration-rules
+          # drops one, plan.yml validation breaks silently — gate it here.
+          REQUIRED_SECTIONS=(
+            "## Source framework"
+            "## Summary"
+            "## Anti-patterns detected"
+            "## Locator translation table"
+            "## Structural changes"
+            "## Open questions for reviewer"
+            "## Risk callouts"
+            "## Expected metrics"
+          )
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -qF "$section" config/migration-rules.md; then
+              echo "::error::config/migration-rules.md missing schema section referenced by plan.yml: $section"
+              exit 1
+            fi
+          done
+          echo "migration-rules schema sections complete."
+
+      - name: Scripts compile under strict TS
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsc --noEmit -p tsconfig.json
+
+      - name: Verify verdict ladder consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          # prompts/verify.md and verify.yml MUST share the same 3-level verdict ladder.
+          for v in "SHIP IT" "FIX FIRST" "START OVER"; do
+            if ! grep -qF "$v" prompts/verify.md; then
+              echo "::error::prompts/verify.md missing verdict level: $v"
+              exit 1
+            fi
+            if ! grep -qF "$v" .github/workflows/verify.yml; then
+              echo "::error::.github/workflows/verify.yml missing verdict level: $v"
+              exit 1
+            fi
+          done
+          echo "Verdict ladder consistent across prompt and workflow."

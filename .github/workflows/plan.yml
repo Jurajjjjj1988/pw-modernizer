@@ -45,16 +45,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Group changed files into "test units" — either a single file
+          # (inputs/<framework>/<file>) or a directory of files
+          # (inputs/<framework>/<test-name>/). Selenium tests often span
+          # multiple files (POMs, helpers); group those by parent dir.
+          group_to_unit() {
+            # stdin: newline-separated paths; stdout: unique "units"
+            jq -Rsc '
+              split("\n")
+              | map(select(length > 0))
+              | map(split("/")
+                | if length >= 4 and (.[0] == "inputs")
+                  then (.[0:3] | join("/"))  # multi-file dir: inputs/<framework>/<test-name>
+                  else (join("/"))            # single file: inputs/<framework>/<file>
+                  end)
+              | unique
+            '
+          }
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             INPUT="${{ inputs.input_path }}"
-            if [ ! -f "$INPUT" ]; then
-              echo "::error::input_path '$INPUT' not found"
+            if [ ! -e "$INPUT" ]; then
+              echo "::error::input_path '$INPUT' not found (must be file or dir)"
               exit 1
             fi
             JSON=$(jq -nc --arg p "$INPUT" '[$p]')
           else
-            JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' \
-              | jq -Rsc 'split("\n") | map(select(length > 0))')
+            JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' | group_to_unit)
           fi
           echo "inputs_json=$JSON" >> "$GITHUB_OUTPUT"
           if [ "$(echo "$JSON" | jq 'length')" -gt 0 ]; then
@@ -80,8 +96,16 @@ jobs:
         run: |
           set -euo pipefail
           INPUT="${{ matrix.input_path }}"
-          HASH=$(git rev-parse "HEAD:$INPUT" || echo "missing")
           BASENAME=$(basename "$INPUT")
+          if [ -d "$INPUT" ]; then
+            # Multi-file unit: hash all tracked files in dir.
+            HASH=$(git ls-tree -r HEAD "$INPUT" | sha256sum | awk '{print $1}')
+            echo "is_dir=true" >> "$GITHUB_OUTPUT"
+          else
+            # Single-file: hash the file content as before.
+            HASH=$(git rev-parse "HEAD:$INPUT" 2>/dev/null || echo "missing")
+            echo "is_dir=false" >> "$GITHUB_OUTPUT"
+          fi
           LABEL="migrator:plan:${HASH:0:12}"
           echo "input_basename=$BASENAME" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
@@ -92,6 +116,13 @@ jobs:
         run: |
           set -euo pipefail
           INPUT="${{ matrix.input_path }}"
+          # For dir inputs (multi-file), recursively scan all text source files.
+          # For file inputs, scan just the file.
+          if [ -d "$INPUT" ]; then
+            mapfile -t SCAN_FILES < <(find "$INPUT" -type f \( -name '*.ts' -o -name '*.js' -o -name '*.java' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.md' \))
+          else
+            SCAN_FILES=("$INPUT")
+          fi
           # Detect real prod tokens in input. Test placeholders (`xxx`, `<TODO>`,
           # `.test`/`.example` domains, `${{secrets.*}}`) are allowed — the plan
           # stage will recommend extracting them to env vars. We only flag tokens
@@ -110,19 +141,21 @@ jobs:
           FOUND=0
           echo "## Stage 0 — Pre-flight secret scan" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Input: \`$INPUT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Input: \`$INPUT\` (${#SCAN_FILES[@]} file(s) scanned)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          for entry in "${PATTERNS[@]}"; do
-            PAT="${entry%|*}"
-            LABEL="${entry#*|}"
-            if MATCHES=$(grep -nE "$PAT" "$INPUT" 2>/dev/null); then
-              FOUND=$((FOUND + 1))
-              while IFS= read -r MATCH; do
-                LINE="${MATCH%%:*}"
-                echo "::warning file=$INPUT,line=$LINE::Possible real $LABEL detected — Stage 1 plan should extract this to env var"
-                echo "- :warning: line $LINE — $LABEL" >> "$GITHUB_STEP_SUMMARY"
-              done <<< "$MATCHES"
-            fi
+          for FILE in "${SCAN_FILES[@]}"; do
+            for entry in "${PATTERNS[@]}"; do
+              PAT="${entry%|*}"
+              LABEL="${entry#*|}"
+              if MATCHES=$(grep -nE "$PAT" "$FILE" 2>/dev/null); then
+                FOUND=$((FOUND + 1))
+                while IFS= read -r MATCH; do
+                  LINE="${MATCH%%:*}"
+                  echo "::warning file=$FILE,line=$LINE::Possible real $LABEL detected — Stage 1 plan should extract this to env var"
+                  echo "- :warning: \`$FILE\` line $LINE — $LABEL" >> "$GITHUB_STEP_SUMMARY"
+                done <<< "$MATCHES"
+              fi
+            done
           done
           if [ "$FOUND" -eq 0 ]; then
             echo "- :white_check_mark: No real-looking prod credentials detected." >> "$GITHUB_STEP_SUMMARY"
@@ -211,8 +244,11 @@ jobs:
 
           ## Input for this run
 
-          - Input test file: $INPUT_PATH
+          - Input path: $INPUT_PATH (may be a single file OR a directory containing multiple source files, helpers, page objects, fixtures)
           - Output plan path to write: $OUTPUT_PATH
+
+          If $INPUT_PATH is a directory: read EVERY source file in it (.ts/.js/.java/.py) and reason about the test suite as a whole. The plan describes migrating the entire unit.
+          If $INPUT_PATH is a single file: read just that file.
 
           ## Context to load (in this order)
 
@@ -220,7 +256,7 @@ jobs:
           2. config/migration-rules.md — target style + structure contract
           3. config/knowledge-base.md — anti-pattern catalog + API translations
           4. examples/reference/company-style.spec.ts — style anchor
-          5. $INPUT_PATH — the input to migrate
+          5. $INPUT_PATH — the input to migrate (file or directory)
 
           ## Deliverable
 
@@ -268,6 +304,24 @@ jobs:
           fi
           echo "Plan validated."
 
+      - name: Compute severity histogram
+        id: histogram
+        if: steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAN="outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md"
+          # Count anti-pattern severity rows: | H | / | M | / | L | (case sensitive after table format mandate)
+          H=$(grep -cE '^\| H \|' "$PLAN" || true)
+          M=$(grep -cE '^\| M \|' "$PLAN" || true)
+          L=$(grep -cE '^\| L \|' "$PLAN" || true)
+          TOTAL=$((H + M + L))
+          echo "h=$H" >> "$GITHUB_OUTPUT"
+          echo "m=$M" >> "$GITHUB_OUTPUT"
+          echo "l=$L" >> "$GITHUB_OUTPUT"
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "Histogram: $TOTAL anti-patterns ($H high, $M medium, $L low)"
+
       - name: Open plan PR
         if: steps.dedup.outputs.skip == 'false'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
@@ -284,6 +338,7 @@ jobs:
 
             **Input:** `${{ matrix.input_path }}`
             **Plan:** `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
+            **Severity histogram:** ${{ steps.histogram.outputs.total }} anti-patterns — **${{ steps.histogram.outputs.h }} H** / ${{ steps.histogram.outputs.m }} M / ${{ steps.histogram.outputs.l }} L
 
             ### Review checklist
 

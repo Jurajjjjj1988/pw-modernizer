@@ -313,9 +313,18 @@ jobs:
 
           echo "### playwright test --list" >> "$ERR"
           echo '```' >> "$ERR"
-          PW_OUT=$(npx playwright test --list outputs/tests/**/*.spec.ts 2>&1)
-          PW_RC=$?
-          echo "$PW_OUT" >> "$ERR"
+          # Playwright interprets the bare glob as a test-name regex (`Nothing
+          # to repeat`). Enumerate spec files via `find` so we pass literal
+          # paths.
+          mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts')
+          if [ "${#SPECS[@]}" -eq 0 ]; then
+            echo "(no .spec.ts files found under outputs/tests)" >> "$ERR"
+            PW_RC=0
+          else
+            PW_OUT=$(npx playwright test --list "${SPECS[@]}" 2>&1)
+            PW_RC=$?
+            echo "$PW_OUT" >> "$ERR"
+          fi
           echo '```' >> "$ERR"
           if [ "$PW_RC" -ne 0 ]; then STATUS=1; fi
           echo "" >> "$ERR"
@@ -393,7 +402,10 @@ jobs:
           npx eslint --fix 'outputs/tests/**/*.ts' || FAIL=1
           echo "::endgroup::"
           echo "::group::playwright parse"
-          npx playwright test --list outputs/tests/**/*.spec.ts || FAIL=1
+          mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts')
+          if [ "${#SPECS[@]}" -gt 0 ]; then
+            npx playwright test --list "${SPECS[@]}" || FAIL=1
+          fi
           echo "::endgroup::"
           if [ "$FAIL" -ne 0 ]; then
             echo "::error::Validation still failing after 1 retry. Remaining errors:"

@@ -10,24 +10,23 @@ submitting an empty query shows a hint message asking the user to enter a
 search term.
 
 ## Anti-patterns detected
-- [x] `Thread.sleep(2000)` / `Thread.sleep(1000)` (lines 41, 56) — hard
-      waits; replace with web-first `toBeVisible()`.
-- [x] `WebDriverWait + ExpectedConditions.visibilityOfElementLocated`
-      (line 43) — Playwright's `expect(locator).toBeVisible()` is the
-      direct, auto-retrying equivalent.
-- [x] deep XPath `//header/div[2]/form/button` and
-      `//div[contains(@class,'search-hint')]/span[2]` — fragile to layout
-      changes; replace with role-based locators.
-- [x] `driver.findElements(...).get(0)` (line 49) — positional access to
-      a snapshot list; Playwright's `locator.first()` is auto-retrying and
-      lazy.
-- [x] `@BeforeEach` setting up `ChromeDriver` — Playwright provides this
-      via the `page` fixture.
-- [x] JUnit `assertEquals` / `assertTrue` — non-web-first, no auto-retry;
-      Playwright's `expect(locator).toContainText()` waits for the
-      condition.
-- [x] `throws InterruptedException` boilerplate (a smell because it
-      signals `Thread.sleep` use).
+
+Sorted by Severity (H, M, L), then by Line.
+
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 41 | KB-1.3.1 | hard-wait | `Thread.sleep(2000)` | drop; web-first `toBeVisible()` |
+| H | 43 | KB-1.3.15 | expected-conditions-verbose | `EC.visibilityOfElementLocated(...)` | `await expect(locator).toBeVisible()` |
+| H | 40 | KB-1.3.2 | xpath-deep | `//header/div[2]/form/button` | `getByRole('button', { name: 'Search' })` |
+| H | 56 | KB-1.3.1 | hard-wait | `Thread.sleep(1000)` | drop; web-first `toBeVisible()` |
+| H | 58 | KB-1.3.2 | xpath-deep | `//div[contains(@class,'search-hint')]/span[2]` | `page.getByText('Please enter a search term')` |
+| M | 49 | KB-1.3.7 | snapshot-list-indexing | `findElements(...).get(0)` | `locator.first()` (auto-retrying) |
+| M | 47 | KB-1.3.10 | non-web-first-assertion | `assertTrue(results.size() >= 1, ...)` | `await expect(locator).toBeVisible()` |
+| M | 50 | KB-1.3.10 | non-web-first-assertion | `assertTrue(firstTitle.getText()...contains("linen"))` | `await expect(loc).toContainText(/linen/i)` |
+| M | 59 | KB-1.3.10 | non-web-first-assertion | `assertEquals("Please enter a search term", ...)` | `await expect(loc).toBeVisible()` (visible text) |
+| M | 24-29 | KB-1.3.12 | driver-setup-boilerplate | `@BeforeEach setUp() { driver = new ChromeDriver(); ... }` | drop; `page` fixture |
+| M | 31-34 | KB-1.3.12 | manual-driver-quit | `@AfterEach tearDown() { driver.quit(); }` | drop; `page` fixture |
+| L | 37,54 | KB-1.3.1 | throws-InterruptedException | `throws InterruptedException` | drop with `Thread.sleep` |
 
 ## Locator translation table
 | Original | New | Confidence | Notes |

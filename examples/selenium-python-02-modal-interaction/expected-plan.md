@@ -10,28 +10,22 @@ closing the modal via the Escape key; and inline email validation
 inside the modal when the user submits with a malformed address.
 
 ## Anti-patterns detected
-- [x] `time.sleep(1)` (lines 22, 27, 33, 41, 44, 51, 58) — hard waits
-      between every interaction; replace with web-first
-      `toBeVisible()` / `toBeHidden()`.
-- [x] class-based inheritance (`BaseTest` with `setup_class` /
-      `teardown_class`) — carries hidden state (`cls.driver` shared
-      across methods). Playwright's `page` fixture gives each test a
-      fresh context.
-- [x] deep XPath `//main//button[contains(.,'Invite')]`,
-      `//div[contains(@class,'modal')]//button[3]` (positional `button[3]`)
-      — fragile; replace with role-based locators with accessible
-      names.
-- [x] snapshot-list indexing `find_elements(...)[0]` (line 56) and
-      `find_elements(...)[1]` (line 59) — positional, races UI changes.
-- [x] `body.send_keys(Keys.ESCAPE)` (line 45) — Playwright has
-      `page.keyboard.press('Escape')` which is more idiomatic.
-- [x] non-web-first assertions: `assert "Invite a new user" in
-      modal.text`, `assert len(overlays) == 0`, `assert error.text == ...`
-      — replace with `expect(locator).toBeVisible()` /
-      `toHaveText()`.
-- [x] CSS deep path `div.modal-overlay > div.modal` and
-      `.modal .field-error` — replace with `getByRole('dialog')` and
-      `getByText` for the error message.
+
+Sorted by Severity (H, M, L), then by Line.
+
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 9-17 | KB-1.4.14 | class-based-setup-class | `BaseTest.setup_class { cls.driver = Chrome() }` | `page` fixture (per-test fresh context) |
+| H | 23,27,33,41,44,51,58 | KB-1.4.1 | hard-wait | `time.sleep(1)` | web-first `toBeVisible()` / `toBeHidden()` |
+| H | 26,40,51 | KB-1.4.2 | xpath-deep | `//main//button[contains(.,'Invite')]` | `getByRole('button', { name: 'Invite' })` |
+| H | 32 | KB-1.4.2 | xpath-positional | `//div[contains(@class,'modal')]//button[3]` | `modal.getByRole('button', { name: 'Close' })` |
+| H | 45 | KB-1.4.15 | escape-via-body-send-keys | `body.send_keys(Keys.ESCAPE)` | `page.keyboard.press('Escape')` |
+| M | 29 | KB-1.4.3 | css-deep-path | `div.modal-overlay > div.modal` | `page.getByRole('dialog', { name: 'Invite a new user' })` |
+| M | 30 | KB-1.4.6 | non-web-first-text-contains | `assert "Invite a new user" in modal.text` | `await expect(modal).toBeVisible()` |
+| M | 37,47 | KB-1.4.17 | snapshot-list-count | `assert len(overlays) == 0` | `await expect(modal).toBeHidden()` |
+| M | 54,57 | KB-1.4.17 | snapshot-list-indexing | `find_elements(...)[0]`, `find_elements(...)[1]` | `modal.getByLabel('Email')`, `modal.getByRole('button', { name: 'Send invite' })` |
+| M | 62 | KB-1.4.13 | non-web-first-text-equality | `assert error.text == "Please enter a valid email"` | `await expect(modal.getByText('Please enter a valid email')).toBeVisible()` |
+| L | 61 | KB-1.4.3 | css-class-selector | `.modal .field-error` | `getByText('Please enter a valid email')` |
 
 ## Locator translation table
 | Original | New | Confidence | Notes |

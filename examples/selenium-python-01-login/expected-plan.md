@@ -10,26 +10,21 @@ dashboard; once signed in, the "Team members" KPI card shows a non-zero
 integer count.
 
 ## Anti-patterns detected
-- [x] `time.sleep(2)` (line 25) — hard wait; replace with web-first
-      assertion.
-- [x] `driver.implicitly_wait(5)` (line 13) — implicit waits are
-      Selenium-only; Playwright's auto-retrying assertions cover this.
-- [x] `WebDriverWait + EC.visibility_of_element_located` (lines 34-36)
-      — translate to `expect(locator).toBeVisible()`.
-- [x] `cards[0]` snapshot-list indexing (line 45) — Playwright's
-      `locator.first()` is auto-retrying. Better: pick the card by its
-      accessible name.
-- [x] `driver` fixture with `webdriver.Chrome()` setup — replaced by
-      Playwright's `page` fixture.
-- [x] non-web-first `assert greeting == "Welcome back, HR Admin"` (line
-      40) and `assert int(count) >= 1` (line 47) — Playwright's
-      `toHaveText` waits for the value.
-- [x] deep XPath `//form//button[@type='submit']` — replace with
-      `getByRole('button', { name: 'Sign in' })`.
-- [x] implicit fixture dependency — `logged_in_driver` depends on
-      `driver` without making the login steps visible at the test
-      callsite. Playwright fixture pattern keeps the dependency explicit
-      via destructuring.
+
+Sorted by Severity (H, M, L), then by Line.
+
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 13 | KB-1.4.16 | implicit-wait-global | `drv.implicitly_wait(5)` | drop; web-first auto-retry covers it |
+| H | 25 | KB-1.4.1 | hard-wait | `time.sleep(2)` | drop; web-first assertion |
+| H | 34-36 | KB-1.4.4 | webdriverwait-ceremony | `EC.visibility_of_element_located(...)` | `await expect(locator).toBeVisible()` |
+| H | 23,32 | KB-1.4.2 | xpath-deep | `//form//button[@type='submit']` | `getByRole('button', { name: 'Sign in' })` |
+| M | 45 | KB-1.4.17 | snapshot-list-indexing | `cards[0]` | pick by accessible name (`getByRole('region', { name: 'Team members' })`) |
+| M | 39 | KB-1.4.13 | non-web-first-text-equality | `assert greeting == "Welcome back, HR Admin"` | `await expect(loc).toBeVisible()` (visible text) |
+| M | 46 | KB-1.4.13 | non-web-first-text-equality | `assert int(count) >= 1` | `await expect(loc).toHaveText(/^\d+$/)` + `not.toHaveText('0')` |
+| M | 11-15 | KB-1.4.5 | driver-fixture-boilerplate | `def driver(): drv = webdriver.Chrome(); ...` | `page` fixture (built-in) |
+| M | 18-25 | KB-1.4.5 | implicit-fixture-dependency | `def logged_in_driver(driver): ...` | Playwright fixture with explicit destructuring |
+| L | 38,45 | KB-1.4.3 | css-class-selector | `.dashboard-greeting`, `.kpi-card` | role-based locators |
 
 ## Locator translation table
 | Original | New | Confidence | Notes |

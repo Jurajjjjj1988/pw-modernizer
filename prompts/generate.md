@@ -43,6 +43,14 @@ If the plan said "Split: yes" and named multiple target files, produce **all** o
 
 If the plan said "POM extract: no" or "Fixture extract: no", **do not produce** those files. Inline the logic in the spec file. Do not gold-plate.
 
+**Selenium multi-file unit (Phase 2):** if the source unit is a directory with multiple files (`BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent with `base_test.py` + `pages/*.py` + `conftest.py`), the plan's "Files dropped" section tells you which source files have NO target counterpart. Typically:
+  - `BasePage` / `BaseTest` → DROPPED (helpers fold into Playwright matchers and the `page` fixture).
+  - `WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture → DROPPED (replaced by Playwright's `page` fixture + project config).
+  - `LoginPage extends BasePage` with `@FindBy` → KEPT but RESHAPED into a slim standalone Playwright POM (`outputs/tests/pages/login.page.ts`) with `readonly` Locator fields, role-based locators, composition over inheritance.
+  - `LoginTest` (`@Test` methods) → KEPT and reshaped into a single spec file with `test.describe(...)` and `test(...)` per method.
+
+Do not produce target files for DROPPED sources. The migration report's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory.
+
 ## Hard constraints (these are non-negotiable)
 
 These are pulled from `migration-rules.md` for emphasis. The migration-rules file is the source of truth — these are the rules that bite most often.

@@ -97,6 +97,14 @@ Every MED and LOW row must produce a corresponding entry in the **Open questions
 
 Decide whether to:
 - **Extract a Page Object Model (POM)**. Default: NO for tests under 50 LOC operating on a single page. YES if the test touches ≥3 distinct pages, or if there are repeated locator blocks that would clearly be reused. Cite `migration-rules.md` on POM thresholds. If you propose extracting a POM, name the file (`outputs/tests/pages/<name>.page.ts`) and list the methods + properties it must contain.
+
+**Selenium multi-file unit:** if the source is a DIRECTORY containing multiple files (e.g. `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`), treat the directory as ONE migration unit. The plan describes the whole unit, not file-by-file. The Selenium Page Object Model differs significantly from Playwright's POM and is NOT a 1:1 translation:
+  - `BasePage` (parent class with `driver`, `wait`, shared helpers) — typically has NO target counterpart. Its `WebDriverWait`/`ExpectedConditions` helpers map to Playwright's web-first matchers; its `try-catch-as-flow` helpers (`isVisibleSafe()`) map to `await expect(...).toBeVisible()` / `.toBeHidden()`. Drop the file unless the helpers carry domain logic.
+  - `WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` provider — has NO target counterpart. Playwright's `page` fixture + worker config replace it entirely. Drop the file.
+  - `LoginPage extends BasePage` with `@FindBy` annotations — reshapes into a slim standalone Playwright POM. Composition replaces inheritance; lazy `Locator` fields replace eager `@FindBy` proxies; role-based locators replace id/css/xpath.
+  - The `@Test` methods inside the test class become `test(...)` calls inside one `test.describe(...)` in a single spec file. JUnit `@BeforeEach` / `@AfterEach` become `test.beforeEach` / `test.afterEach` (or fold into the `page` fixture). TestNG `@BeforeClass` / `@AfterClass` become worker-scoped fixtures.
+
+Document each source file's fate in the plan: KEPT (reshaped), DROPPED (folded into Playwright built-in), or MERGED (combined with another file). Reviewer needs to see why three files become two (or one).
 - **Extract a fixture**. YES if the test has nontrivial setup (login, seeded data, feature flags). Name the fixture file and list its scope (test / worker).
 - **Split the file**. YES if the source file contains unrelated test cases that should live in separate spec files per `test-organization` conventions (one feature per file). List the target file names.
 - **Inline everything**. The boring, correct default for trivial tests.

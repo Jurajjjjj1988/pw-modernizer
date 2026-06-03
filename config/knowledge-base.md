@@ -747,6 +747,83 @@ await page.getByRole('button', { name: 'Save' }).click();
 
 Rationale: JS-executor click bypasses pointer-event checks, hiding modal-overlay bugs.
 
+#### 1.3.14 PageFactory `@FindBy` with `initElements` (eager-init + stale-element risk)
+
+```java
+// ANTI-PATTERN
+public class LoginPage extends BasePage {
+  @FindBy(id = "email") private WebElement emailInput;
+  @FindBy(css = "button.next-step") private WebElement nextButton;
+
+  public LoginPage(WebDriver driver) {
+    PageFactory.initElements(driver, this);
+  }
+}
+```
+
+```ts
+// CANONICAL — Playwright POM uses LAZY locators
+export class LoginPage {
+  readonly emailField = this.page.getByLabel('Email');
+  readonly nextButton = this.page.getByRole('button', { name: 'Next' });
+  constructor(private readonly page: Page) {}
+}
+```
+
+Rationale: PageFactory's `initElements` is the Selenium-only proxy-wrapper trick. It eagerly resolves locators at POM construction, which then causes `StaleElementReferenceException` after any DOM re-render. Playwright `Locator` objects are LAZY — they re-resolve on every call — so this entire failure mode disappears. The `@FindBy` annotations also force locator strategy into Java metadata, making them un-greppable from a TS migration. Translation: each `@FindBy(id = "x")` becomes a `readonly` Locator field; choose the highest-priority locator strategy per `migration-rules.md` §5 (role > label > placeholder > text > testid > css). Never preserve the eager-init pattern.
+
+#### 1.3.15 `ExpectedConditions` ceremony for every wait
+
+```java
+// ANTI-PATTERN
+wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".x")));
+wait.until(ExpectedConditions.elementToBeClickable(By.id("submit")));
+wait.until(ExpectedConditions.textToBePresentInElementLocated(By.cssSelector(".banner"), "Hi"));
+wait.until(ExpectedConditions.urlContains("/dashboard"));
+wait.until(ExpectedConditions.titleContains("Home"));
+wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector(".spinner")));
+```
+
+```ts
+// CANONICAL — each EC maps to a single web-first matcher
+await expect(page.locator('.x')).toBeVisible();
+// .toBeClickable is built into action auto-wait — just call .click()
+await expect(page.getByText('Hi')).toBeVisible();
+await expect(page).toHaveURL(/\/dashboard/);
+await expect(page).toHaveTitle(/Home/);
+await expect(page.locator('.spinner')).toBeHidden();
+```
+
+Rationale: every `ExpectedConditions.*` predicate has a direct Playwright matcher equivalent. The Selenium version requires constructing a `WebDriverWait`, picking the right `EC.*` static method, passing a `By` locator, and `.until()`-chaining — five-line ceremony for what is `await expect(...).toBeVisible()` in Playwright. The "boilerplate per element" entry (1.3.4) covers the basic case; this entry catalogs the FULL translation table for the migration's anti-pattern detector. Full mapping table also lives in §2.2.
+
+#### 1.3.16 `ThreadLocal<WebDriver>` driver provider (parallel-runner accommodation)
+
+```java
+// ANTI-PATTERN
+public final class WebDriverConfig {
+  private static final ThreadLocal<WebDriver> DRIVER = new ThreadLocal<>();
+  public static WebDriver getDriver() {
+    if (DRIVER.get() == null) {
+      DRIVER.set(new ChromeDriver());
+    }
+    return DRIVER.get();
+  }
+  public static void quit() {
+    DRIVER.get().quit();
+    DRIVER.remove();
+  }
+}
+```
+
+```ts
+// CANONICAL — Playwright workers each own their browser context
+test('parallel-safe by default', async ({ page }) => { /* ... */ });
+// playwright.config.ts:
+// workers: process.env.CI ? 2 : '50%', fullyParallel: true
+```
+
+Rationale: ThreadLocal driver is the Selenium accommodation for parallel JUnit/TestNG runners that share a JVM and thus must isolate driver instances per thread. Playwright runs each test worker as a SEPARATE process — each worker gets its own browser, context, and `page` fixture, with zero shared state. The ThreadLocal pattern is therefore not just unnecessary, it actively misleads contributors into thinking parallel safety is something they must implement. Delete the whole class; configure parallelism via `playwright.config.ts` `workers` and `fullyParallel` instead.
+
 ---
 
 ### 1.4 Selenium WebDriver (Python) anti-patterns
@@ -937,6 +1014,93 @@ await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
 
 Rationale: direct text equality strips whitespace differences inconsistently across Selenium versions.
 
+#### 1.4.14 Class-based `setup_class` / `teardown_class` sharing one driver across methods
+
+```python
+# ANTI-PATTERN
+class BaseTest:
+    @classmethod
+    def setup_class(cls):
+        cls.driver = webdriver.Chrome()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.driver.quit()
+
+class TestUsers(BaseTest):
+    def setup_method(self):
+        self.driver.get("/users")
+
+    def test_a(self): ...
+    def test_b(self): ...   # inherits DOM state from test_a
+```
+
+```ts
+// CANONICAL — each test gets a fresh `page` (no inherited DOM state)
+test.describe('users', () => {
+  test.beforeEach(async ({ page }) => { await page.goto('/users'); });
+  test('a', async ({ page }) => { /* ... */ });
+  test('b', async ({ page }) => { /* fresh page — no leak from "a" */ });
+});
+```
+
+Rationale: `setup_class` allocates one driver per CLASS, then every test method in the class shares it. Each method inherits the previous method's URL state, cookies, scroll position, and DOM mutations. This is the single largest source of order-dependent pytest flakes in Selenium suites — tests pass in isolation but fail when run together (or in a different order). Playwright's `page` fixture is test-scoped: every test gets a fresh `BrowserContext` + `Page`, with isolation guaranteed. Translation: delete the `BaseTest` class; replace `setup_method` with `test.beforeEach`; replace inheritance with the `page` fixture.
+
+#### 1.4.15 `body.send_keys(Keys.ESCAPE)` for keyboard events
+
+```python
+# ANTI-PATTERN
+body = driver.find_element(By.TAG_NAME, "body")
+body.send_keys(Keys.ESCAPE)
+```
+
+```ts
+// CANONICAL — page-level keyboard API
+await page.keyboard.press('Escape');
+```
+
+Rationale: Selenium dispatches keys through the `<body>` element as a workaround because there is no `driver.press_key()` API at the document level. Playwright has `page.keyboard.press()` and `page.keyboard.type()` — these dispatch at the document level and respect the currently-focused element. The Selenium pattern also breaks when the focused element traps `keydown` (some modal libraries call `e.preventDefault()` on body-level Escape), where the Playwright API correctly hits the actual focus target. Same applies to `Keys.ENTER`, `Keys.TAB`, etc.
+
+#### 1.4.16 `driver.implicitly_wait(N)` global timeout
+
+```python
+# ANTI-PATTERN
+@pytest.fixture
+def driver():
+    drv = webdriver.Chrome()
+    drv.implicitly_wait(10)   # silently affects every find_element
+    yield drv
+    drv.quit()
+```
+
+```ts
+// CANONICAL — configure at project level
+// playwright.config.ts
+export default defineConfig({
+  use: { actionTimeout: 10_000 },
+  expect: { timeout: 5_000 },
+});
+```
+
+Rationale: `implicitly_wait` silently affects every `find_element` call in the session — including ones that are CHECKING FOR ABSENCE (e.g. "the error banner is not there"). With `implicitly_wait(10)`, a `find_elements()` returning an empty list takes 10 seconds. Playwright's auto-retry is per-assertion and explicit (`actionTimeout`, `expect timeout`, per-call timeout override). The mental model is also different: Playwright's matchers KNOW about negation (`expect(...).not.toBeVisible()`), so absence checks are fast. Delete the global implicit wait; configure timeouts at project level for visibility.
+
+#### 1.4.17 `driver.find_elements(...)[i]` / `len(driver.find_elements(...))` snapshot-list indexing
+
+```python
+# ANTI-PATTERN
+cards = driver.find_elements(By.CSS_SELECTOR, ".kpi-card")
+team_card = cards[0]
+assert len(driver.find_elements(By.CSS_SELECTOR, ".modal-overlay")) == 0
+```
+
+```ts
+// CANONICAL — pick by accessible name; assert on the locator itself
+const teamCard = page.getByRole('region', { name: 'Team members' });
+await expect(page.getByRole('dialog')).toBeHidden();
+```
+
+Rationale: Python's mirror of Java's KB-1.3.7. `find_elements(...)` returns a snapshot LIST at call time. Indexing `[0]` or counting via `len()` races against ANY UI change between the call and the read. Playwright `Locator` objects are LAZY and auto-retrying — `expect(locator).toHaveCount(N)` polls until match, and `getByRole(...)` with an accessible name eliminates the need to pick by position. If position is genuinely the only differentiator, `locator.nth(i)` exists but should be flagged as LOW confidence and reviewed.
+
 ---
 
 ## 2. Framework → Playwright TypeScript translation tables
@@ -1032,6 +1196,22 @@ Rationale: direct text equality strips whitespace differences inconsistently acr
 | `@Disabled` | `test.skip` | |
 | `@Tag("smoke")` | `test('name @smoke', ...)` + `--grep @smoke` | |
 | `driver.quit()` | Automatic via fixture teardown. | |
+| `@FindBy(id = "x") WebElement el` | `readonly el = page.getByLabel(...)` or `getByTestId('x')` | POM field; choose locator strategy per migration-rules §5. |
+| `@FindBy(css = ".y") WebElement el` | `readonly el = page.getByRole(...)` | Never preserve CSS class; promote to role/label. |
+| `@FindBy(how = How.XPATH, using = "//...")` | `readonly el = page.getByRole(...)` (high-priority) or `page.locator('xpath=//...')` (fallback) | XPath usually loses; flag as LOW confidence. |
+| `PageFactory.initElements(driver, this)` | Drop. | Playwright locators are lazy; no init step needed. |
+| `EC.elementToBeClickable(by)` | `await locator.click()` (auto-wait) | Click already waits for actionability. |
+| `EC.textToBePresentInElementLocated(by, "X")` | `await expect(locator).toContainText('X')` | |
+| `EC.textToBe(by, "X")` | `await expect(locator).toHaveText('X')` | |
+| `EC.invisibilityOfElementLocated(by)` | `await expect(locator).toBeHidden()` | |
+| `EC.presenceOfElementLocated(by)` | `await expect(locator).toBeAttached()` | `toBeAttached` waits for the node, not visibility. |
+| `EC.numberOfElementsToBe(by, N)` | `await expect(locator).toHaveCount(N)` | |
+| `EC.attributeToBe(by, "aria-expanded", "true")` | `await expect(locator).toHaveAttribute('aria-expanded', 'true')` | |
+| `EC.stalenessOf(el)` | `await expect(locator).toBeHidden()` or re-resolve via `locator` | Locators are lazy — staleness is not a concept in Playwright. |
+| `ThreadLocal<WebDriver> + getDriver()` | Drop. | Playwright workers each own a fresh context — parallel-safe by default. |
+| `driver.manage().window().maximize()` | `viewport: { width, height }` at project level | Or omit; default 1280×720 covers most desktop tests. |
+| `WebDriverManager.chromedriver().setup()` | Drop. | Playwright bundles browsers; managed by `npx playwright install`. |
+| `JavaScriptExecutor + scrollIntoView` | `await locator.scrollIntoViewIfNeeded()` | Built-in; no JS executor needed. |
 
 ### 2.3 Selenium Python → Playwright TypeScript
 
@@ -1074,6 +1254,17 @@ Rationale: direct text equality strips whitespace differences inconsistently acr
 | `def test_x(driver):` | `test('x', async ({ page }) => { ... })` | |
 | `@pytest.mark.skip` | `test.skip(...)` | |
 | `@pytest.mark.parametrize` | `for (const c of cases) { test(...) }` | |
+| `class TestX(BaseTest): @classmethod setup_class(cls): cls.driver = ...` | `test.describe('x', () => { ... })` + `page` fixture | Per-test fresh context replaces shared class driver. |
+| `class TestX: def setup_method(self): ...` | `test.beforeEach(async ({ page }) => { ... })` | |
+| `class TestX: def teardown_method(self): ...` | `test.afterEach(async ({ page }) => { ... })` or fixture cleanup | |
+| `body.send_keys(Keys.ESCAPE)` | `await page.keyboard.press('Escape')` | Page-level keyboard API; respects focused element. |
+| `el.send_keys(Keys.TAB)` | `await locator.press('Tab')` | |
+| `ActionChains(driver).context_click(el).perform()` | `await locator.click({ button: 'right' })` | |
+| `driver.implicitly_wait(N)` | `actionTimeout` / `expect.timeout` at project config | Per-call timeouts available too. |
+| `WebDriverWait(driver, N).until(EC.text_to_be_present_in_element_value((By.ID, "x"), "Y"))` | `await expect(page.locator('#x')).toHaveValue('Y')` | |
+| `WebDriverWait(driver, N).until(EC.invisibility_of_element_located(...))` | `await expect(locator).toBeHidden()` | |
+| `WebDriverWait(driver, N).until(EC.alert_is_present())` | `page.on('dialog', d => ...)` (register BEFORE the action) | |
+| `driver.find_elements(...)[i]` | `page.getByRole(...).nth(i)` (last resort) or pick by accessible name | Never `[i]` in migrated code — flag as LOW confidence. |
 
 ### 2.4 Bad Playwright → Clean Playwright
 

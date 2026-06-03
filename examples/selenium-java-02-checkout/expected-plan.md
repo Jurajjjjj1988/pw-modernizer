@@ -11,22 +11,25 @@ currency value, places the order, and sees a personalised confirmation
 heading.
 
 ## Anti-patterns detected
-- [x] `Thread.sleep(1500)` / `Thread.sleep(2000)` (lines 43, 51, 60) —
-      hard waits between steps; replace with web-first waits on the next
-      step's first element.
-- [x] `WebDriverWait + ExpectedConditions.visibilityOf` (lines 44-45) —
-      translate to `expect(locator).toBeVisible()`.
-- [x] PageFactory pattern with `@FindBy` (lines 65-74) — Selenium-only,
-      eager-resolves elements at instantiation time. Playwright POMs use
-      LAZY getters (`= () => this.page.getByLabel(...)`).
-- [x] deep XPath `By.xpath("//section[3]/div/div[2]/span[2]")` (line 56)
-      — fragile to layout changes; replace with role / label.
-- [x] `Actions` builder for a single click (line 42) — overkill;
-      `locator.click()` is sufficient.
-- [x] JUnit `assertEquals` / `assertTrue` — non-web-first; use
-      `expect(locator).toHaveText()`.
-- [x] driver setup / teardown boilerplate (`@BeforeEach setUp`,
-      `@AfterEach tearDown`) — replaced by Playwright's `page` fixture.
+
+Sorted by Severity (H, M, L), then by Line.
+
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 43 | KB-1.3.1 | hard-wait | `Thread.sleep(1500)` | web-first wait on next step's first element |
+| H | 44-45 | KB-1.3.15 | expected-conditions-verbose | `EC.visibilityOf(checkoutPage.cardNumberInput)` | `await expect(locator).toBeVisible()` |
+| H | 51 | KB-1.3.1 | hard-wait | `Thread.sleep(1500)` | web-first; drop |
+| H | 60 | KB-1.3.1 | hard-wait | `Thread.sleep(2000)` | web-first; drop |
+| H | 65-74 | KB-1.3.14 | pagefactory-findby | `@FindBy(id = "shipping-name") public WebElement ...` | Playwright POM: `readonly shippingName = page.getByLabel('Full name')` |
+| H | 30 | KB-1.3.14 | pagefactory-init-elements | `PageFactory.initElements(driver, CheckoutPage.class)` | drop; locators are lazy |
+| H | 56 | KB-1.3.2 | xpath-deep | `//section[3]/div/div[2]/span[2]` | role/label-based locator (open question) |
+| H | 75-76 | KB-1.3.3 | css-class-selector | `button.next-step`, `button.place-order` | `getByRole('button', { name: 'Next' })` |
+| M | 42 | KB-1.3.6 | actions-builder-single-click | `new Actions(driver).click(...).perform()` | `locator.click()` |
+| M | 57 | KB-1.3.10 | non-web-first-assertion | `assertTrue(orderTotal.getText().startsWith("$"))` | `await expect(loc).toHaveText(/^\$\d+/)` |
+| M | 63 | KB-1.3.10 | non-web-first-assertion | `assertEquals("Thank you, Jane!", confirmation.getText())` | `await expect(loc).toHaveText('Thank you, Jane!')` |
+| M | 26-31 | KB-1.3.12 | driver-setup-boilerplate | `@BeforeEach setUp() { new ChromeDriver(); ... }` | drop; `page` fixture |
+| M | 33-36 | KB-1.3.12 | manual-driver-quit | `@AfterEach tearDown() { driver.quit(); }` | drop; `page` fixture |
+| L | 38 | KB-1.3.1 | throws-InterruptedException | `throws InterruptedException` | drop with `Thread.sleep` |
 
 ## Locator translation table
 | Original | New | Confidence | Notes |

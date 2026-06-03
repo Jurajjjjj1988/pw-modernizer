@@ -36,7 +36,8 @@ Catches regressions where (a) clicking a product's add-to-cart button fails to i
 | M | 25 | KB-1.1.3 | deep-css | `header > div` selector path | `getByRole('button', { name: /cart/i })` (cart icon click target) |
 | M | 30 | KB-1.1.2 | index-selector | `cartDrawer li button.nth(1)` | `cartDrawer.getByRole('button', { name: 'Remove Linen Tee' })` |
 | M | 30 | KB-1.1.3 | css-class | `page.locator('.cart-drawer')` | `getByRole('dialog', { name: /cart/i })` (MED conf — see pins) |
-| L | 5-15 | KB-1.1.10 | inline-route-in-beforeEach | inline `page.route` in `beforeEach` duplicated across tests | extract to `shopPage` fixture for clarity and reuse |
+
+(Note: inline `page.route` in `beforeEach` is duplication, not strictly an anti-pattern — handled under Structural changes → "Extract fixture: yes".)
 
 ## Locator translation table
 
@@ -80,4 +81,4 @@ Catches regressions where (a) clicking a product's add-to-cart button fails to i
 - **Selector quality score (estimated):** 0.86 (6/7 role-based; 1 LOW remains pending pin resolution).
 - **Smell count delta:** -8 `.nth()` calls, -1 `test.only`, -1 hard-wait, -2 sync probes, -1 deep-CSS path = **-13 smells removed, +0 introduced**.
 - **LOC delta:** 38 → ~41 (+3; fixture adds ~10 LOC but removes inline duplication).
-- **Anti-pattern coverage:** 11/11 cataloged.
+- **Anti-pattern coverage:** 10/10 cataloged (fixture extraction tracked separately in Structural changes).

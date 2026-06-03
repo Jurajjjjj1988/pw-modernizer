@@ -77,6 +77,15 @@ Scan the generated test for anti-patterns catalogued in `config/knowledge-base.m
 
 Each one found is a finding. Cite the KB ID. Severity: block for the runtime-affecting ones (hard waits, `any`, swallowed errors), warn for the stylistic ones, info for the cosmetic ones.
 
+### 4b. Hallucination-defense pin compliance
+
+The plan contains a `## Hallucination-defense pins` section. For each pin:
+
+- **Did Stage 2 emit the pinned locator?** Open the generated test and find the locator the pin references. Confirm it matches the pin's "assumed" target.
+- **Did Stage 2 attach the WHY-comment?** The pin specifies an exact comment shape ("Q-id unresolved"). If a MED/LOW locator appears in the generated code without that comment, severity = `warn` (reviewer lost the context). If it appears with the WRONG comment (e.g., generator paraphrased instead of using the pin's verbatim text), severity = `info`.
+- **Did Stage 2 silently promote a MED/LOW pinned locator to a non-pinned alternative?** E.g., pin says "fallback to `data-testid` if alert role missing" but code emits `getByText(...)` instead. Severity = `block` — this is exactly the hallucination the pin was meant to prevent.
+- **Missing pins for present MED/LOW locators in the plan's locator table:** severity = `block`. Plan is incomplete; reject.
+
 ### 5. Behavioural drift risk (the big-picture check)
 
 Take a step back. Read the source test's intent. Read the migrated test's behaviour. Ask: **does the migrated test still catch the same class of bugs?**

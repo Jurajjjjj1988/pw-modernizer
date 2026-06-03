@@ -93,6 +93,14 @@ For every locator in the source (every `cy.get()`, `By.id()`, `By.cssSelector()`
 
 Every MED and LOW row must produce a corresponding entry in the **Open questions** section (Step 6).
 
+**After completing the locator table, emit the `## Hallucination-defense pins` section** (mandatory per `migration-rules.md` §9 when any MED/LOW row exists). One numbered pin per MED/LOW locator with this exact shape:
+
+> N. **{element description}** — assumed `{target locator}`. If DOM contradicts: keep `{source locator}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`.
+
+The pin is a contract for Stage 2: it tells the code generator EXACTLY what selector to emit when DOM evidence is missing, and what comment to attach. Without the pin, Stage 2 will silently default to the higher-confidence locator and hallucinate the role/label that the plan flagged as uncertain.
+
+If your locator table contains zero MED/LOW rows (rare, only happens on subtractive bad-Playwright migrations where every original locator is already on the canonical hierarchy), emit the section with body "N/A — all locators are HIGH confidence." The section MUST be present even when empty so the schema validator doesn't reject the plan.
+
 ### Step 5 — Structural decisions
 
 Decide whether to:

@@ -74,6 +74,7 @@ These are pulled from `migration-rules.md` for emphasis. The migration-rules fil
 - **No console.log left behind.** Comments only where they explain WHY (per `comment-discipline`).
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
+- **Respect the plan's `## Hallucination-defense pins`.** The plan emits one numbered pin per MED/LOW-confidence locator with this contract: "If DOM contradicts: keep `{source locator}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`." Stage 2 MUST NOT promote a MED/LOW locator to a hallucinated `getByRole(...)`/`getByLabel(...)` without the pinned evidence. If you don't have evidence the pin's assumed locator is correct (you're not running against a real DOM in Stage 2), emit the assumed-target locator AND attach the pin's WHY-comment verbatim — this preserves the fallback contract for the reviewer.
 
 ## Execution algorithm (the order you should work in)
 

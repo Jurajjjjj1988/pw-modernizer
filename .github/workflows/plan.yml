@@ -110,7 +110,7 @@ jobs:
           echo "input_basename=$BASENAME" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
 
-      - name: Stage 0 — Pre-flight secret scan
+      - name: Stage 0 — Pre-flight input sanity + secret scan
         id: preflight
         shell: bash
         run: |
@@ -123,6 +123,34 @@ jobs:
           else
             SCAN_FILES=("$INPUT")
           fi
+          # ---- Input sanity gate (Risk 4) ----
+          # Fail-fast BEFORE spending tokens on Claude when input is unmigrable.
+          TOTAL_BYTES=0
+          HAS_TEST_MARKER=0
+          for FILE in "${SCAN_FILES[@]}"; do
+            SZ=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE")
+            TOTAL_BYTES=$((TOTAL_BYTES + SZ))
+            # Min-content heuristic: must look like a test file somewhere in the unit.
+            if grep -qE '\b(test|it|describe|@Test|def test_|cy\.|page\.)\b' "$FILE"; then
+              HAS_TEST_MARKER=1
+            fi
+          done
+          # Size bounds: 200B floor (empty/stub), 100KB ceiling (LLM context budget).
+          # For dir inputs the ceiling is per-unit, not per-file.
+          if [ "$TOTAL_BYTES" -lt 200 ]; then
+            echo "::error::Input too small ($TOTAL_BYTES bytes < 200). Empty or stub file."
+            exit 1
+          fi
+          if [ "$TOTAL_BYTES" -gt 102400 ]; then
+            echo "::error::Input too large ($TOTAL_BYTES bytes > 100 KB). Split into smaller test units; LLM context budget + KB catalog will not fit reliably."
+            exit 1
+          fi
+          if [ "$HAS_TEST_MARKER" -eq 0 ]; then
+            echo "::error::Input contains no test markers (test/it/describe/@Test/def test_/cy./page.). Not a recognizable test file."
+            exit 1
+          fi
+          echo "Input sanity: $TOTAL_BYTES bytes, ${#SCAN_FILES[@]} file(s), test markers present."
+          # ---- Secret scan (continues below) ----
           # Detect real prod tokens in input. Test placeholders (`xxx`, `<TODO>`,
           # `.test`/`.example` domains, `${{secrets.*}}`) are allowed — the plan
           # stage will recommend extracting them to env vars. We only flag tokens

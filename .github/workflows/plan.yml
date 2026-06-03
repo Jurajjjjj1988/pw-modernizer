@@ -1,58 +1,34 @@
 # Stage 1 — Migration planning.
 #
-# Trigger: any push that touches `inputs/**` (a new source test was added)
-# OR a manual workflow_dispatch (re-plan a specific file).
-#
-# What it does:
-#   1. Detects which input file(s) changed.
-#   2. For each changed input, invokes Claude (via claude-code-action) with:
-#        - prompts/analyze.md as the system prompt
-#        - config/knowledge-base.md + config/migration-rules.md as cached context
-#        - the input file itself
-#   3. Claude emits a per-input migration plan markdown to outputs/plans/<input-basename>.md.
-#   4. Opens a PR labeled `migrator:plan` for human review.
-#   5. Stage 2 (migrate.yml) only fires when the labeled PR is merged.
-#
-# Security:
-#   - Pinned action SHAs (renovate/dependabot will keep them current).
-#   - Minimal permissions per stage; never `write-all`.
-#   - Never `pull_request_target` + head ref checkout (the "pwn request" pattern).
-#   - GitHub App token preferred over PAT (set GH_APP_ID + GH_APP_PRIVATE_KEY secrets).
-#
-# Cost control:
-#   - Prompt caching is wired in claude-code-action; the knowledge-base + rules
-#     are stable across runs and get the 0.1x cache-read multiplier.
-#   - --max-turns 5 caps agent loops.
-#   - Plan stage uses Sonnet (cheap, good plan quality). Stage 2 (generate.yml)
-#     defaults to Sonnet too; verify.yml uses Opus only on low-confidence outputs.
-#   - Idempotency: tree-hash check skips re-planning if a PR with the same
-#     `migrator:plan:<sha>` label already exists.
+# Trigger: push touching inputs/** OR manual workflow_dispatch.
+# Claude reads the input + config + reference style, follows prompts/analyze.md,
+# writes outputs/plans/<basename>.md. Opens PR labeled `migrator:plan`.
+# Stage 2 (migrate.yml) fires when the labeled PR is merged.
 
 name: Stage 1 — Plan migration
 
 on:
   push:
     branches-ignore:
-      - 'migrator/**' # Don't re-plan on our own PR branches.
+      - 'migrator/**'
+      - 'claude/**'
     paths:
       - 'inputs/**'
   workflow_dispatch:
     inputs:
       input_path:
-        description: 'Path to a single input file (relative to repo root) to re-plan'
+        description: 'Path to one input file (repo-relative) to re-plan'
         required: true
         type: string
 
-# One in-flight plan per branch. Don't cancel — let LLM calls finish so we
-# don't waste tokens halfway through a generation.
 concurrency:
   group: pwm-plan-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
-  # No `actions: write` — we don't trigger other workflows from here.
+  id-token: write # claude-code-action needs this for OIDC bits.
 
 jobs:
   detect-changed-inputs:
@@ -61,26 +37,22 @@ jobs:
       inputs_json: ${{ steps.detect.outputs.inputs_json }}
       has_inputs: ${{ steps.detect.outputs.has_inputs }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
-          fetch-depth: 2 # Need previous commit for diff.
+          fetch-depth: 2
 
-      - name: Detect changed input files
-        id: detect
+      - id: detect
         shell: bash
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual replay — one file at a time.
             INPUT="${{ inputs.input_path }}"
             if [ ! -f "$INPUT" ]; then
-              echo "::error::input_path '$INPUT' not found in repo"
+              echo "::error::input_path '$INPUT' not found"
               exit 1
             fi
             JSON=$(jq -nc --arg p "$INPUT" '[$p]')
           else
-            # Push trigger — diff against previous commit.
             JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' \
               | jq -Rsc 'split("\n") | map(select(length > 0))')
           fi
@@ -90,22 +62,19 @@ jobs:
           else
             echo "has_inputs=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Detected inputs: $JSON"
 
   plan:
     needs: detect-changed-inputs
     if: needs.detect-changed-inputs.outputs.has_inputs == 'true'
     runs-on: ubuntu-latest
     strategy:
-      # Per-input fanout so a flaky LLM call on one file doesn't block others.
       fail-fast: false
       matrix:
         input_path: ${{ fromJSON(needs.detect-changed-inputs.outputs.inputs_json) }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
-      - name: Compute idempotency key (tree hash of input file)
+      - name: Compute idempotency key
         id: idempotency
         shell: bash
         run: |
@@ -115,48 +84,62 @@ jobs:
           BASENAME=$(basename "$INPUT")
           LABEL="migrator:plan:${HASH:0:12}"
           echo "input_basename=$BASENAME" >> "$GITHUB_OUTPUT"
-          echo "tree_hash=$HASH" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if plan PR with this tree hash already exists
+      - name: Skip if plan PR with this hash already exists
         id: dedup
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          LABEL="${{ steps.idempotency.outputs.label }}"
-          # Search open + closed PRs by label.
-          EXISTING=$(gh pr list --state all --label "$LABEL" --json number --jq 'length')
+          EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json number --jq 'length')
           if [ "$EXISTING" -gt 0 ]; then
-            echo "Plan PR with label $LABEL already exists. Skipping LLM call."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run Claude Code (analyze stage)
+      - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@8e4cb02b1c1a3a2a5e3b4c5d6e7f8090a1b2c3d4 # PIN ME — see README
+        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # main as of 2026-06-02
         with:
-          # Cached system prompt: rules + knowledge-base are the stable prefix.
-          system_prompt_path: prompts/analyze.md
-          additional_context_paths: |
-            config/migration-rules.md
-            config/knowledge-base.md
-            ${{ matrix.input_path }}
-          # Sonnet for planning — good quality, cheap.
-          model: claude-sonnet-4-6
-          temperature: '0'
-          max_turns: '5'
-          # Tools Claude is allowed to use during planning.
-          allowed_tools: 'Read,Write'
-          # The deliverable: the plan markdown only. No code generation here.
-          required_output_path: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are running Stage 1 of the PWmodernizer pipeline.
 
-      - name: Output validation (plan must reference all source idioms)
+            ## Your task
+
+            Read `prompts/analyze.md` — that's your full system prompt and
+            task description. Follow it exactly.
+
+            ## Input for this run
+
+            - Input test file to analyze: `${{ matrix.input_path }}`
+            - Output plan path to write: `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
+
+            ## Context to load (in this order)
+
+            1. `prompts/analyze.md` — your task spec (READ FIRST)
+            2. `config/migration-rules.md` — target style + structure contract
+            3. `config/knowledge-base.md` — anti-pattern catalog + API translation tables
+            4. `examples/reference/company-style.spec.ts` — gold-standard target style anchor
+            5. `${{ matrix.input_path }}` — the input to migrate
+
+            ## Deliverable
+
+            ONE markdown file at the exact output path above. NO code
+            generation — this stage only produces the plan. Follow the plan
+            schema in `config/migration-rules.md` §9 — every section must be
+            present.
+
+            Mark each locator translation with HIGH / MED / LOW confidence
+            per the hallucination-defense rules in `prompts/analyze.md`.
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 8
+
+      - name: Validate plan structure
         if: steps.dedup.outputs.skip == 'false'
         shell: bash
         run: |
@@ -166,16 +149,23 @@ jobs:
             echo "::error::Plan file $PLAN was not produced"
             exit 1
           fi
-          # The plan MUST include these schema sections (see migration-rules.md §9).
-          for section in "## Source framework" "## Summary" "## Anti-patterns detected" "## Locator translation table" "## Structural changes" "## Open questions for reviewer" "## Risk callouts" "## Expected metrics"; do
+          for section in \
+            "## Source framework" \
+            "## Summary" \
+            "## Anti-patterns detected" \
+            "## Locator translation table" \
+            "## Structural changes" \
+            "## Open questions for reviewer" \
+            "## Risk callouts" \
+            "## Expected metrics" \
+          ; do
             if ! grep -qF "$section" "$PLAN"; then
-              echo "::error::Plan is missing required section: $section"
+              echo "::error::Plan missing required section: $section"
               exit 1
             fi
           done
-          # Plan must mark each locator with HIGH/MED/LOW confidence.
-          if ! grep -qE 'high|med|low' "$PLAN"; then
-            echo "::error::Plan does not include any confidence markers"
+          if ! grep -qiE 'high|med|low' "$PLAN"; then
+            echo "::error::Plan has no confidence markers (HIGH/MED/LOW)"
             exit 1
           fi
           echo "Plan validated."
@@ -196,28 +186,22 @@ jobs:
 
             **Input:** `${{ matrix.input_path }}`
             **Plan:** `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
-            **Tree hash:** `${{ steps.idempotency.outputs.tree_hash }}`
 
             ### Review checklist
 
             - [ ] Source framework detected correctly?
             - [ ] All anti-patterns listed match what you'd flag manually?
-            - [ ] Locator confidence column — are LOW/MED entries appropriately flagged for reviewer attention?
-            - [ ] Structural changes (POM / fixture extraction) match the file's complexity?
-            - [ ] Open questions answered? (Edit the plan if so.)
+            - [ ] Locator confidence column — are LOW/MED rows actually risky?
+            - [ ] Structural changes match file complexity?
+            - [ ] Open questions answered (edit the plan if needed)?
 
             ### What happens on merge
 
-            Merging this PR triggers Stage 2 (code generation) via `migrate.yml`.
-            Stage 2 reads this plan and emits the Playwright TS migration.
+            Merging triggers Stage 2 (`migrate.yml`) which reads this plan
+            and emits the Playwright TypeScript. **If the plan is wrong,
+            edit it BEFORE merge** — Stage 2 follows the plan literally.
 
-            **If the plan looks wrong, edit it before merge.** The plan is a
-            human-editable contract — Stage 2 follows it literally.
+            ### Caveats
 
-            ### Honest caveats
-
-            - This plan is LLM-generated. It may miss subtle semantic intent.
-            - LOW-confidence locator translations are guesses; verify against
-              the target app's actual DOM when possible.
-            - The migration report in Stage 2 will quantify what changed; this
-              plan only outlines the *intended* changes.
+            - Stage 1 is LLM-generated; it may miss subtle intent.
+            - LOW-confidence locators are guesses; verify against real DOM.

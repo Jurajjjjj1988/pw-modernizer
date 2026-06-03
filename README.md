@@ -84,7 +84,7 @@ inputs/bad-playwright/foo.spec.ts
 
 - Node 22+
 - GitHub repository secrets (Settings → Secrets and variables → Actions):
-  - `ANTHROPIC_API_KEY` — **required**. Get one at https://console.anthropic.com/.
+  - **`CLAUDE_CODE_OAUTH_TOKEN`** — **required**. Generate locally via `claude setup-token` in a real terminal (requires Claude Pro/Max). The token leverages your existing subscription; no separate Anthropic API billing. Alternative: use `ANTHROPIC_API_KEY` from https://console.anthropic.com/ — to switch, replace `claude_code_oauth_token:` with `anthropic_api_key:` in the `with:` blocks of `.github/workflows/{plan,migrate,verify}.yml`.
   - `MIGRATION_TARGET_URL` — _optional_. If set, generation can ground locators against the live DOM via `playwright-mcp` (planned for v1; for v0 it's not yet wired).
 
 ### Trigger your first migration

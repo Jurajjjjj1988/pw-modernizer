@@ -123,13 +123,36 @@ jobs:
           else
             SCAN_FILES=("$INPUT")
           fi
-          # ---- Input sanity gate (Risk 4) ----
+          # ---- Input sanity gate (Risk 4 — full) ----
           # Fail-fast BEFORE spending tokens on Claude when input is unmigrable.
+          # Thresholds derived from agent research (NVIDIA RULER on effective
+          # Claude context degradation past 50%; Playwright "monolith" anecdote
+          # of 2500 LOC / ~80 KB as practical upper bound; chars/4 token estimate
+          # is canonical OpenAI heuristic, conservative for English code).
           TOTAL_BYTES=0
+          TOTAL_CHARS=0
           HAS_TEST_MARKER=0
+          BAD_ENCODING=()
           for FILE in "${SCAN_FILES[@]}"; do
             SZ=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE")
             TOTAL_BYTES=$((TOTAL_BYTES + SZ))
+            CHARS=$(wc -m < "$FILE")
+            TOTAL_CHARS=$((TOTAL_CHARS + CHARS))
+            # Encoding check: ubuntu-latest ships `file` (binutils);
+            # mime-encoding must be utf-8, us-ascii, or binary-of-known-text.
+            # `file --mime-encoding -b` returns just the encoding label.
+            ENC=$(file --mime-encoding -b "$FILE" 2>/dev/null || echo "unknown")
+            case "$ENC" in
+              utf-8|us-ascii|utf-8-binary) ;; # OK
+              binary)
+                # binary may legitimately appear for files with embedded null bytes
+                # (rare in test code); flag but allow if test markers present
+                BAD_ENCODING+=("$FILE:$ENC")
+                ;;
+              *)
+                BAD_ENCODING+=("$FILE:$ENC")
+                ;;
+            esac
             # Min-content heuristic: must look like a test file somewhere in the unit.
             if grep -qE '\b(test|it|describe|@Test|def test_|cy\.|page\.)\b' "$FILE"; then
               HAS_TEST_MARKER=1
@@ -145,11 +168,23 @@ jobs:
             echo "::error::Input too large ($TOTAL_BYTES bytes > 100 KB). Split into smaller test units; LLM context budget + KB catalog will not fit reliably."
             exit 1
           fi
+          # Token estimate cap: chars/4 ≈ tokens for typical English+code mix.
+          # 25000-token cap leaves headroom for KB catalog + system prompt + few-shot examples.
+          EST_TOKENS=$((TOTAL_CHARS / 4))
+          if [ "$EST_TOKENS" -gt 25000 ]; then
+            echo "::error::Input ~$EST_TOKENS estimated tokens > 25000 cap. Effective Claude context degrades past ~50% of 1M claim (NVIDIA RULER); split into smaller units."
+            exit 1
+          fi
           if [ "$HAS_TEST_MARKER" -eq 0 ]; then
             echo "::error::Input contains no test markers (test/it/describe/@Test/def test_/cy./page.). Not a recognizable test file."
             exit 1
           fi
-          echo "Input sanity: $TOTAL_BYTES bytes, ${#SCAN_FILES[@]} file(s), test markers present."
+          if [ "${#BAD_ENCODING[@]}" -gt 0 ]; then
+            for entry in "${BAD_ENCODING[@]}"; do
+              echo "::warning::File encoding suspect: $entry (expected utf-8 or us-ascii). May cause grep / Claude tokenizer surprises."
+            done
+          fi
+          echo "Input sanity: $TOTAL_BYTES bytes, ~$EST_TOKENS tokens, ${#SCAN_FILES[@]} file(s), test markers present."
           # ---- Secret scan (continues below) ----
           # Detect real prod tokens in input. Test placeholders (`xxx`, `<TODO>`,
           # `.test`/`.example` domains, `${{secrets.*}}`) are allowed — the plan

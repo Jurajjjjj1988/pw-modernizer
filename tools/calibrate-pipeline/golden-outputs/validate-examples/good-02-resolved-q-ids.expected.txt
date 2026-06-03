@@ -1,0 +1,4 @@
+# Exit 0. Q-dialog and Q-close both appear in pins AND in Open questions.
+validate-examples:
+1 plan(s) scanned
+0 finding(s)

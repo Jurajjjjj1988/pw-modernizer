@@ -1,0 +1,56 @@
+{
+  "inputBasename": "flaky-suite.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "navigates after successful submit @positive",
+      "userAction": "Click Submit and observe URL change to /thanks.",
+      "expectedAssertions": [
+        "URL is /thanks after submit"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "shows validation error on empty submit @negative",
+      "userAction": "Click Submit with empty form and observe role=alert.",
+      "expectedAssertions": [
+        "alert role contains /required/i"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "preserves typed value after error @edge",
+      "userAction": "Trigger validation error and observe email input keeps text.",
+      "expectedAssertions": [
+        "email input value equals 'jane@acme.test'"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('button.primary').nth(0)",
+      "target": "page.getByRole('button', { name: 'Submit' })",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Submit button",
+      "assumedLocator": "page.getByRole('button', { name: 'Submit' })",
+      "sourceLocator": "page.locator('button.primary').nth(0)",
+      "whyComment": "Q-submit unresolved: accessible name assumed 'Submit'.",
+      "reviewerFallback": "Confirm exact button label OR add data-testid."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -5,
+    "locDelta": -8,
+    "antiPatternCoverage": "5/5"
+  }
+}

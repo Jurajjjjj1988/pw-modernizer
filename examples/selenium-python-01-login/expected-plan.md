@@ -53,16 +53,12 @@ Sorted by Severity (H, M, L), then by Line.
 - Split into multiple specs: no.
 
 ## Open questions for reviewer
-- Is the "Team members" KPI card the FIRST card in the layout, or just
-  one of several? The original test relies on `cards[0]` (positional);
-  the migrated test relies on the card's accessible name. If the card
-  has no accessible name, switch to `getByTestId('kpi-team')`.
-- Does the team KPI value show "0" when there are no team members, or
-  does the API guarantee at least one? The assertion `not.toHaveText('0')`
-  guards against the empty case — keep or drop based on intent.
-- Currently the `loggedInPage` fixture logs in through the UI. If login
-  is well-covered elsewhere, switch to a `storageState`-based fixture
-  to halve runtime and reduce login-step noise.
+- **Q-email** / **Q-password**: Do the Email and Password inputs have associated `<label>` elements (`<label for="email">`)? If only placeholders, switch `getByLabel` → `getByPlaceholder` in the migration.
+- **Q-greeting**: Is the dashboard greeting rendered as a heading element (`<h1>`/`<h2>`), or just styled text in a `<div>`? Determines whether to upgrade locator OR keep CSS class.
+- **Q-kpi-card**: Is the "Team members" KPI card the FIRST card in the layout, or just one of several? The original test relies on `cards[0]` (positional); the migrated test relies on the card's accessible name. If the card has no accessible name, switch to `getByTestId('kpi-team')`.
+- **Q-kpi-value**: Does the team KPI value element have a `data-testid="kpi-value"` attribute? Without it, the scoped CSS selector is the only reliable target.
+- Does the team KPI value show "0" when there are no team members, or does the API guarantee at least one? The assertion `not.toHaveText('0')` guards against the empty case — keep or drop based on intent.
+- Currently the `loggedInPage` fixture logs in through the UI. If login is well-covered elsewhere, switch to a `storageState`-based fixture to halve runtime and reduce login-step noise.
 
 ## Risk callouts
 - Auth via UI in a fixture: if the login page changes (selector,

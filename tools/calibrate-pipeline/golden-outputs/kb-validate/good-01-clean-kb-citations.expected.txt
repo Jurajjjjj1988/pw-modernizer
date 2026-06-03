@@ -1,0 +1,5 @@
+# Each non-comment line is a substring that MUST appear in the validator's
+# combined stdout+stderr. Exit code MUST be 0 (good-fixture contract).
+kb-validate:
+3 KB IDs defined
+reference(s) resolved cleanly

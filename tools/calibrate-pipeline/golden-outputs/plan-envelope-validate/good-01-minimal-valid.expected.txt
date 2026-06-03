@@ -1,0 +1,4 @@
+# Exit 0. Minimal valid envelope: 1 scenario, 1 locator, 1 pin.
+plan-envelope-validate:
+1 scenario(s)
+clean (schema only)

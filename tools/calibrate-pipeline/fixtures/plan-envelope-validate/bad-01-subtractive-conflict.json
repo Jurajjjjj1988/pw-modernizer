@@ -1,0 +1,40 @@
+{
+  "inputBasename": "Login.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials",
+      "userAction": "Submit login form and observe dashboard.",
+      "expectedAssertions": [
+        "URL contains /dashboard"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.id(\"email\")",
+      "target": "page.getByLabel('Email')",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Email input",
+      "assumedLocator": "page.getByLabel('Email')",
+      "sourceLocator": "By.id(\"email\")",
+      "whyComment": "Q-email-label assumed.",
+      "reviewerFallback": "Confirm label via DOM."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.9,
+    "smellCountDelta": -4,
+    "locDelta": 10,
+    "antiPatternCoverage": "4/4"
+  }
+}

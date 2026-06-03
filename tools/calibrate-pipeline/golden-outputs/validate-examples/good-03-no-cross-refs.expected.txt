@@ -1,0 +1,4 @@
+# Exit 0. Plan deliberately contains zero KB-IDs and zero Q-IDs.
+validate-examples:
+1 plan(s) scanned
+0 finding(s)

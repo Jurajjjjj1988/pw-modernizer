@@ -1,0 +1,2 @@
+# Exit 0. Output is structurally distinct from input.
+substantively non-trivial

@@ -1,0 +1,60 @@
+{
+  "inputBasename": "input",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials and lands on dashboard",
+      "userAction": "Fill credentials in LoginPage and click Sign in.",
+      "expectedAssertions": [
+        "URL contains /dashboard after sign-in",
+        "dashboard greeting heading is visible"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "rejects invalid credentials with error banner",
+      "userAction": "Submit bad password and observe error banner copy.",
+      "expectedAssertions": [
+        "error banner text equals 'Invalid credentials'",
+        "URL still matches /login (no redirect)"
+      ]
+    }
+  ],
+  "requiredPOMs": ["outputs/tests/pages/login.page.ts"],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "@FindBy(id = \"email\") WebElement emailInput",
+      "target": "page.getByLabel('Email')",
+      "confidence": "high"
+    },
+    {
+      "original": "@FindBy(id = \"password\") WebElement passwordInput",
+      "target": "page.getByLabel('Password')",
+      "confidence": "high"
+    },
+    {
+      "original": "@FindBy(xpath = \"//button[@type='submit']\") WebElement signInButton",
+      "target": "page.getByRole('button', { name: 'Sign in' })",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Dashboard greeting heading",
+      "assumedLocator": "page.getByRole('heading', { name: /welcome/i })",
+      "sourceLocator": "By.cssSelector(\".greeting\")",
+      "whyComment": "Q-greeting unresolved: heading role assumed.",
+      "reviewerFallback": "Ask FE team to confirm heading role OR fall back to getByTestId."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.92,
+    "smellCountDelta": -7,
+    "locDelta": 15,
+    "antiPatternCoverage": "7/7"
+  }
+}

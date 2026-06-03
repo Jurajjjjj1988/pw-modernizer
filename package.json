@@ -8,6 +8,7 @@
     "evaluate": "tsx scripts/evaluate.ts",
     "check:trivial": "tsx scripts/ast-diff-trivial-check.ts",
     "assemble-prompts": "tsx scripts/assemble-prompts.ts --write",
+    "calibrate": "tsx tools/calibrate-pipeline/run-calibration.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",

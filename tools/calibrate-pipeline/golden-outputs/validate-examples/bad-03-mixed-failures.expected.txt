@@ -1,0 +1,3 @@
+# Exit 1. Both a phantom KB ID (KB-2.99.99) AND an orphan Q-mystery slug.
+KB-ID '2.99.99' not defined
+Q-ID 'Q-mystery' cited in pins but missing

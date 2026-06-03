@@ -1,0 +1,5 @@
+# Exit 1. Code paired with envelope imports `selenium-webdriver` in a
+# subtractive migration — disallowed.
+subtractive migration introduced foreign framework import
+selenium-webdriver
+contract violation(s)

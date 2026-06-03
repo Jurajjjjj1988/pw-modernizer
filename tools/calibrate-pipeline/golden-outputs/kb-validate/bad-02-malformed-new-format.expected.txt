@@ -1,0 +1,4 @@
+# Exit 1. The header [pw/Timing/Hard-Wait] violates the strict regex.
+new-format KB ID
+must match
+violation(s)

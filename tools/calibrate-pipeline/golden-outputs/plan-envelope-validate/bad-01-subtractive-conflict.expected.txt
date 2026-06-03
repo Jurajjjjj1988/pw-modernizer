@@ -1,0 +1,3 @@
+# Exit 1. sourceFramework=selenium-java + subtractive=true violates schema invariant.
+schema:
+schema violation(s)

@@ -51,10 +51,10 @@ Sorted by Severity (H, M, L), then by Line.
 - Split into multiple specs: no.
 
 ## Open questions for reviewer
-- Is the search box an `<input type="search">` with an accessible name?
+- **Q1**: Is the search box an `<input type="search">` with an accessible name?
   If it is just `<input id="site-search">`, the migrated test will need
   `getByPlaceholder` instead of `getByRole('searchbox')`.
-- Are product cards rendered as `<article>` elements? If not, the
+- **Q2**: Are product cards rendered as `<article>` elements? If not, the
   `getByRole('article')` strategy will not work — switch to
   `getByTestId('product-card')`.
 - The Selenium test asserts the FIRST title contains "linen". The

@@ -1,0 +1,4 @@
+# Exit 0. KB-UNCLASSIFIED is a sentinel and must NOT be reported as missing.
+kb-validate:
+3 KB IDs defined
+reference(s) resolved cleanly

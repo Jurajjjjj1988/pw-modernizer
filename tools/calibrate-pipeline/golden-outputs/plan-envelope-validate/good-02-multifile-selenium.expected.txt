@@ -1,0 +1,4 @@
+# Exit 0. Selenium-java multifile envelope: subtractive=false, 2 scenarios.
+plan-envelope-validate:
+2 scenario(s)
+clean (schema only)

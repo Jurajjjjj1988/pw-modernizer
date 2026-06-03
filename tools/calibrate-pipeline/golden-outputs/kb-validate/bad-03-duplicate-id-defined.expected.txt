@@ -1,0 +1,3 @@
+# Exit 1. Numeric KB ID 1.1.1 defined twice.
+duplicate KB ID: 1.1.1
+violation(s)

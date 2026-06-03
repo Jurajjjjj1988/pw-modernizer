@@ -23,8 +23,8 @@
  *     --report-out outputs/reports/foo.spec.ts.md
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { basename, dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 interface Args {
@@ -356,6 +356,7 @@ function main(): void {
     outputLoc,
   };
 
+  mkdirSync(dirname(args["report-out"]), { recursive: true });
   writeFileSync(args["report-out"], renderReport(report));
 
   // Aggregate confidence to stdout — workflow consumes this.

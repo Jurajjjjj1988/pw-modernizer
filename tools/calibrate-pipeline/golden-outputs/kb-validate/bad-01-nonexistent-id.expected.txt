@@ -1,0 +1,3 @@
+# Exit 1. KB-9.9.9 is cited in migration-rules but not defined.
+KB ID '9.9.9' referenced but not defined
+violation(s)

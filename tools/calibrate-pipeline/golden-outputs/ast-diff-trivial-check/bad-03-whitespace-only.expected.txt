@@ -1,0 +1,2 @@
+# Exit 1. Only whitespace differs; AST is identical.
+rename-only / cosmetic

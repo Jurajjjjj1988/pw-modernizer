@@ -46,7 +46,11 @@ Be picky on this section. **A wrong locator silently passes against the wrong el
 For every assertion in the generated test:
 - Does it correspond to an assertion in the source? If the generator added an assertion the plan didn't authorize, that's a scope finding (severity warn).
 - Does the source have an assertion that the generator dropped? Cross-reference the plan's "User-perceivable assertion checklist". A missing assertion is a behavioural drift finding (severity block).
-- Is the oracle a web-first assertion? `await expect(locator).toBeVisible()` good. `expect(await locator.isVisible()).toBe(true)` bad — that's a smell the generator should have caught (severity warn).
+- Is the oracle a web-first assertion? Any sync-probe assertion (`expect(await locator.isVisible()).toBe(true)`) is a smell the generator should have caught — severity `warn`. The canonical rule:
+
+<!-- include-begin: web-first-assertions -->
+{{include:_fragments/web-first-assertions.md}}
+<!-- include-end: web-first-assertions -->
 - Is the assertion asserting on something user-perceivable, or on internal state? "URL contains `/success`" is user-perceivable. "An XHR was fired" usually isn't. Match the original test's intent.
 - Critical: **Would the assertion catch the bug the source was designed to catch?** This is the behavioural-drift check. If the source asserts on text content and the generator swapped to asserting on URL only, the migrated test no longer catches the "form submits but result page is blank" bug class. Flag (severity block).
 
@@ -62,20 +66,12 @@ For every assertion in the generated test:
 ### 4. Forbidden patterns the generator missed
 
 Scan the generated test for anti-patterns catalogued in `config/knowledge-base.md`:
-- Hard waits (`waitForTimeout`, `setTimeout`, `sleep` of any kind)
-- `force: true` clicks without a documented reason
-- `any` types
-- `// @ts-ignore`
-- Magic numbers (other than `0` and `1` in obvious contexts)
-- `test.only`, `it.only`, `describe.only`, `fdescribe`, `fit`
-- `console.log` leftovers
-- Hardcoded URLs (should use baseURL from config)
-- Hardcoded credentials in source (should be env vars or fixtures)
-- Try/catch swallowing errors
-- Screenshots as assertions (`page.screenshot()` followed by no assertion is not a test)
-- Locator chains that bypass auto-retry (`(await page.locator(...).all())[2]`)
 
-Each one found is a finding. Cite the KB ID. Severity: block for the runtime-affecting ones (hard waits, `any`, swallowed errors), warn for the stylistic ones, info for the cosmetic ones.
+<!-- include-begin: forbidden-patterns -->
+{{include:_fragments/forbidden-patterns.md}}
+<!-- include-end: forbidden-patterns -->
+
+Each one found is a finding. Cite the KB ID. Severity: `block` for the runtime-affecting ones (hard waits, `any`, swallowed errors), `warn` for the stylistic ones, `info` for the cosmetic ones.
 
 ### 4b. Hallucination-defense pin compliance
 
@@ -99,16 +95,15 @@ This is the hardest verifier check because it requires understanding intent, not
 
 ### 6. Verify the report's claims
 
-The migration report at `outputs/reports/<input-basename>.md` makes specific claims:
-- Selector quality score
-- Web-first assertion rate
-- Smell count delta
-- AST-diff-not-trivial: yes/no
-- TypeScript strict mode: pass/fail
+The migration report at `outputs/reports/<input-basename>.md` claims values for the canonical 5-metric schema:
 
-Spot-check these. You don't need to be exact — count locators, count assertions, look at the structural diff. If the report claims "AST-diff-not-trivial: yes" but the only changes are import renames and `cy.get` → `page.locator`, the claim is wrong. Finding (severity block).
+<!-- include-begin: metrics-schema -->
+{{include:_fragments/metrics-schema.md}}
+<!-- include-end: metrics-schema -->
 
-If the report claims "selector quality 5/5" but the test uses `locator(".btn-submit")` for the primary action, the count is wrong. Finding (severity warn).
+Spot-check each. You don't need to be exact — count locators, count assertions, look at the structural diff. If the report claims "AST-diff-not-trivial: yes" but the only changes are import renames and `cy.get` → `page.locator`, the claim is wrong. Finding (severity `block`).
+
+If the report claims "selector quality 5/5" but the test uses `locator(".btn-submit")` for the primary action, the count is wrong. Finding (severity `warn`).
 
 ## Output format
 

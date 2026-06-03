@@ -1,0 +1,2 @@
+# Exit 1. Only comments differ; AST is identical.
+rename-only / cosmetic

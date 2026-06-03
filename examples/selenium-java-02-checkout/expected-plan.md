@@ -68,17 +68,11 @@ Sorted by Severity (H, M, L), then by Line.
   add per-step validation tests later, split then.)
 
 ## Open questions for reviewer
-- The test uses the Stripe test card `4242 4242 4242 4242`. Should the
-  migrated test stub the payment provider, or hit the real Stripe test
-  endpoint? v0 mirrors the source (real test endpoint). For CI stability,
-  consider stubbing in a follow-up.
-- The order-total locator is the biggest unknown. Reviewer needs to
-  confirm whether the markup uses a definition list (`<dt>`/`<dd>`),
-  test-ids, or just styled spans.
-- Confirmation page H1 — is it the only H1 on the page? If the page has
-  layout-level headings, narrow the locator with a name regex.
-- Currency assertion uses `/^\$\d+/` — does the shop use USD? If the
-  app is multi-currency, the assertion needs to be currency-symbol-aware.
+- **Q-labels**: Do all 7 form fields (shipping name/address/city/ZIP, card number/expiry/CVC) have associated `<label>` elements? Plan assumes `getByLabel(...)` for each; without labels, switch to `getByPlaceholder(...)` or `data-testid`.
+- **Q-order-total**: Is the order-total markup a definition list (`<dt>`/`<dd>`), a styled `<span>`, or testid-marked? Determines whether `getByRole('definition', { name: 'Order total' })` works or we keep brittle positional XPath.
+- **Q-confirmation-h1**: Is the confirmation page H1 the only H1 on the page? If the page has layout-level headings, narrow the locator with a name regex.
+- The test uses the Stripe test card `4242 4242 4242 4242`. Should the migrated test stub the payment provider, or hit the real Stripe test endpoint? v0 mirrors the source (real test endpoint). For CI stability, consider stubbing in a follow-up.
+- Currency assertion uses `/^\$\d+/` — does the shop use USD? If the app is multi-currency, the assertion needs to be currency-symbol-aware.
 
 ## Risk callouts
 - The original spec uses raw `Thread.sleep(1500)` between step

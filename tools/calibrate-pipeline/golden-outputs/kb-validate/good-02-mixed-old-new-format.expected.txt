@@ -1,0 +1,4 @@
+# Exit 0. KB defines 4 IDs (one numeric + three kebab) and references resolve.
+kb-validate:
+4 KB IDs defined
+reference(s) resolved cleanly

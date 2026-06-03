@@ -1,0 +1,39 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "title": "signs in with valid credentials",
+      "userAction": "Submit login form.",
+      "expectedAssertions": [
+        "URL after submit matches /dashboard"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('#email')",
+      "target": "page.getByLabel('Email')",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Email input",
+      "assumedLocator": "page.getByLabel('Email')",
+      "sourceLocator": "page.locator('#email')",
+      "whyComment": "Q-email-label assumed.",
+      "reviewerFallback": "Confirm via DOM."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.85,
+    "smellCountDelta": -2,
+    "locDelta": -3,
+    "antiPatternCoverage": "2/2"
+  }
+}

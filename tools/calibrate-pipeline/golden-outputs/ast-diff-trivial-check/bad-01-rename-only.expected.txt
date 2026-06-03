@@ -1,0 +1,2 @@
+# Exit 1. Only identifiers/strings differ; normalised AST is identical.
+rename-only / cosmetic

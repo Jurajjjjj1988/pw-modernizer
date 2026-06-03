@@ -1,0 +1,2 @@
+# Exit 1. Q-greeting referenced in pins but not in Open questions section.
+Q-ID 'Q-greeting' cited in pins but missing

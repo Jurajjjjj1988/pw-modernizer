@@ -267,6 +267,50 @@ await expect(page.getByText('Upload complete')).toBeVisible();
 
 Rationale: swallowed exceptions = green tests that miss bugs. See [`eslint-plugin-playwright/no-conditional-expect`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/no-conditional-expect.md).
 
+#### 1.1.14 Hardcoded environment URL
+
+```ts
+// ANTI-PATTERN
+test('checkout', async ({ page }) => {
+  await page.goto('https://shop.acme.test/login');
+  // ...
+});
+```
+
+```ts
+// CANONICAL — baseURL in playwright.config.ts + relative goto
+// playwright.config.ts:
+//   use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000' }
+test('checkout', async ({ page }) => {
+  await page.goto('/login');
+  // ...
+});
+```
+
+Rationale: hardcoded URLs lock the test to one environment; CI/staging/prod toggling requires editing source. Couples test code to deployment topology. See `playwright.config.ts` reference at [playwright.dev/docs/test-configuration#basic-configuration](https://playwright.dev/docs/test-configuration#basic-configuration).
+
+#### 1.1.15 Unnecessary `test.describe` nesting
+
+```ts
+// ANTI-PATTERN — single-feature suite with redundant inner describe
+test.describe('Acme Shop login', () => {
+  test.describe('credentials', () => {
+    test('valid email and password lands user on dashboard', async ({ page }) => { /* ... */ });
+    test('wrong password surfaces error banner', async ({ page }) => { /* ... */ });
+  });
+});
+```
+
+```ts
+// CANONICAL — flatten when inner describe has no sibling
+test.describe('Acme Shop login', () => {
+  test('valid email and password lands user on dashboard', async ({ page }) => { /* ... */ });
+  test('wrong password surfaces error banner', async ({ page }) => { /* ... */ });
+});
+```
+
+Rationale: nested `describe` blocks justify themselves only when they have siblings (e.g., `describe('sso')` alongside `describe('credentials')`). A single-child describe doubles the indentation budget and adds noise to test runner output without grouping value. Max 2 levels — see `config/migration-rules.md` §2.
+
 ---
 
 ### 1.2 Cypress anti-patterns

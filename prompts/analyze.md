@@ -143,47 +143,25 @@ Emit estimates (you don't have to be precise — these inform Stage 2 and the re
 - **LOC delta:** rough source LOC vs estimated target LOC.
 - **Anti-pattern coverage:** number of cataloged anti-patterns / estimated total.
 
-## Plan output schema (summary — full schema lives in migration-rules.md §9)
+## Plan output schema
 
-```markdown
-# Migration plan: <input-basename>
+**Canonical schema lives in `config/migration-rules.md` §9.** Do NOT improvise the structure. Required sections in this exact order:
 
-## Source → Target
-- Source framework: ...
-- Source file: ...
-- Target framework: Playwright TypeScript
-- Target file(s): list of files Stage 2 will produce
+1. `## Source framework`
+2. `## Summary` — including `### What bug does this catch?` and `### User-perceivable assertion checklist` subsections
+3. `## Anti-patterns detected` — mandatory H/M/L severity table with KB-IDs (see §9 example)
+4. `## Locator translation table` — confidence column required (high/med/low)
+5. `## Hallucination-defense pins` — one numbered pin per MED/LOW locator with fallback contract
+6. `## Structural changes`
+7. `## Open questions for reviewer`
+8. `## Risk callouts`
+9. `## Expected metrics`
 
-## What bug does this catch?
-<one sentence>
+Anything missing from this list fails the `plan.yml` validation step. Anything ADDED (extra sections you invent) confuses the human reviewer — don't.
 
-## User-perceivable assertion checklist
-<bulleted list — every visible outcome the migrated test must verify>
+### Source-IS-Playwright special case (subtractive migration)
 
-## Anti-pattern catalog
-<table: Line | Snippet | KB ref | Severity | Fix in plan>
-
-## Locator translation table
-<table: Line | Source locator | Role/purpose | Target locator | Confidence | Evidence>
-
-## Structural decisions
-- POM extract: yes/no + file + methods
-- Fixture extract: yes/no + file + scope
-- Split: yes/no + target files
-- Justification per decision
-
-## Open questions
-<Q1, Q2, ...>
-
-## Risk callouts
-<bulleted list>
-
-## Metrics (estimated)
-- Selector quality score: N/M
-- Smell count delta: ...
-- LOC delta: ...
-- Anti-pattern coverage: N/M
-```
+When the source framework is `bad-playwright` (already Playwright, just bad hygiene), this is a SUBTRACTIVE migration: no framework translation, no new top-level imports beyond fixture rewiring, no need to enumerate locators that are already on the canonical hierarchy (only enumerate ones that need an upgrade). The Anti-patterns section carries the load; the Locator translation table may be empty or contain only the upgrade rows. State this explicitly in Source framework section: "bad-playwright — subtractive migration, no framework translation required."
 
 ## Failure modes you must avoid
 

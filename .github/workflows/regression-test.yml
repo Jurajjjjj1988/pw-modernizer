@@ -117,6 +117,7 @@ jobs:
             "## Summary"
             "## Anti-patterns detected"
             "## Locator translation table"
+            "## Hallucination-defense pins"
             "## Structural changes"
             "## Open questions for reviewer"
             "## Risk callouts"

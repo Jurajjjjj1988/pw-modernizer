@@ -570,6 +570,19 @@ The Stage 1 plan is what Claude produces *before* writing code. It is the human-
 
 One paragraph describing what this test exercises in terms of user-perceivable behaviour. No implementation detail — what the test proves, not how. Aim for 2-4 sentences.
 
+The Summary section MUST include two subsections:
+
+### What bug does this catch?
+
+One concrete sentence naming the regression the test exists to prevent. E.g., "Catches a regression where the login form silently accepts bad credentials without an error message." If you cannot articulate one, the test has no clear oracle and Stage 2 should be told.
+
+### User-perceivable assertion checklist
+
+Bullet list of every observable outcome the source test asserts. Stage 2 MUST preserve every item. Format: `- [ ] After {action}: {observable element/text}`. Example:
+- [ ] After valid login: dashboard greeting element is visible
+- [ ] After valid login: greeting contains `"Welcome back, Jane"`
+- [ ] After invalid login: error banner appears with `"Invalid credentials"`
+
 ## Anti-patterns detected
 
 Mandatory table format. Sort by Severity descending (H, M, L), then by Line ascending. One row per smell. Severity codes: **H** = test will flake / break / leak secrets, **M** = test still works but is fragile or unreadable, **L** = stylistic.
@@ -593,6 +606,17 @@ Each KB-ID MUST exist in `config/knowledge-base.md`. If you detect a smell with 
 | `cy.xpath('//div[contains(@class, "modal")]//button')` | `page.getByRole('dialog').getByRole('button', { name: ... })` | low | Original XPath is ambiguous; reviewer needs to specify button |
 
 Confidence levels: `high` = mechanical translation, `med` = inferred from context, `low` = requires reviewer input.
+
+## Hallucination-defense pins
+
+For every locator at MED or LOW confidence in the table above, emit one numbered pin telling Stage 2 the EXACT fallback if reality differs from the plan. This section is mandatory whenever the locator table has any non-`high` rows; absent it, Stage 2 has no contract for what to do when the assumed role/label doesn't materialise.
+
+Format:
+
+1. **{element description}** — assumed `{role/label}`. If DOM contradicts: keep `{original-selector}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`.
+2. **error banner** — assumed `getByRole('alert')`. If DOM lacks `role="alert"`: keep `.error-banner` CSS, comment `'Q5: ARIA role not confirmed'`. Reviewer fallback: ask team to add `role="alert"` to the component.
+
+Why mandatory: arXiv 2410.10628 (test-migration hallucination study, cited in `config/knowledge-base.md` §6) shows that LLM-generated locators fail on real DOMs roughly 1 in 4 times when no fallback is specified. Pins make the failure mode an explicit code path instead of a flake.
 
 ## Structural changes
 

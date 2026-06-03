@@ -1,7 +1,7 @@
 KB-IDs cite anti-pattern entries in `config/knowledge-base.md`. Two formats are accepted during the transition window (see `config/kb-id-migration.md`):
 
 - **OLD format (legacy, still accepted):** `KB-N.N.N` — e.g., `KB-1.1.1`, `KB-1.2.5`. Hand-numbered. Already cited in merged PRs; do not break.
-- **NEW format (preferred for new entries):** `<framework>/<topic>/<name>` — e.g., `pw/timing/hard-wait`, `cy/selector/css-class`, `sel/wait/implicit`. Kebab-case, ESLint-rule style.
+- **NEW format (preferred for new entries):** `<framework>/<topic>/<name>` placeholder pattern. Examples deliberately omitted here to avoid spurious cross-reference failures in `kb-validate.ts`; see `config/kb-id-migration.md` for the canonical list. Kebab-case, ESLint-rule style.
 
 New-format regex (enforced by `scripts/kb-validate.ts`): `^(pw|cy|sel)/[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`.
 

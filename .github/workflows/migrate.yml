@@ -13,6 +13,19 @@ name: Stage 2 — Generate Playwright code
 on:
   pull_request:
     types: [closed]
+  # Manual trigger for re-running Stage 2 against current main without needing
+  # a fresh plan PR cycle. Useful when migrate.yml itself has been patched
+  # (gh run rerun uses the workflow YAML from the original trigger commit).
+  workflow_dispatch:
+    inputs:
+      input_path:
+        description: 'Path to input file or directory (repo-relative)'
+        required: true
+        type: string
+      plan_path:
+        description: 'Path to the approved plan markdown (defaults to outputs/plans/<basename>.md)'
+        required: false
+        type: string
 
 concurrency:
   group: pwm-migrate-${{ github.event.pull_request.number }}
@@ -27,8 +40,9 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     if: |
-      github.event.pull_request.merged == true &&
-      contains(github.event.pull_request.labels.*.name, 'migrator:plan')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.labels.*.name, 'migrator:plan'))
     outputs:
       plan_path: ${{ steps.parse.outputs.plan_path }}
       input_path: ${{ steps.parse.outputs.input_path }}
@@ -41,19 +55,32 @@ jobs:
       - id: parse
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
         shell: bash
         run: |
           set -euo pipefail
-          BODY=$(gh pr view "$PR_NUMBER" --json body --jq .body)
-          INPUT=$(printf '%s\n' "$BODY" | grep -E '^\*\*Input:\*\*' | sed -E 's/.*`([^`]+)`.*/\1/' | head -n1)
-          # INPUT may be a file or a directory (multi-file unit).
-          if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
-            echo "::error::Could not extract input path from plan PR body, or path missing on main"
-            exit 1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            INPUT="${{ inputs.input_path }}"
+            PLAN="${{ inputs.plan_path }}"
+            if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
+              echo "::error::workflow_dispatch input_path '$INPUT' not found"
+              exit 1
+            fi
+            BASE=$(basename "$INPUT")
+            if [ -z "$PLAN" ]; then
+              PLAN="outputs/plans/$BASE.md"
+            fi
+          else
+            BODY=$(gh pr view "$PR_NUMBER" --json body --jq .body)
+            INPUT=$(printf '%s\n' "$BODY" | grep -E '^\*\*Input:\*\*' | sed -E 's/.*`([^`]+)`.*/\1/' | head -n1)
+            # INPUT may be a file or a directory (multi-file unit).
+            if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
+              echo "::error::Could not extract input path from plan PR body, or path missing on main"
+              exit 1
+            fi
+            BASE=$(basename "$INPUT")
+            PLAN="outputs/plans/$BASE.md"
           fi
-          BASE=$(basename "$INPUT")
-          PLAN="outputs/plans/$BASE.md"
           if [ ! -f "$PLAN" ]; then
             echo "::error::Plan file $PLAN not found on main"
             exit 1

@@ -39,6 +39,13 @@ Sorted by Severity (H, M, L), then by Line.
 | `find_elements(By.CSS_SELECTOR, ".modal button")[1]` | `modal.getByRole('button', { name: 'Send invite' })` | medium | Original picks the 2nd modal button positionally — best guess "Send invite" (the primary action). Reviewer should confirm exact button copy. |
 | `By.CSS_SELECTOR, ".modal .field-error"` | `modal.getByText('Please enter a valid email')` | high | Assert on the visible message. |
 
+## Hallucination-defense pins
+
+1. **Invite modal (dialog root)** — assumed `page.getByRole('dialog', { name: 'Invite a new user' })`. If the modal is a styled `<div>` without `role="dialog"` / `aria-label`: keep `By.CSS_SELECTOR, "div.modal-overlay > div.modal"` → `page.locator('div.modal-overlay > div.modal')`, add WHY-comment `'Q-dialog unresolved: dialog role and accessible name'`. Reviewer fallback: ask FE team to add `role="dialog"` + `aria-labelledby` to the modal title, OR use `page.getByTestId('invite-modal')`.
+2. **Modal close button** — assumed `modal.getByRole('button', { name: 'Close' })`. The original picks the 3rd modal button positionally — best guess is the X icon. If the button copy is actually "Cancel" or has no accessible name: keep positional `//div[contains(@class,'modal')]//button[3]` (degraded), add WHY-comment `'Q-close unresolved: 3rd modal button identity'`. Reviewer fallback: confirm the X-icon button's `aria-label` ("Close" vs "Cancel") via DOM, OR ask FE team to set `aria-label="Close"` on the icon button.
+3. **Modal email input** — assumed `modal.getByLabel('Email')`. The original picks `find_elements(...)[0]` positionally; the migration assumes the first input is the Email field and that it has a `<label>`. If the input lacks a label: keep positional `.modal input` first-of-type, add WHY-comment `'Q-modal-email unresolved: label association on first input'`. Reviewer fallback: ask FE team to associate `<label for="invite-email">Email</label>`, OR use `modal.getByPlaceholder('Email')`.
+4. **Send invite button** — assumed `modal.getByRole('button', { name: 'Send invite' })`. The original picks the 2nd modal button positionally — best guess is the primary action. If the button copy is "Invite" or "Submit": keep positional `.modal button` second-of-type, add WHY-comment `'Q-send-invite unresolved: 2nd modal button copy'`. Reviewer fallback: confirm the exact button text via DOM and rename accordingly, OR add `data-testid="send-invite"` and switch to `modal.getByTestId('send-invite')`.
+
 ## Structural changes
 - Extract POM: no — three small modal scenarios; inline reads cleanly.
 - Extract fixture: PARTIAL — the `beforeEach` opens the modal because

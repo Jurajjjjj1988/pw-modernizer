@@ -46,6 +46,18 @@ Sorted by Severity (H, M, L), then by Line.
 | `By.xpath("//section[3]/div/div[2]/span[2]")` | `page.getByRole('definition', { name: 'Order total' })` | low | Reviewer's call — the original XPath is opaque. Best guess: the order total is a `<dd>` paired with `<dt>Order total</dt>` (definition role). If it is just a styled span, use `getByTestId('order-total')`. |
 | `By.cssSelector(".order-confirmation h1")` | `page.getByRole('heading', { level: 1 })` | medium | Assumes there is a single H1 on the confirmation page. If there are multiple, narrow with `name`. |
 
+## Hallucination-defense pins
+
+1. **Shipping name input** — assumed `page.getByLabel('Full name')`. If the input is placeholder-only (no `<label>`): keep `@FindBy(id = "shipping-name")` → `page.locator('#shipping-name')`, add WHY-comment `'Q-labels unresolved: shipping-name label association'`. Reviewer fallback: ask FE team to add `<label for="shipping-name">Full name</label>` OR switch to `page.getByPlaceholder('Full name')`.
+2. **Shipping address input** — assumed `page.getByLabel('Street address')`. If placeholder-only: keep `page.locator('#shipping-address')`, add WHY-comment `'Q-labels unresolved: shipping-address label'`. Reviewer fallback: confirm label copy ("Address" vs "Street address") OR use `page.getByPlaceholder('Street address')`.
+3. **Shipping city input** — assumed `page.getByLabel('City')`. If placeholder-only: keep `page.locator('#shipping-city')`, add WHY-comment `'Q-labels unresolved: shipping-city label'`. Reviewer fallback: `page.getByPlaceholder('City')`.
+4. **Shipping ZIP input** — assumed `page.getByLabel('ZIP / postcode')`. UK terminology is unverified and label association is assumed: keep `page.locator('#shipping-zip')`, add WHY-comment `'Q-labels unresolved: ZIP vs postcode copy'`. Reviewer fallback: confirm the exact label copy in DOM OR use `page.getByPlaceholder(...)`.
+5. **Card number input** — assumed `page.getByLabel('Card number')`. If placeholder-only: keep `page.locator('#card-number')`, add WHY-comment `'Q-labels unresolved: card-number label'`. Reviewer fallback: `page.getByPlaceholder('Card number')`.
+6. **Card expiry input** — assumed `page.getByLabel('Expiry')`. If placeholder-only: keep `page.locator('#card-expiry')`, add WHY-comment `'Q-labels unresolved: card-expiry label'`. Reviewer fallback: confirm copy ("Expiry" vs "Expiration date") OR use `page.getByPlaceholder(...)`.
+7. **Card CVC input** — assumed `page.getByLabel('CVC')`. If placeholder-only: keep `page.locator('#card-cvc')`, add WHY-comment `'Q-labels unresolved: card-cvc label'`. Reviewer fallback: confirm copy ("CVC" vs "CVV" vs "Security code").
+8. **Order total** — assumed `page.getByRole('definition', { name: 'Order total' })` (dt/dd pair). If the markup is just a styled `<span>`: keep `By.xpath("//section[3]/div/div[2]/span[2]")` (degraded), add WHY-comment `'Q-order-total unresolved: markup shape'`. Reviewer fallback: ask FE team to add `data-testid="order-total"` rather than locking the test to brittle positional XPath.
+9. **Confirmation H1** — assumed single H1 on the confirmation page via `page.getByRole('heading', { level: 1 })`. If there are layout-level headings (multiple H1s): keep `By.cssSelector(".order-confirmation h1")` → `page.locator('.order-confirmation h1')`, add WHY-comment `'Q-confirmation-h1 unresolved: multiple H1 risk'`. Reviewer fallback: narrow with `{ name: /thank you/i }` OR scope under `page.getByTestId('order-confirmation')`.
+
 ## Structural changes
 - Extract POM: YES — checkout has 9 distinct locators across 3 steps;
   inlining them in a single test would obscure the user flow. A small

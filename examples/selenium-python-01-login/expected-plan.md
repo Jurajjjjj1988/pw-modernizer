@@ -36,6 +36,14 @@ Sorted by Severity (H, M, L), then by Line.
 | `By.CSS_SELECTOR, ".kpi-card"` (first) | `page.getByRole('region', { name: 'Team members' })` | low | Original tests pick `cards[0]` and assumes it is the Team card. Migrated test picks BY NAME (more robust) but assumes the card has an accessible name. If not, fall back to `page.getByTestId('kpi-team').first()`. |
 | `By.CSS_SELECTOR, ".kpi-value"` (inside team card) | `teamCard.getByTestId('kpi-value')` | medium | KPI values are commonly testid-tagged; reviewer should confirm. |
 
+## Hallucination-defense pins
+
+1. **Email input** — assumed `page.getByLabel('Email')`. If the input lacks a `<label>`: keep `By.ID, "email"` → `page.locator('#email')`, add WHY-comment `'Q-email unresolved: Email label association'`. Reviewer fallback: ask FE team to add `<label for="email">Email</label>` OR switch to `page.getByPlaceholder('Email')`.
+2. **Password input** — assumed `page.getByLabel('Password')`. If the input lacks a `<label>`: keep `page.locator('#password')`, add WHY-comment `'Q-password unresolved: Password label association'`. Reviewer fallback: ask FE team for a `<label>` OR use `page.getByPlaceholder('Password')`.
+3. **Dashboard greeting** — assumed `page.getByRole('heading', { name: 'Welcome back, HR Admin' })`. If the greeting is a styled `<div>` rather than a heading: keep `By.CSS_SELECTOR, ".dashboard-greeting"` → `page.locator('.dashboard-greeting')`, add WHY-comment `'Q-greeting unresolved: heading semantics'`. Reviewer fallback: ask FE team to wrap the greeting in `<h1>`/`<h2>`, OR use `page.getByText('Welcome back, HR Admin')`.
+4. **Team members KPI card** — assumed `page.getByRole('region', { name: 'Team members' })`. If the card has no accessible name or is just a styled `<div>`: keep positional `.kpi-card` first-of-type, add WHY-comment `'Q-kpi-card unresolved: accessible name on card'`. Reviewer fallback: ask FE team to add `aria-labelledby` referencing the card title, OR use `page.getByTestId('kpi-team')`.
+5. **KPI value (inside team card)** — assumed `teamCard.getByTestId('kpi-value')`. If no `data-testid` is present: keep `By.CSS_SELECTOR, ".kpi-value"` scoped under the team card, add WHY-comment `'Q-kpi-value unresolved: testid presence'`. Reviewer fallback: ask FE team to add `data-testid="kpi-value"` on the metric, OR scope by role (`teamCard.getByRole('text')` is unreliable; prefer testid).
+
 ## Structural changes
 - Extract POM: no — only two short tests, both highly readable inline.
 - Extract fixture: YES — `loggedInPage` fixture replaces the implicit

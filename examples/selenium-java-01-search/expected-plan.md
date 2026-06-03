@@ -38,6 +38,12 @@ Sorted by Severity (H, M, L), then by Line.
 | `By.cssSelector(".product-card h3")` (first) | `results.first().getByRole('heading')` | high | Product titles as headings — the standard pattern. |
 | `By.xpath("//div[contains(@class,'search-hint')]/span[2]")` | `page.getByText('Please enter a search term')` | high | The visible message is the assertable thing; the XPath is incidental. |
 
+## Hallucination-defense pins
+
+1. **Site-search input** — assumed `getByRole('searchbox', { name: 'Search products' })`. If the input is not `<input type="search">` or lacks an accessible name: keep `By.id("site-search")` → `page.locator('#site-search')`, add WHY-comment `'Q1 unresolved: searchbox role / accessible name'`. Reviewer fallback: ask FE team to set `type="search"` and `aria-label="Search products"`, OR switch to `page.getByPlaceholder('Search products')`.
+2. **Results grid (visibility proxy)** — assumed `page.getByRole('article').first()` as the visibility check (first article inside the grid). If results render as generic `<div>`s rather than `<article>`: keep `By.cssSelector(".results-grid")` → `page.locator('.results-grid')`, add WHY-comment `'Q2 unresolved: grid item element type'`. Reviewer fallback: confirm cards are `<article>` OR add `data-testid="results-grid"` on the wrapper.
+3. **Product cards** — assumed `page.getByRole('article')`. If cards are generic `<div>`s without role: keep `By.cssSelector(".results-grid .product-card")` → `page.locator('.product-card')`, add WHY-comment `'Q2 unresolved: product-card role'`. Reviewer fallback: switch to `page.getByTestId('product-card')`.
+
 ## Structural changes
 - Extract POM: no — two short tests; POM would be premature.
 - Extract fixture: no — `page` fixture already covers driver setup /

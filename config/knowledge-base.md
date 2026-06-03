@@ -155,26 +155,35 @@ test('important', async ({ page }) => { /* ... */ });
 
 Rationale: `.only` silently skips the entire rest of the suite on CI. Prevents `SilentCoverageDrop`. See [`eslint-plugin-playwright/no-focused-test`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/no-focused-test.md).
 
-#### 1.1.9 Magic numbers (viewport, timeouts, indices)
+#### 1.1.9 Magic numbers AND magic strings (viewport, timeouts, indices, credentials, display names, exact-text assertions)
 
 ```ts
-// ANTI-PATTERN
+// ANTI-PATTERN — numbers AND strings
 await page.setViewportSize({ width: 1366, height: 768 });
 await page.locator('li').nth(7).click();
 test.setTimeout(45000);
+await page.getByLabel('Email').fill('jane.doe@acme.test');
+await page.getByLabel('Password').fill('Sup3rSecret!');
+await expect(greeting).toContainText('Welcome back, Jane');
 ```
 
 ```ts
-// CANONICAL
+// CANONICAL — numbers AND strings both promoted to named constants
 const DESKTOP_VIEWPORT = { width: 1366, height: 768 } as const;
 const PRICING_PLAN_PRO_INDEX = 7;
+const VALID_EMAIL = process.env.TEST_USER_EMAIL ?? throwMissing('TEST_USER_EMAIL');
+const VALID_PASSWORD = process.env.TEST_USER_PASSWORD ?? throwMissing('TEST_USER_PASSWORD');
+const VALID_USER_DISPLAY_NAME = 'Jane';
 
 await page.setViewportSize(DESKTOP_VIEWPORT);
 await page.getByRole('listitem', { name: 'Pro plan' }).click();
 test.setTimeout(45_000);
+await page.getByLabel('Email').fill(VALID_EMAIL);
+await page.getByLabel('Password').fill(VALID_PASSWORD);
+await expect(greeting).toContainText(new RegExp(`Welcome back, ${VALID_USER_DISPLAY_NAME}`));
 ```
 
-Rationale: magic numbers signal "I don't know what this means". Named constants document intent and make refactors safe.
+Rationale: magic numbers AND magic strings both signal "I don't know what this means". Named constants document intent and make refactors safe. **Strings deserve EXTRA caution**: hardcoded credentials are a security smell (committed plaintext); hardcoded display names couple the test to one account's state (a profile rename breaks the test with no product regression signal); hardcoded exact-text assertions break on copy edits. Promote to env vars (for secrets) or named constants (for display strings); prefer regex for greeting/heading assertions that may have copy variations.
 
 #### 1.1.10 Assertion roulette (multiple unrelated expects)
 

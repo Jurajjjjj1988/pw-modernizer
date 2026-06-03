@@ -61,6 +61,12 @@ The login flow's two contracts: (a) the dashboard URL post-redirect is reached o
 | `@FindBy(css = ".error-banner")` | `page.getByRole('alert')` | medium | Error banners are commonly `role="alert"` (live region). If the element is just a styled div, fall back to `page.getByTestId('error-banner')` or `page.getByText('Invalid credentials')`. |
 | `By.cssSelector(".error-banner")` (in `hasError()`) | `await expect(login.errorBanner).toBeVisible()` | high | Same node; the visibility check folds into the assertion. |
 
+## Hallucination-defense pins
+
+1. **Email input** — assumed `page.getByLabel('Email')`. If the input has no `<label for="email">`: keep `@FindBy(id = "email")` → `page.locator('#email')`, add WHY-comment `'Q1 unresolved: Email label association'`. Reviewer fallback: ask FE team to add `<label for="email">Email</label>` OR switch to `page.getByPlaceholder('Email')`.
+2. **Password input** — assumed `page.getByLabel('Password')`. If the input has no `<label for="password">`: keep `page.locator('#password')`, add WHY-comment `'Q1 unresolved: Password label association'`. Reviewer fallback: same as Email — ask FE team for a `<label>` OR use `page.getByPlaceholder('Password')`.
+3. **Error banner** — assumed `page.getByRole('alert')`. If the element is just a styled `<div>` without `role="alert"`: keep `@FindBy(css = ".error-banner")` → `page.locator('.error-banner')`, add WHY-comment `'Q2 unresolved: alert role / aria-live on error banner'`. Reviewer fallback: ask FE team to add `role="alert"` to the live region, OR use `page.getByTestId('error-banner')`, OR fall back to `page.getByText('Invalid credentials')`.
+
 ## Structural changes
 
 - **Extract POM: YES** — kept as `login.page.ts`. The source already had a POM; the migration reshapes it to Playwright conventions (composition over inheritance, lazy locators, no PageFactory). Slim — locators + `open()` + `signIn()` only. No assertions inside the POM.

@@ -79,11 +79,14 @@ A POM owns *locators + actions*. It does not own *assertions* — those are the 
 
 ## 2. Test file template
 
-Every `*.spec.ts` file Migrator emits follows this exact skeleton. Deviations require a comment explaining why.
+Every `*.spec.ts` file Migrator emits follows this skeleton. Deviations require a comment explaining why.
+
+**Import policy (relaxed 2026-06-03 after audit):** The fixture import (`import { test } from "../fixtures/pages.fixture"`) is **PREFERRED** when the spec uses POMs or custom fixtures. For small subtractive bad-Playwright migrations with ≤2 tests and no POM extraction (per plan's Structural changes section), `import { test, expect } from "@playwright/test"` is acceptable. Use the same source of `test` and `expect` to avoid type-mismatch foot-guns.
 
 ```typescript
 // Migrated from cypress on 2026-06-03 by Migrator. See outputs/plans/checkout-flow.md for plan.
 
+// FULL form (POM/fixture extraction): split test + expect imports.
 import { expect } from "@playwright/test";
 
 import { test } from "../fixtures/pages.fixture";

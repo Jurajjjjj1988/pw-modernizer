@@ -83,6 +83,112 @@ jobs:
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
+      # ---------------------------------------------------------------------
+      # Aider repo-map / Cody RAG pattern: before asking the model to generate
+      # new code, hand it a compact inventory of POMs/fixtures/helpers that
+      # already exist. This grounds reuse — Claude tends to invent a new
+      # `LoginPage` even when one is already present. The block is short
+      # (export signatures only, no bodies) to keep token cost low while
+      # preserving the surface the model needs to decide reuse-vs-create.
+      # ---------------------------------------------------------------------
+      - name: Build snippet inventory for Claude grounding
+        id: inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          INV="outputs/.snippets-inventory.md"
+          mkdir -p outputs
+          : > "$INV"
+
+          # Collect candidate files. Use -print0 + sort for deterministic order.
+          mapfile -d '' POMS < <(find outputs/tests/pages -type f -name '*.page.ts' -print0 2>/dev/null | sort -z || true)
+          mapfile -d '' FIXTURES < <(find outputs/tests/fixtures -type f -name '*.fixture.ts' -print0 2>/dev/null | sort -z || true)
+          mapfile -d '' HELPERS < <(find outputs/tests/helpers -type f -name '*.ts' -print0 2>/dev/null | sort -z || true)
+
+          TOTAL=$(( ${#POMS[@]} + ${#FIXTURES[@]} + ${#HELPERS[@]} ))
+
+          if [ "$TOTAL" -eq 0 ]; then
+            {
+              echo "## Existing POMs / fixtures / helpers Claude MUST consider for reuse:"
+              echo ""
+              echo "(No existing POMs/fixtures/helpers — this is the first migration.)"
+            } > "$INV"
+            echo "Inventory empty — first migration."
+            echo "inventory_path=$INV" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "## Existing POMs / fixtures / helpers Claude MUST consider for reuse:" > "$INV"
+          echo "" >> "$INV"
+
+          # Extract exported class name + public method names from a POM file.
+          # Heuristic only — grep-based, intentionally tolerant. The point is
+          # to give Claude a recall hint, not to be a TS parser.
+          extract_pom() {
+            local file="$1"
+            local cls
+            cls=$(grep -Eo 'export[[:space:]]+(default[[:space:]]+)?(abstract[[:space:]]+)?class[[:space:]]+[A-Za-z0-9_]+' "$file" \
+              | head -n1 | awk '{print $NF}')
+            [ -z "$cls" ] && cls="(unknown class)"
+            # public methods: lines that look like `methodName(...)` or `async methodName(...)`
+            # excluding `constructor`, `private`, `protected`.
+            local methods
+            methods=$(grep -E '^[[:space:]]+(public[[:space:]]+)?(async[[:space:]]+)?[a-z_][A-Za-z0-9_]*[[:space:]]*\(' "$file" \
+              | grep -vE '^[[:space:]]+(private|protected|constructor)' \
+              | sed -E 's/^[[:space:]]+(public[[:space:]]+)?(async[[:space:]]+)?([a-zA-Z0-9_]+)[[:space:]]*\(([^)]*)\).*/\3(\4)/' \
+              | awk 'NF' | sort -u | paste -sd', ' -)
+            [ -z "$methods" ] && methods="(no public methods detected)"
+            echo "- $file → $cls { $methods }"
+          }
+
+          # Extract exported fixture name (or default name) from a fixture file.
+          extract_fixture() {
+            local file="$1"
+            # Look for `export const X = ...` or `export const test = base.extend<{X:T}>`.
+            local exports
+            exports=$(grep -Eo 'export[[:space:]]+(const|function|type|interface)[[:space:]]+[A-Za-z0-9_]+' "$file" \
+              | awk '{print $NF}' | sort -u | paste -sd', ' -)
+            # Try to capture the extend<{...}> shape too (just the keys).
+            local shape
+            shape=$(grep -Eo 'extend<\{[^}]*\}>' "$file" | head -n1 \
+              | sed -E 's/extend<\{|\}>//g; s/[[:space:]]+/ /g' || true)
+            [ -z "$exports" ] && exports="(no named exports detected)"
+            if [ -n "$shape" ]; then
+              echo "- $file → exports: $exports; fixture shape: { $shape }"
+            else
+              echo "- $file → exports: $exports"
+            fi
+          }
+
+          # Extract exported function/const names from a helper file.
+          extract_helper() {
+            local file="$1"
+            local exports
+            exports=$(grep -Eo 'export[[:space:]]+(const|function|async[[:space:]]+function|type|interface)[[:space:]]+[A-Za-z0-9_]+' "$file" \
+              | awk '{print $NF}' | sort -u | paste -sd', ' -)
+            [ -z "$exports" ] && exports="(no named exports detected)"
+            echo "- $file → exports: $exports"
+          }
+
+          if [ "${#POMS[@]}" -gt 0 ]; then
+            echo "### POMs" >> "$INV"
+            for f in "${POMS[@]}"; do extract_pom "$f" >> "$INV"; done
+            echo "" >> "$INV"
+          fi
+          if [ "${#FIXTURES[@]}" -gt 0 ]; then
+            echo "### Fixtures" >> "$INV"
+            for f in "${FIXTURES[@]}"; do extract_fixture "$f" >> "$INV"; done
+            echo "" >> "$INV"
+          fi
+          if [ "${#HELPERS[@]}" -gt 0 ]; then
+            echo "### Helpers" >> "$INV"
+            for f in "${HELPERS[@]}"; do extract_helper "$f" >> "$INV"; done
+            echo "" >> "$INV"
+          fi
+
+          echo "Inventory written ($TOTAL files): $INV"
+          echo "inventory_path=$INV" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude (generate stage)
         env:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
@@ -91,6 +197,7 @@ jobs:
           INPUT_PATH: ${{ needs.guard.outputs.input_path }}
           PLAN_PATH: ${{ needs.guard.outputs.plan_path }}
           INPUT_BASENAME: ${{ needs.guard.outputs.input_basename }}
+          INVENTORY_PATH: ${{ steps.inventory.outputs.inventory_path }}
         run: |
           set -euo pipefail
           TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
@@ -100,6 +207,7 @@ jobs:
             sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
             *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
           esac
+          INVENTORY_BLOCK=$(cat "$INVENTORY_PATH")
           PROMPT=$(cat <<EOF
           You are running Stage 2 of the PWmodernizer pipeline.
 
@@ -126,6 +234,17 @@ jobs:
           4. config/knowledge-base.md — anti-pattern + API translations
           5. examples/reference/company-style.spec.ts — style anchor
           6. $INPUT_PATH — the source to migrate
+
+          ## Existing project surface — reuse before inventing
+
+          $INVENTORY_BLOCK
+
+          Hard constraint: If a POM or fixture in the inventory matches the
+          plan's required POMs/fixtures, REUSE it. Do NOT create a duplicate
+          with a slightly different name (e.g. inventory has \`LoginPage\` →
+          do not introduce \`SignInPage\` or \`LoginPageV2\`). If the plan
+          explicitly mandates a new POM that overlaps an existing one,
+          extend the existing file rather than forking.
 
           ## Deliverables (write ONLY these files — paths are LITERAL)
 
@@ -155,23 +274,138 @@ jobs:
             --permission-mode acceptEdits \
             "$PROMPT"
 
-      - name: Typecheck generated tests
+      # ---------------------------------------------------------------------
+      # Aider lint-and-test feedback loop: collect ALL validation failures
+      # in one pass (typecheck + eslint + playwright parse), and if any are
+      # present, hand them back to Claude with the inventory + plan + the
+      # original deliverable contract for ONE bounded surgical-fix pass.
+      # Bound = 1 retry, max-turns = 12 (fewer than the generate budget of
+      # 20 — surgical fixes are smaller than greenfield generation).
+      # ---------------------------------------------------------------------
+      - name: Validate generated code (lint+test+parse)
+        id: validate
         shell: bash
         run: |
-          set -euo pipefail
-          npx tsc --noEmit -p outputs/tests/tsconfig.json
+          set +e
+          ERR="outputs/.lint-errors.md"
+          : > "$ERR"
+          STATUS=0
 
-      - name: ESLint --fix on generated tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx eslint --fix 'outputs/tests/**/*.ts'
+          echo "### tsc --noEmit" >> "$ERR"
+          echo '```' >> "$ERR"
+          TSC_OUT=$(npx tsc --noEmit -p outputs/tests/tsconfig.json 2>&1)
+          TSC_RC=$?
+          echo "$TSC_OUT" >> "$ERR"
+          echo '```' >> "$ERR"
+          if [ "$TSC_RC" -ne 0 ]; then STATUS=1; fi
+          echo "" >> "$ERR"
 
-      - name: Playwright parse check
+          echo "### eslint --fix" >> "$ERR"
+          echo '```' >> "$ERR"
+          # eslint --fix mutates files. After autofix, anything still flagged
+          # is a real lint failure that needs Claude's attention.
+          ESLINT_OUT=$(npx eslint --fix 'outputs/tests/**/*.ts' 2>&1)
+          ESLINT_RC=$?
+          echo "$ESLINT_OUT" >> "$ERR"
+          echo '```' >> "$ERR"
+          if [ "$ESLINT_RC" -ne 0 ]; then STATUS=1; fi
+          echo "" >> "$ERR"
+
+          echo "### playwright test --list" >> "$ERR"
+          echo '```' >> "$ERR"
+          PW_OUT=$(npx playwright test --list outputs/tests/**/*.spec.ts 2>&1)
+          PW_RC=$?
+          echo "$PW_OUT" >> "$ERR"
+          echo '```' >> "$ERR"
+          if [ "$PW_RC" -ne 0 ]; then STATUS=1; fi
+          echo "" >> "$ERR"
+
+          if [ "$STATUS" -eq 0 ]; then
+            # Clean — discard the report so downstream skip-conditions can use
+            # exists-check semantics if they want.
+            rm -f "$ERR"
+            echo "Validation clean."
+          else
+            echo "::warning::Validation found errors — see outputs/.lint-errors.md (will retry once)."
+          fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Run Claude (fix lint errors)
+        if: steps.validate.outputs.status != '0'
+        env:
+          # Same token-prefix routing as the generate step — keep consistent.
+          RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          INPUT_PATH: ${{ needs.guard.outputs.input_path }}
+          PLAN_PATH: ${{ needs.guard.outputs.plan_path }}
+          INPUT_BASENAME: ${{ needs.guard.outputs.input_basename }}
+          INVENTORY_PATH: ${{ steps.inventory.outputs.inventory_path }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
+          PREFIX="${TOKEN:0:12}"
+          case "$PREFIX" in
+            sk-ant-oat*) export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN" ;;
+            sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
+            *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
+          esac
+          INVENTORY_BLOCK=$(cat "$INVENTORY_PATH")
+          ERRORS_BLOCK=$(cat outputs/.lint-errors.md)
+          PROMPT=$(cat <<EOF
+          Stage 2 produced code that failed validation. Read the errors below
+          and fix the generated code while preserving plan adherence.
+
+          ## Plan (must still satisfy)
+
+          $PLAN_PATH
+
+          ## Lint/typecheck/parse errors
+
+          $ERRORS_BLOCK
+
+          ## Existing project surface
+
+          $INVENTORY_BLOCK
+
+          Only modify files under outputs/tests/. Do NOT regenerate the
+          entire spec — surgical fixes only. If a lint error reveals a
+          plan/code conflict (e.g., plan said use getByRole but linter says
+          raw locator), prefer the plan's intent.
+          EOF
+          )
+          claude \
+            --model claude-sonnet-4-6 \
+            --max-turns 12 \
+            --print \
+            --permission-mode acceptEdits \
+            "$PROMPT"
+
+      - name: Re-validate after fix retry
+        if: steps.validate.outputs.status != '0'
         shell: bash
         run: |
           set -euo pipefail
-          npx playwright test --list outputs/tests/**/*.spec.ts
+          FAIL=0
+          echo "::group::tsc"
+          npx tsc --noEmit -p outputs/tests/tsconfig.json || FAIL=1
+          echo "::endgroup::"
+          echo "::group::eslint"
+          npx eslint --fix 'outputs/tests/**/*.ts' || FAIL=1
+          echo "::endgroup::"
+          echo "::group::playwright parse"
+          npx playwright test --list outputs/tests/**/*.spec.ts || FAIL=1
+          echo "::endgroup::"
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error::Validation still failing after 1 retry. Remaining errors:"
+            if [ -f outputs/.lint-errors.md ]; then
+              # Re-emit a fresh copy of remaining errors as annotations.
+              { npx tsc --noEmit -p outputs/tests/tsconfig.json 2>&1 || true; } | sed -n '1,50p' | while IFS= read -r LINE; do
+                echo "::error::$LINE"
+              done
+            fi
+            exit 1
+          fi
+          echo "Validation clean after retry."
 
       - name: AST-diff-not-trivial check
         shell: bash

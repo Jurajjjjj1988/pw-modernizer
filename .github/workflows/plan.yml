@@ -379,12 +379,13 @@ jobs:
             echo "::error::Plan file $PLAN was not produced"
             exit 1
           fi
+          # Hallucination-defense pins demoted to ENCOURAGED per Tam et al. 2024
+          # (forced schema sections degrade reasoning quality). Not in gate.
           for section in \
             "## Source framework" \
             "## Summary" \
             "## Anti-patterns detected" \
             "## Locator translation table" \
-            "## Hallucination-defense pins" \
             "## Structural changes" \
             "## Open questions for reviewer" \
             "## Risk callouts" \

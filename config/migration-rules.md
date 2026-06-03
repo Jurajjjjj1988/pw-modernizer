@@ -612,7 +612,9 @@ Confidence levels: `high` = mechanical translation, `med` = inferred from contex
 
 ## Hallucination-defense pins
 
-For every locator at MED or LOW confidence in the table above, emit one numbered pin telling Stage 2 the EXACT fallback if reality differs from the plan. This section is mandatory whenever the locator table has any non-`high` rows; absent it, Stage 2 has no contract for what to do when the assumed role/label doesn't materialise.
+**ENCOURAGED (not required) — emit when concrete.** For every locator at MED or LOW confidence in the table above, you MAY emit a numbered pin telling Stage 2 the EXACT fallback if reality differs from the plan. If you have nothing concrete to pin (no specific fallback comes to mind beyond what the locator table notes already say), OMIT the section entirely rather than padding it.
+
+**Rationale (Tam et al. 2024, arXiv 2408.02442):** Forcing structured-output sections that the model previously emitted as emergent reasoning degrades quality (Claude 3 Haiku dropped 86.5%→23.4% on GSM8K under JSON-mode). We let the section flourish when relevant and skip when not.
 
 Format:
 

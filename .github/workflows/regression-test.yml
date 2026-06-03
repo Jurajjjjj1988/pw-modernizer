@@ -112,12 +112,13 @@ jobs:
           set -euo pipefail
           # Plan validation step in plan.yml requires these sections. If migration-rules
           # drops one, plan.yml validation breaks silently — gate it here.
+          # Hallucination-defense pins demoted to ENCOURAGED per Tam et al. 2024
+          # (forced schema sections degrade reasoning quality).
           REQUIRED_SECTIONS=(
             "## Source framework"
             "## Summary"
             "## Anti-patterns detected"
             "## Locator translation table"
-            "## Hallucination-defense pins"
             "## Structural changes"
             "## Open questions for reviewer"
             "## Risk callouts"

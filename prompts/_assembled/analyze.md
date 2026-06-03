@@ -62,7 +62,50 @@ For every line (or contiguous block) in the source that exhibits a known anti-pa
 - Severity (block / warn / info)
 - Fix in plan (what Stage 2 should do — be specific, not "improve")
 
-**Be exhaustive.** Hard waits, CSS class selectors, `nth()`, `xpath`, `Thread.sleep`, `time.sleep`, `cy.wait(ms)`, `page.waitForTimeout`, magic numbers, force-clicks, `{force: true}`, ignored exceptions, `try/except: pass`, raw assertions on text without web-first wrappers, `expect(true).toBe(true)`-style placeholder asserts, screenshots used as assertions, hard-coded URLs without baseURL, `cy.visit("http://...")`, hardcoded credentials, missing cleanup, shared state across tests, `beforeAll` for things that should be `beforeEach`, `describe` nesting beyond 2 levels, `it.only` / `test.only` / `fit` / `xit` left in source.
+**Be exhaustive.** Catalog every occurrence of any pattern below — these are forbidden in target output, so any source occurrence becomes a catalog row.
+
+<!-- include-begin: forbidden-patterns -->
+These never appear in committed Playwright TypeScript. The post-generate evaluator scans for them and rejects migrations that include any. Canonical source: `config/migration-rules.md` §5 + §8.
+
+- **Hard waits** — `page.waitForTimeout(N)`, `await new Promise(r => setTimeout(r, …))`, raw `setTimeout`, `sleep`. Replace with web-first assertion on the actual condition (element visible, URL match, specific request).
+- **`force: true` clicks** — bypasses actionability checks; the bug the force was added to suppress is still there. Only allowed when the plan explicitly authorized it with a documented reason.
+- **`any` types** — erases the type system's value. Use `unknown` and narrow, or import Playwright's `Page`, `Locator`, `APIRequestContext`, `BrowserContext`.
+- **`as unknown as X` casts** — either the types are wrong (fix them) or the cast is hiding a bug.
+- **`// @ts-ignore` / `// @ts-expect-error`** without a TODO ticket reference — silences the compiler. If you must, link to a ticket.
+- **`test.only` / `it.only` / `fdescribe` / `fit` / `describe.only`** — skips every other test silently. CI catches this via `forbidOnly`, but it shouldn't reach CI.
+- **`console.log` / `console.debug`** — debug residue. Use the reporter.
+- **Magic numbers** — extract to named constants (other than `0` and `1` in obvious contexts).
+- **Hardcoded URLs** — use `baseURL` from config + relative paths.
+- **Hardcoded credentials** — `.env` + `dotenv` or fixtures, never inline.
+- **`try/catch` wrapping a Playwright action** — either the action is expected to throw (`await expect(action).rejects.toThrow()`) or the catch is hiding a real failure. Same applies to `try/except: pass` in source.
+- **Conditional test logic** — `if (await el.isVisible()) { … }` branching means the test asserts nothing. Split into two tests.
+- **Screenshots as assertions** — `page.screenshot()` with no following `expect()` is not a test.
+- **`.nth(N)` / `:nth-child` / array indexing** into locator collections without a `// TODO: fragile selector — add testid` comment.
+- **Locator chains that bypass auto-retry** — `(await page.locator(…).all())[2]`. Use `.nth(N)` (with comment) or refine the locator.
+- **`page.pause()`** — debug-only API; never in committed code.
+
+<!-- include-end: forbidden-patterns -->
+
+Plus these source-specific anti-patterns that don't appear in target code but must be cataloged from sources: cross-framework hard waits (`Thread.sleep`, `time.sleep`, `cy.wait(ms)`), CSS-class primary selectors, raw `xpath` without aria evidence, tautology asserts (`expect(true).toBe(true)`), shared state across tests (mutable module-level vars, `beforeAll` for things that should be `beforeEach`), `describe` nesting beyond 2 levels, `cy.visit("http://...")` absolute navigation. **Web-first assertion violations** in target Playwright sources are also cataloged here — see the web-first rule below.
+
+<!-- include-begin: web-first-assertions -->
+All assertions must use Playwright's auto-retrying web-first matchers. The auto-retry IS the assertion — bypassing it turns the test into a synchronous probe that races the UI and produces flake.
+
+**CORRECT** — web-first matchers on a `Locator`:
+- `await expect(locator).toBeVisible()`
+- `await expect(locator).toHaveText("…")` / `.toContainText("…")`
+- `await expect(locator).toHaveCount(N)`
+- `await expect(locator).toHaveURL(/…/)` (on `page`)
+- `await expect(locator).toBeEnabled()` / `.toBeDisabled()` / `.toBeHidden()`
+
+**REJECT** — sync probes that bypass auto-retry:
+- `expect(await locator.isVisible()).toBe(true)` — snapshot at one instant, no retry.
+- `expect(await locator.textContent()).toBe("…")` — same.
+- `expect(await locator.count()).toBe(N)` — same.
+
+Raw text assertions without a web-first wrapper, or asserting on a value already resolved with `await`, defeat the entire reason Playwright's `expect` exists. Target rate in migration reports: **1.0** (every assertion is web-first). Canonical source: `config/migration-rules.md` §5.
+
+<!-- include-end: web-first-assertions -->
 
 Every entry must cite a knowledge-base ID. If you spot something that looks like an anti-pattern but isn't in the knowledge base, emit it in a separate **"Unclassified smells"** subsection and ask the reviewer to confirm.
 
@@ -106,13 +149,22 @@ If your locator table contains zero MED/LOW rows (rare, only happens on subtract
 Decide whether to:
 - **Extract a Page Object Model (POM)**. Default: NO for tests under 50 LOC operating on a single page. YES if the test touches ≥3 distinct pages, or if there are repeated locator blocks that would clearly be reused. Cite `migration-rules.md` on POM thresholds. If you propose extracting a POM, name the file (`outputs/tests/pages/<name>.page.ts`) and list the methods + properties it must contain.
 
-**Selenium multi-file unit:** if the source is a DIRECTORY containing multiple files (e.g. `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`), treat the directory as ONE migration unit. The plan describes the whole unit, not file-by-file. The Selenium Page Object Model differs significantly from Playwright's POM and is NOT a 1:1 translation:
-  - `BasePage` (parent class with `driver`, `wait`, shared helpers) — typically has NO target counterpart. Its `WebDriverWait`/`ExpectedConditions` helpers map to Playwright's web-first matchers; its `try-catch-as-flow` helpers (`isVisibleSafe()`) map to `await expect(...).toBeVisible()` / `.toBeHidden()`. Drop the file unless the helpers carry domain logic.
-  - `WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` provider — has NO target counterpart. Playwright's `page` fixture + worker config replace it entirely. Drop the file.
-  - `LoginPage extends BasePage` with `@FindBy` annotations — reshapes into a slim standalone Playwright POM. Composition replaces inheritance; lazy `Locator` fields replace eager `@FindBy` proxies; role-based locators replace id/css/xpath.
-  - The `@Test` methods inside the test class become `test(...)` calls inside one `test.describe(...)` in a single spec file. JUnit `@BeforeEach` / `@AfterEach` become `test.beforeEach` / `test.afterEach` (or fold into the `page` fixture). TestNG `@BeforeClass` / `@AfterClass` become worker-scoped fixtures.
+<!-- include-begin: selenium-multifile-rules -->
+Selenium sources are usually DIRECTORIES, not single files (e.g., `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent `base_test.py` + `pages/*.py` + `conftest.py`). Treat the directory as **one migration unit** — the plan describes the whole unit, not file-by-file.
 
-Document each source file's fate in the plan: KEPT (reshaped), DROPPED (folded into Playwright built-in), or MERGED (combined with another file). Reviewer needs to see why three files become two (or one).
+The Selenium Page Object Model is NOT a 1:1 translation to Playwright. Composition replaces inheritance, lazy `Locator` fields replace eager `@FindBy` proxies, web-first matchers replace `WebDriverWait`/`ExpectedConditions`, the `page` fixture replaces `ThreadLocal<WebDriver>`.
+
+Per-file fate — record each source file as **KEPT** (reshaped), **DROPPED** (folded into a Playwright built-in), or **MERGED** (combined with another file). Reviewer needs to see why three files become two (or one).
+
+- **`BasePage` / `BaseTest`** (parent class with `driver`, `wait`, shared helpers) — typically **DROPPED**. `WebDriverWait` / `ExpectedConditions` helpers map to Playwright web-first matchers (`await expect(...).toBeVisible()` / `.toBeHidden()`); `try-catch-as-flow` helpers (`isVisibleSafe()`) map to the same matchers. KEEP only if helpers carry domain logic.
+- **`WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture** — **DROPPED**. Playwright's `page` fixture + worker config replace it entirely. No target file.
+- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a slim standalone Playwright POM at `outputs/tests/pages/login.page.ts`. `readonly` `Locator` fields, role-based locators, composition over inheritance. No base class.
+- **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the `page` fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures.
+
+Stage 1 emits the per-file fate in the plan's `## Structural changes` section. Stage 2's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory — do not produce target files for DROPPED sources.
+
+<!-- include-end: selenium-multifile-rules -->
+
 - **Extract a fixture**. YES if the test has nontrivial setup (login, seeded data, feature flags). Name the fixture file and list its scope (test / worker).
 - **Split the file**. YES if the source file contains unrelated test cases that should live in separate spec files per `test-organization` conventions (one feature per file). List the target file names.
 - **Inline everything**. The boring, correct default for trivial tests.

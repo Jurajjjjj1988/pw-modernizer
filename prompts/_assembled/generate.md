@@ -43,23 +43,74 @@ If the plan said "Split: yes" and named multiple target files, produce **all** o
 
 If the plan said "POM extract: no" or "Fixture extract: no", **do not produce** those files. Inline the logic in the spec file. Do not gold-plate.
 
-**Selenium multi-file unit (Phase 2):** if the source unit is a directory with multiple files (`BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent with `base_test.py` + `pages/*.py` + `conftest.py`), the plan's "Files dropped" section tells you which source files have NO target counterpart. Typically:
-  - `BasePage` / `BaseTest` → DROPPED (helpers fold into Playwright matchers and the `page` fixture).
-  - `WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture → DROPPED (replaced by Playwright's `page` fixture + project config).
-  - `LoginPage extends BasePage` with `@FindBy` → KEPT but RESHAPED into a slim standalone Playwright POM (`outputs/tests/pages/login.page.ts`) with `readonly` Locator fields, role-based locators, composition over inheritance.
-  - `LoginTest` (`@Test` methods) → KEPT and reshaped into a single spec file with `test.describe(...)` and `test(...)` per method.
+<!-- include-begin: selenium-multifile-rules -->
+Selenium sources are usually DIRECTORIES, not single files (e.g., `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent `base_test.py` + `pages/*.py` + `conftest.py`). Treat the directory as **one migration unit** — the plan describes the whole unit, not file-by-file.
 
-Do not produce target files for DROPPED sources. The migration report's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory.
+The Selenium Page Object Model is NOT a 1:1 translation to Playwright. Composition replaces inheritance, lazy `Locator` fields replace eager `@FindBy` proxies, web-first matchers replace `WebDriverWait`/`ExpectedConditions`, the `page` fixture replaces `ThreadLocal<WebDriver>`.
+
+Per-file fate — record each source file as **KEPT** (reshaped), **DROPPED** (folded into a Playwright built-in), or **MERGED** (combined with another file). Reviewer needs to see why three files become two (or one).
+
+- **`BasePage` / `BaseTest`** (parent class with `driver`, `wait`, shared helpers) — typically **DROPPED**. `WebDriverWait` / `ExpectedConditions` helpers map to Playwright web-first matchers (`await expect(...).toBeVisible()` / `.toBeHidden()`); `try-catch-as-flow` helpers (`isVisibleSafe()`) map to the same matchers. KEEP only if helpers carry domain logic.
+- **`WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture** — **DROPPED**. Playwright's `page` fixture + worker config replace it entirely. No target file.
+- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a slim standalone Playwright POM at `outputs/tests/pages/login.page.ts`. `readonly` `Locator` fields, role-based locators, composition over inheritance. No base class.
+- **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the `page` fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures.
+
+Stage 1 emits the per-file fate in the plan's `## Structural changes` section. Stage 2's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory — do not produce target files for DROPPED sources.
+
+<!-- include-end: selenium-multifile-rules -->
 
 ## Hard constraints (these are non-negotiable)
 
 These are pulled from `migration-rules.md` for emphasis. The migration-rules file is the source of truth — these are the rules that bite most often.
 
-- **Web-first assertions only.** `await expect(locator).toBeVisible()`, `.toHaveText(...)`, `.toHaveCount(...)`, `.toHaveURL(...)`. Never `expect(await locator.isVisible()).toBe(true)` — that bypasses the auto-retrying assertion. Never `expect(await locator.textContent()).toBe(...)`.
-- **No hard waits.** No `page.waitForTimeout(...)`, no `await new Promise(r => setTimeout(r, ...))`, no `setTimeout`, no `sleep`. If the source had a wait, replace it with a web-first assertion that waits for the actual condition (element visible, URL match, network idle on specific request).
-- **No `force: true`** unless the plan explicitly authorized it for a specific click with a documented reason. Default is no force.
-- **Locator priority:**
+**Web-first assertions only.**
 
+<!-- include-begin: web-first-assertions -->
+All assertions must use Playwright's auto-retrying web-first matchers. The auto-retry IS the assertion — bypassing it turns the test into a synchronous probe that races the UI and produces flake.
+
+**CORRECT** — web-first matchers on a `Locator`:
+- `await expect(locator).toBeVisible()`
+- `await expect(locator).toHaveText("…")` / `.toContainText("…")`
+- `await expect(locator).toHaveCount(N)`
+- `await expect(locator).toHaveURL(/…/)` (on `page`)
+- `await expect(locator).toBeEnabled()` / `.toBeDisabled()` / `.toBeHidden()`
+
+**REJECT** — sync probes that bypass auto-retry:
+- `expect(await locator.isVisible()).toBe(true)` — snapshot at one instant, no retry.
+- `expect(await locator.textContent()).toBe("…")` — same.
+- `expect(await locator.count()).toBe(N)` — same.
+
+Raw text assertions without a web-first wrapper, or asserting on a value already resolved with `await`, defeat the entire reason Playwright's `expect` exists. Target rate in migration reports: **1.0** (every assertion is web-first). Canonical source: `config/migration-rules.md` §5.
+
+<!-- include-end: web-first-assertions -->
+
+**Forbidden output patterns — the post-generate evaluator rejects any of these.**
+
+<!-- include-begin: forbidden-patterns -->
+These never appear in committed Playwright TypeScript. The post-generate evaluator scans for them and rejects migrations that include any. Canonical source: `config/migration-rules.md` §5 + §8.
+
+- **Hard waits** — `page.waitForTimeout(N)`, `await new Promise(r => setTimeout(r, …))`, raw `setTimeout`, `sleep`. Replace with web-first assertion on the actual condition (element visible, URL match, specific request).
+- **`force: true` clicks** — bypasses actionability checks; the bug the force was added to suppress is still there. Only allowed when the plan explicitly authorized it with a documented reason.
+- **`any` types** — erases the type system's value. Use `unknown` and narrow, or import Playwright's `Page`, `Locator`, `APIRequestContext`, `BrowserContext`.
+- **`as unknown as X` casts** — either the types are wrong (fix them) or the cast is hiding a bug.
+- **`// @ts-ignore` / `// @ts-expect-error`** without a TODO ticket reference — silences the compiler. If you must, link to a ticket.
+- **`test.only` / `it.only` / `fdescribe` / `fit` / `describe.only`** — skips every other test silently. CI catches this via `forbidOnly`, but it shouldn't reach CI.
+- **`console.log` / `console.debug`** — debug residue. Use the reporter.
+- **Magic numbers** — extract to named constants (other than `0` and `1` in obvious contexts).
+- **Hardcoded URLs** — use `baseURL` from config + relative paths.
+- **Hardcoded credentials** — `.env` + `dotenv` or fixtures, never inline.
+- **`try/catch` wrapping a Playwright action** — either the action is expected to throw (`await expect(action).rejects.toThrow()`) or the catch is hiding a real failure. Same applies to `try/except: pass` in source.
+- **Conditional test logic** — `if (await el.isVisible()) { … }` branching means the test asserts nothing. Split into two tests.
+- **Screenshots as assertions** — `page.screenshot()` with no following `expect()` is not a test.
+- **`.nth(N)` / `:nth-child` / array indexing** into locator collections without a `// TODO: fragile selector — add testid` comment.
+- **Locator chains that bypass auto-retry** — `(await page.locator(…).all())[2]`. Use `.nth(N)` (with comment) or refine the locator.
+- **`page.pause()`** — debug-only API; never in committed code.
+
+<!-- include-end: forbidden-patterns -->
+
+**Locator priority:**
+
+<!-- include-begin: locator-priority -->
 Apply in this order, use the highest-priority option that fits the plan:
 
 1. `page.getByRole(...)` with accessible name — buttons, links, headings, form controls, dialogs.
@@ -74,14 +125,15 @@ Forbidden as primary strategy: `nth()`, `:nth-child`, array indexing into locato
 
 Canonical source: `config/migration-rules.md` §5.
 
+<!-- include-end: locator-priority -->
 
-- **TypeScript strict.** No `any` (use `unknown` and narrow, or define types). No `// @ts-ignore`. No `!` non-null assertions on locators (use `await expect(locator).toBeVisible()` to assert presence then act).
+Additional generator-specific rules (not covered by the forbidden-patterns list):
+
 - **All imports correct.** `import { test, expect } from "@playwright/test"`. Page objects imported by path from `./pages/<name>.page`. Fixtures from `./fixtures/<name>.fixture`. No unused imports.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
-- **No `it.only`, `test.only`, `fit`, `fdescribe`.** These never ship.
-- **No console.log left behind.** Comments only where they explain WHY (per `comment-discipline`).
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
+- **No `!` non-null assertions on locators** — use `await expect(locator).toBeVisible()` to assert presence then act.
 - **Respect the plan's `## Hallucination-defense pins`.** The plan emits one numbered pin per MED/LOW-confidence locator with this contract: "If DOM contradicts: keep `{source locator}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`." Stage 2 MUST NOT promote a MED/LOW locator to a hallucinated `getByRole(...)`/`getByLabel(...)` without the pinned evidence. If you don't have evidence the pin's assumed locator is correct (you're not running against a real DOM in Stage 2), emit the assumed-target locator AND attach the pin's WHY-comment verbatim — this preserves the fallback contract for the reviewer.
 
 ## Execution algorithm (the order you should work in)
@@ -102,6 +154,23 @@ Canonical source: `config/migration-rules.md` §5.
 
 ## Migration report schema
 
+The `## Metrics` section of every report follows the canonical 5-metric schema:
+
+<!-- include-begin: metrics-schema -->
+Five metrics in every migration report. Stage 1 (analyze) emits estimates in the plan's `## Expected metrics` section. Stage 2 (generate) emits actuals in the report's `## Metrics` section. The verifier spot-checks all five — a demonstrably false claim is a `block`-severity finding.
+
+- **Selector quality score** — `X/Y` where `X` = count of locators using `getByRole` + `getByLabel` + `getByPlaceholder` + `getByText` + `getByTestId`, `Y` = total locators used in the migrated test. Target ≥ **0.7**. Report as a ratio (e.g., `8/10 = 0.80`).
+- **Web-first assertion rate** — `X/Y` where `X` = `await expect(locator).<matcher>()` calls, `Y` = total assertions. Target **1.0** (every assertion is web-first). Any non-web-first assertion is a smell.
+- **Smell count delta vs source** — per-category counts with sign, one line each. Categories: hard waits, magic numbers, `force: true`, `nth()`/`:nth-child`, hardcoded URLs, swallowed errors (try/except pass), other (specify). Format: `Hard waits: -4`. Plus a `Forbidden patterns remaining` line — list each with `file:line` or `none`.
+- **AST-diff-not-trivial** — `yes/no`. `yes` = structural changes beyond renaming (locator strategy changed, anti-patterns removed, structure refactored). `no` = mostly identifier renaming, which should NEVER be `yes` after a real plan execution. If `no`, surface loudly — the plan failed to drive real change.
+- **TypeScript strict mode** — `pass/fail`. `pass` = no `any`, no `@ts-ignore`, no unsafe casts (`as unknown as`), all locators typed via Playwright generics.
+
+Units recap: scores and rates are dimensionless ratios in `[0, 1]`. Smell counts are signed integers (negative = improvement). AST-diff and TS strict are booleans.
+
+Canonical source: `config/migration-rules.md` §10. Generator and verifier read the SAME schema — drift between the two is reported as a metric-accuracy discrepancy by the verifier.
+
+<!-- include-end: metrics-schema -->
+
 Write exactly this structure to `outputs/reports/<input-basename>.md`:
 
 ```markdown
@@ -119,14 +188,8 @@ Write exactly this structure to `outputs/reports/<input-basename>.md`:
   - outputs/reports/<input-basename>.md (this file)
 
 ## Metrics
-- Selector quality score: X/Y
-  - X = count of locators using getByRole + getByLabel + getByPlaceholder + getByText + getByTestId
-  - Y = total locators used in the migrated test
-  - Target: ≥ 0.7. Report value: <ratio>
-- Web-first assertion rate: X/Y
-  - X = `await expect(locator).<matcher>()` calls
-  - Y = total assertions
-  - Target: 1.0 (every assertion is web-first)
+- Selector quality score: <X>/<Y> = <ratio> (target ≥ 0.7)
+- Web-first assertion rate: <X>/<Y> = <ratio> (target 1.0)
 - Smell count delta vs source:
   - Hard waits: −N
   - Magic numbers: −N
@@ -136,11 +199,8 @@ Write exactly this structure to `outputs/reports/<input-basename>.md`:
   - try/except: pass (or equivalent swallowed errors): −N
   - Other (specify): ...
 - Forbidden patterns remaining: list each with file:line, or "none"
-- AST-diff-not-trivial: yes/no
-  - yes = structural changes beyond renaming (locator strategy changed, anti-patterns removed, structure refactored)
-  - no = mostly identifier renaming — this should NEVER be yes after a real plan execution
-- TypeScript strict mode: pass/fail
-  - pass = no `any`, no `@ts-ignore`, no unsafe casts, all locators typed via Playwright generics
+- AST-diff-not-trivial: <yes/no>
+- TypeScript strict mode: <pass/fail>
 
 ## Plan adherence
 - Locator translation rows executed: X/Y
@@ -171,7 +231,27 @@ These will get your output rejected on PR review (or worse, merged and break tru
 5. **Producing POM/fixture files when the plan said no.** Don't gold-plate. Single-page 40-LOC test gets a single spec file.
 6. **Forgetting the attribution comment.** First two lines of every generated `.ts` file. Migration auditability depends on it.
 7. **`any` types creeping in.** Especially in fixture definitions. Use `Page`, `Locator`, `APIRequestContext`, `BrowserContext`, etc. — Playwright exports them all.
-8. **Web-first assertion violations.** Any `expect(await locator.<method>()).toBe(...)` instead of `await expect(locator).<matcher>(...)`. The auto-retry is the entire point of Playwright assertions.
+8. **Web-first assertion violations.** Any synchronous-probe assertion is a rejection-class failure — see the rule below (this is critical enough to repeat verbatim from the Hard constraints section):
+
+<!-- include-begin: web-first-assertions (reiteration) -->
+All assertions must use Playwright's auto-retrying web-first matchers. The auto-retry IS the assertion — bypassing it turns the test into a synchronous probe that races the UI and produces flake.
+
+**CORRECT** — web-first matchers on a `Locator`:
+- `await expect(locator).toBeVisible()`
+- `await expect(locator).toHaveText("…")` / `.toContainText("…")`
+- `await expect(locator).toHaveCount(N)`
+- `await expect(locator).toHaveURL(/…/)` (on `page`)
+- `await expect(locator).toBeEnabled()` / `.toBeDisabled()` / `.toBeHidden()`
+
+**REJECT** — sync probes that bypass auto-retry:
+- `expect(await locator.isVisible()).toBe(true)` — snapshot at one instant, no retry.
+- `expect(await locator.textContent()).toBe("…")` — same.
+- `expect(await locator.count()).toBe(N)` — same.
+
+Raw text assertions without a web-first wrapper, or asserting on a value already resolved with `await`, defeat the entire reason Playwright's `expect` exists. Target rate in migration reports: **1.0** (every assertion is web-first). Canonical source: `config/migration-rules.md` §5.
+
+<!-- include-end: web-first-assertions -->
+
 9. **Leaving `// TODO`s without plan Q-id reference.** If a TODO doesn't tie back to a specific plan open question or risk callout, it's noise and someone has to investigate from scratch.
 10. **Test titles starting with "should".** Verb phrase ("opens checkout when cart has items"), per `migration-rules.md` and `test-organization`.
 

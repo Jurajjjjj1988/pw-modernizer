@@ -46,7 +46,27 @@ Be picky on this section. **A wrong locator silently passes against the wrong el
 For every assertion in the generated test:
 - Does it correspond to an assertion in the source? If the generator added an assertion the plan didn't authorize, that's a scope finding (severity warn).
 - Does the source have an assertion that the generator dropped? Cross-reference the plan's "User-perceivable assertion checklist". A missing assertion is a behavioural drift finding (severity block).
-- Is the oracle a web-first assertion? `await expect(locator).toBeVisible()` good. `expect(await locator.isVisible()).toBe(true)` bad — that's a smell the generator should have caught (severity warn).
+- Is the oracle a web-first assertion? Any sync-probe assertion (`expect(await locator.isVisible()).toBe(true)`) is a smell the generator should have caught — severity `warn`. The canonical rule:
+
+<!-- include-begin: web-first-assertions -->
+All assertions must use Playwright's auto-retrying web-first matchers. The auto-retry IS the assertion — bypassing it turns the test into a synchronous probe that races the UI and produces flake.
+
+**CORRECT** — web-first matchers on a `Locator`:
+- `await expect(locator).toBeVisible()`
+- `await expect(locator).toHaveText("…")` / `.toContainText("…")`
+- `await expect(locator).toHaveCount(N)`
+- `await expect(locator).toHaveURL(/…/)` (on `page`)
+- `await expect(locator).toBeEnabled()` / `.toBeDisabled()` / `.toBeHidden()`
+
+**REJECT** — sync probes that bypass auto-retry:
+- `expect(await locator.isVisible()).toBe(true)` — snapshot at one instant, no retry.
+- `expect(await locator.textContent()).toBe("…")` — same.
+- `expect(await locator.count()).toBe(N)` — same.
+
+Raw text assertions without a web-first wrapper, or asserting on a value already resolved with `await`, defeat the entire reason Playwright's `expect` exists. Target rate in migration reports: **1.0** (every assertion is web-first). Canonical source: `config/migration-rules.md` §5.
+
+<!-- include-end: web-first-assertions -->
+
 - Is the assertion asserting on something user-perceivable, or on internal state? "URL contains `/success`" is user-perceivable. "An XHR was fired" usually isn't. Match the original test's intent.
 - Critical: **Would the assertion catch the bug the source was designed to catch?** This is the behavioural-drift check. If the source asserts on text content and the generator swapped to asserting on URL only, the migrated test no longer catches the "form submits but result page is blank" bug class. Flag (severity block).
 
@@ -62,20 +82,30 @@ For every assertion in the generated test:
 ### 4. Forbidden patterns the generator missed
 
 Scan the generated test for anti-patterns catalogued in `config/knowledge-base.md`:
-- Hard waits (`waitForTimeout`, `setTimeout`, `sleep` of any kind)
-- `force: true` clicks without a documented reason
-- `any` types
-- `// @ts-ignore`
-- Magic numbers (other than `0` and `1` in obvious contexts)
-- `test.only`, `it.only`, `describe.only`, `fdescribe`, `fit`
-- `console.log` leftovers
-- Hardcoded URLs (should use baseURL from config)
-- Hardcoded credentials in source (should be env vars or fixtures)
-- Try/catch swallowing errors
-- Screenshots as assertions (`page.screenshot()` followed by no assertion is not a test)
-- Locator chains that bypass auto-retry (`(await page.locator(...).all())[2]`)
 
-Each one found is a finding. Cite the KB ID. Severity: block for the runtime-affecting ones (hard waits, `any`, swallowed errors), warn for the stylistic ones, info for the cosmetic ones.
+<!-- include-begin: forbidden-patterns -->
+These never appear in committed Playwright TypeScript. The post-generate evaluator scans for them and rejects migrations that include any. Canonical source: `config/migration-rules.md` §5 + §8.
+
+- **Hard waits** — `page.waitForTimeout(N)`, `await new Promise(r => setTimeout(r, …))`, raw `setTimeout`, `sleep`. Replace with web-first assertion on the actual condition (element visible, URL match, specific request).
+- **`force: true` clicks** — bypasses actionability checks; the bug the force was added to suppress is still there. Only allowed when the plan explicitly authorized it with a documented reason.
+- **`any` types** — erases the type system's value. Use `unknown` and narrow, or import Playwright's `Page`, `Locator`, `APIRequestContext`, `BrowserContext`.
+- **`as unknown as X` casts** — either the types are wrong (fix them) or the cast is hiding a bug.
+- **`// @ts-ignore` / `// @ts-expect-error`** without a TODO ticket reference — silences the compiler. If you must, link to a ticket.
+- **`test.only` / `it.only` / `fdescribe` / `fit` / `describe.only`** — skips every other test silently. CI catches this via `forbidOnly`, but it shouldn't reach CI.
+- **`console.log` / `console.debug`** — debug residue. Use the reporter.
+- **Magic numbers** — extract to named constants (other than `0` and `1` in obvious contexts).
+- **Hardcoded URLs** — use `baseURL` from config + relative paths.
+- **Hardcoded credentials** — `.env` + `dotenv` or fixtures, never inline.
+- **`try/catch` wrapping a Playwright action** — either the action is expected to throw (`await expect(action).rejects.toThrow()`) or the catch is hiding a real failure. Same applies to `try/except: pass` in source.
+- **Conditional test logic** — `if (await el.isVisible()) { … }` branching means the test asserts nothing. Split into two tests.
+- **Screenshots as assertions** — `page.screenshot()` with no following `expect()` is not a test.
+- **`.nth(N)` / `:nth-child` / array indexing** into locator collections without a `// TODO: fragile selector — add testid` comment.
+- **Locator chains that bypass auto-retry** — `(await page.locator(…).all())[2]`. Use `.nth(N)` (with comment) or refine the locator.
+- **`page.pause()`** — debug-only API; never in committed code.
+
+<!-- include-end: forbidden-patterns -->
+
+Each one found is a finding. Cite the KB ID. Severity: `block` for the runtime-affecting ones (hard waits, `any`, swallowed errors), `warn` for the stylistic ones, `info` for the cosmetic ones.
 
 ### 4b. Hallucination-defense pin compliance
 
@@ -99,16 +129,26 @@ This is the hardest verifier check because it requires understanding intent, not
 
 ### 6. Verify the report's claims
 
-The migration report at `outputs/reports/<input-basename>.md` makes specific claims:
-- Selector quality score
-- Web-first assertion rate
-- Smell count delta
-- AST-diff-not-trivial: yes/no
-- TypeScript strict mode: pass/fail
+The migration report at `outputs/reports/<input-basename>.md` claims values for the canonical 5-metric schema:
 
-Spot-check these. You don't need to be exact — count locators, count assertions, look at the structural diff. If the report claims "AST-diff-not-trivial: yes" but the only changes are import renames and `cy.get` → `page.locator`, the claim is wrong. Finding (severity block).
+<!-- include-begin: metrics-schema -->
+Five metrics in every migration report. Stage 1 (analyze) emits estimates in the plan's `## Expected metrics` section. Stage 2 (generate) emits actuals in the report's `## Metrics` section. The verifier spot-checks all five — a demonstrably false claim is a `block`-severity finding.
 
-If the report claims "selector quality 5/5" but the test uses `locator(".btn-submit")` for the primary action, the count is wrong. Finding (severity warn).
+- **Selector quality score** — `X/Y` where `X` = count of locators using `getByRole` + `getByLabel` + `getByPlaceholder` + `getByText` + `getByTestId`, `Y` = total locators used in the migrated test. Target ≥ **0.7**. Report as a ratio (e.g., `8/10 = 0.80`).
+- **Web-first assertion rate** — `X/Y` where `X` = `await expect(locator).<matcher>()` calls, `Y` = total assertions. Target **1.0** (every assertion is web-first). Any non-web-first assertion is a smell.
+- **Smell count delta vs source** — per-category counts with sign, one line each. Categories: hard waits, magic numbers, `force: true`, `nth()`/`:nth-child`, hardcoded URLs, swallowed errors (try/except pass), other (specify). Format: `Hard waits: -4`. Plus a `Forbidden patterns remaining` line — list each with `file:line` or `none`.
+- **AST-diff-not-trivial** — `yes/no`. `yes` = structural changes beyond renaming (locator strategy changed, anti-patterns removed, structure refactored). `no` = mostly identifier renaming, which should NEVER be `yes` after a real plan execution. If `no`, surface loudly — the plan failed to drive real change.
+- **TypeScript strict mode** — `pass/fail`. `pass` = no `any`, no `@ts-ignore`, no unsafe casts (`as unknown as`), all locators typed via Playwright generics.
+
+Units recap: scores and rates are dimensionless ratios in `[0, 1]`. Smell counts are signed integers (negative = improvement). AST-diff and TS strict are booleans.
+
+Canonical source: `config/migration-rules.md` §10. Generator and verifier read the SAME schema — drift between the two is reported as a metric-accuracy discrepancy by the verifier.
+
+<!-- include-end: metrics-schema -->
+
+Spot-check each. You don't need to be exact — count locators, count assertions, look at the structural diff. If the report claims "AST-diff-not-trivial: yes" but the only changes are import renames and `cy.get` → `page.locator`, the claim is wrong. Finding (severity `block`).
+
+If the report claims "selector quality 5/5" but the test uses `locator(".btn-submit")` for the primary action, the count is wrong. Finding (severity `warn`).
 
 ## Output format
 

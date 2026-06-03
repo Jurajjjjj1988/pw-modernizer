@@ -119,6 +119,7 @@ Decide whether to:
 <!-- include-begin: selenium-multifile-rules -->
 {{include:_fragments/selenium-multifile-rules.md}}
 <!-- include-end: selenium-multifile-rules -->
+
 - **Extract a fixture**. YES if the test has nontrivial setup (login, seeded data, feature flags). Name the fixture file and list its scope (test / worker).
 - **Split the file**. YES if the source file contains unrelated test cases that should live in separate spec files per `test-organization` conventions (one feature per file). List the target file names.
 - **Inline everything**. The boring, correct default for trivial tests.

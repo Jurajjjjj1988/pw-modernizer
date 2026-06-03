@@ -51,6 +51,7 @@ For every assertion in the generated test:
 <!-- include-begin: web-first-assertions -->
 {{include:_fragments/web-first-assertions.md}}
 <!-- include-end: web-first-assertions -->
+
 - Is the assertion asserting on something user-perceivable, or on internal state? "URL contains `/success`" is user-perceivable. "An XHR was fired" usually isn't. Match the original test's intent.
 - Critical: **Would the assertion catch the bug the source was designed to catch?** This is the behavioural-drift check. If the source asserts on text content and the generator swapped to asserting on URL only, the migrated test no longer catches the "form submits but result page is blank" bug class. Flag (severity block).
 

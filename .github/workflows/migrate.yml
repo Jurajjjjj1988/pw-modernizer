@@ -568,6 +568,11 @@ jobs:
     needs: [guard, generate]
     if: needs.generate.outputs.confidence < '0.7'
     runs-on: ubuntu-latest
+    permissions:
+      # createWorkflowDispatch requires actions: write — not granted by the
+      # top-level permissions block which is sized for the generate job.
+      actions: write
+      contents: read
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:

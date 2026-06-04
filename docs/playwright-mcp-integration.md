@@ -1,6 +1,20 @@
 # playwright-mcp DOM grounding — integration brief
 
-> Design doc for the v1.0 Risk-1 closure work: ground Stage 2 locator decisions in real DOM snapshots from the SUT instead of relying on pure mechanical translation from the source test. Status as of 2026-06-04: **not yet implemented**. This doc is the contract the implementation must satisfy.
+> Design doc for the v1.0 Risk-1 closure work: ground Stage 2 locator decisions in real DOM snapshots from the SUT instead of relying on pure mechanical translation from the source test. Status as of 2026-06-04: **Phase 1-5 implemented** (`scripts/dom-ground.ts` + `migrate.yml` step). Phase 6 (Stage 1 enrichment via MCP) remains future work.
+
+## 0. Status snapshot (2026-06-04)
+
+| Phase | Status | Commit |
+|---|---|---|
+| 1. CLI contract + report shape + exit codes | ✅ Shipped | `f2e383c` |
+| 2. ts-morph locator parser (8 method families) | ✅ Shipped | `f2e383c` |
+| 3. Mock probe driver (`mock://` URLs) | ✅ Shipped | `f2e383c` |
+| 4. Live probe driver (chromium.launch, direct Playwright) | ✅ Shipped | this commit |
+| 5. Wire into migrate.yml (opt-in step, soft gate) | ✅ Shipped | this commit |
+| 6. Stage 1 enrichment via @playwright/mcp | ⏸ Future | — |
+| 7. Hard gate + calibration fixtures | ⏸ Future | — |
+
+**Design clarification**: §3-§7 below describe the original MCP-based design. The Phase 4-5 implementation uses Playwright directly (`chromium.launch`) for the Stage 2 validation gate because a Node script doesn't need the MCP layer — MCP was the design choice for *LLM* tool routing (Stage 1 enrichment, Phase 6). Stage 2 validation runs server-side as a CI step and benefits from no MCP indirection.
 
 Cross-references:
 - [`ROADMAP.md`](../ROADMAP.md) — v1.0 "DOM grounding (Risk 1 closure)" section

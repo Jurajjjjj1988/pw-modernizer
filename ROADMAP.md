@@ -86,10 +86,11 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 > **Design brief**: [`docs/playwright-mcp-integration.md`](docs/playwright-mcp-integration.md) (commit `f4edcfb`) — API contract, integration shape, and 7-phase implementation order.
 
-- [x] Phase 1-3 of brief — `scripts/dom-ground.ts` contract surface (CLI, report shape, exit codes), ts-morph locator parser (8 method families), MCP stub with `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing. `npm run check:dom-ground` smoke.
-- [ ] Phase 4 — wire `@playwright/mcp` devDep + replace stub with real `browser_navigate` + `browser_find_element` driver
-- [ ] Phase 5 — wire dom-ground into migrate.yml as a gate between Stage 2 and verify
-- [ ] `playwright-mcp` Stage 1 enrichment: Stage 2 receives a real DOM snapshot from the SUT at `MIGRATION_TARGET_URL` and grounds locator decisions
+- [x] Phase 1-3 of brief — `scripts/dom-ground.ts` contract surface (CLI, report shape, exit codes), ts-morph locator parser (8 method families), mock probe driver with `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing. `npm run check:dom-ground` smoke.
+- [x] Phase 4 — live probe driver via `chromium.launch` (direct Playwright; MCP layer not needed for server-side CI gate)
+- [x] Phase 5 — wire dom-ground into migrate.yml as opt-in step (soft gate, persists `outputs/reports/*-dom-probe.json` for verify)
+- [ ] Phase 6 — `@playwright/mcp` Stage 1 enrichment: Sonnet receives a DOM snapshot during plan generation, locator table annotates each row with DOM evidence
+- [ ] Phase 7 — hard gate + calibration fixtures (3 good URLs + 3 bad URLs against a known SUT). Currently soft gate to avoid false-fails before SUT calibration.
 - [ ] HIGH-confidence locators (currently mechanical mapping only) get an additional check against the DOM before emission
 - [ ] LOW-confidence pin rules become enforced: if DOM evidence contradicts the assumed locator, the fallback is taken AND the WHY-comment is materialized in the output
 

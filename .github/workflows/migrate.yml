@@ -482,6 +482,48 @@ jobs:
           fi
           echo "Output secret scan clean."
 
+      - name: DOM-ground locators against MIGRATION_TARGET_URL (opt-in, no-op if unset)
+        id: dom_ground
+        env:
+          MIGRATION_TARGET_URL: ${{ secrets.MIGRATION_TARGET_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${MIGRATION_TARGET_URL:-}" ]; then
+            echo "dom_probe_status=skipped" >> "$GITHUB_OUTPUT"
+            echo "MIGRATION_TARGET_URL secret unset — dom-ground skipped (no SUT to probe)"
+            exit 0
+          fi
+          # Install Playwright browser binary (needed only when grounding is on).
+          npx playwright install --with-deps chromium
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          REPORT="outputs/reports/${BASE}-dom-probe.json"
+          DG_EXIT=0
+          for f in $(find "outputs/tests/${BASE}" -type f -name '*.spec.ts'); do
+            echo "::group::dom-ground probe for $f"
+            npx tsx scripts/dom-ground.ts \
+              --url "${MIGRATION_TARGET_URL}" \
+              --probe "$f" \
+              --report "$REPORT" \
+              --mode live || DG_EXIT=$?
+            echo "::endgroup::"
+            # Aggregate exit: 0 stays 0; 1 wins over 0; 2 wins over 1
+            if [ "$DG_EXIT" -eq 2 ]; then
+              echo "::warning::dom-ground unreachable for $f (exit 2) — falling back to no-grounding mode"
+              echo "dom_probe_status=unreachable" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+          if [ "$DG_EXIT" -eq 1 ]; then
+            echo "dom_probe_status=fail" >> "$GITHUB_OUTPUT"
+            echo "::warning::dom-ground reports at least one locator did not resolve uniquely — verify stage will read $REPORT"
+          elif [ "$DG_EXIT" -eq 0 ]; then
+            echo "dom_probe_status=pass" >> "$GITHUB_OUTPUT"
+          fi
+          # Soft gate today: we surface the warning + persist the report. Verify
+          # stage consumes it. Hard gate (exit 1 here) ships once we have real
+          # SUT calibration to avoid false-fails on flaky DOM.
+
       - name: Evaluate migration (metrics + confidence)
         id: evaluate
         shell: bash

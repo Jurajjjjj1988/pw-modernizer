@@ -39,6 +39,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Project, SyntaxKind, type CallExpression, type Node } from "ts-morph";
+import { chromium, type Browser, type Page } from "playwright";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 
@@ -181,28 +182,89 @@ function applyMockProbe(url: string): MockMatch {
   return { matches: 0, evidence: "mock: unknown mock scheme, defaulting to no-match" };
 }
 
-function probeLocators(locators: ProbedLocator[], url: string, mode: CliArgs["mode"]): ProbedLocator[] {
-  if (mode === "mock") {
-    if (!url.startsWith("mock://")) {
-      process.stderr.write(
-        `::error::dom-ground: --mode mock requires url to start with mock:// (got ${url})\n`,
-      );
+function describeError(e: unknown): string {
+  if (e instanceof Error) return e.message.split("\n")[0] ?? e.message;
+  if (typeof e === "string") return e;
+  return JSON.stringify(e);
+}
+
+function classifyMatches(matches: number): { verdict: DomVerdict; demotedTo: ProbedLocator["demotedTo"] } {
+  if (matches === 0) return { verdict: "not-found", demotedTo: "low" };
+  if (matches === 1) return { verdict: "resolved-unique", demotedTo: null };
+  return { verdict: "resolved-multiple", demotedTo: "med" };
+}
+
+function mockProbe(locators: ProbedLocator[], url: string): ProbedLocator[] {
+  if (!url.startsWith("mock://")) {
+    process.stderr.write(
+      `::error::dom-ground: --mode mock requires url to start with mock:// (got ${url})\n`,
+    );
+    process.exit(2);
+  }
+  return locators.map((loc) => {
+    const { matches, evidence } = applyMockProbe(url);
+    const { verdict, demotedTo } = classifyMatches(matches);
+    return { ...loc, domVerdict: verdict, domEvidence: evidence, matches, demotedTo };
+  });
+}
+
+const LOCATOR_CALL_RE =
+  /(getByRole|getByLabel|getByTestId|getByText|getByPlaceholder|getByAltText|getByTitle|locator)\((.*)\)$/s;
+
+async function liveProbeOne(page: Page, locatorSrc: string): Promise<{ matches: number; evidence: string }> {
+  const m = LOCATOR_CALL_RE.exec(locatorSrc.replace(/^.*?\.(?=getBy|locator)/, ""));
+  if (!m?.[1]) {
+    return { matches: 0, evidence: "live: could not extract locator method from source" };
+  }
+  const method = m[1];
+  // Forward the literal args verbatim through page.evaluate so we don't lose
+  // option-object semantics (e.g. { name: /foo/i }) when round-tripping a
+  // string. Wrap the page.<method>(args) call inside a function string and
+  // resolve its count() via Playwright API.
+  try {
+    const args = m[2] ?? "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Playwright Page methods are dynamically dispatched here
+    const fn = new Function("page", `return page.${method}(${args}).count();`) as (p: Page) => Promise<number>;
+    const matches = await fn(page);
+    if (matches === 1) {
+      return { matches, evidence: `live: 1 element matched ${method}(${args.slice(0, 60)}...)` };
+    }
+    return { matches, evidence: `live: ${matches} elements matched ${method}(${args.slice(0, 60)}...)` };
+  } catch (e: unknown) {
+    return { matches: 0, evidence: `live: probe threw — ${describeError(e)}` };
+  }
+}
+
+async function liveProbe(locators: ProbedLocator[], url: string): Promise<ProbedLocator[]> {
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    } catch (e: unknown) {
+      process.stderr.write(`::error::dom-ground: failed to reach ${url} — ${describeError(e)}\n`);
       process.exit(2);
     }
-    return locators.map((loc) => {
-      const { matches, evidence } = applyMockProbe(url);
-      const verdict: DomVerdict =
-        matches === 0 ? "not-found" : matches === 1 ? "resolved-unique" : "resolved-multiple";
-      const demotedTo: ProbedLocator["demotedTo"] =
-        verdict === "not-found" ? "low" : verdict === "resolved-multiple" ? "med" : null;
-      return { ...loc, domVerdict: verdict, domEvidence: evidence, matches, demotedTo };
-    });
+    const results: ProbedLocator[] = [];
+    for (const loc of locators) {
+      const { matches, evidence } = await liveProbeOne(page, loc.locator);
+      const { verdict, demotedTo } = classifyMatches(matches);
+      results.push({ ...loc, domVerdict: verdict, domEvidence: evidence, matches, demotedTo });
+    }
+    return results;
+  } finally {
+    if (browser) await browser.close();
   }
-  // live mode: not yet wired (Phase 4 lands @playwright/mcp dependency).
-  process.stderr.write(
-    `::error::dom-ground: live mode requires @playwright/mcp; not yet bundled. See docs/playwright-mcp-integration.md §7 Phase 4.\n`,
-  );
-  process.exit(2);
+}
+
+async function probeLocators(
+  locators: ProbedLocator[],
+  url: string,
+  mode: CliArgs["mode"],
+): Promise<ProbedLocator[]> {
+  if (mode === "mock") return mockProbe(locators, url);
+  return liveProbe(locators, url);
 }
 
 function summarize(results: ProbedLocator[]): Pick<ProbeReport, "totalLocators" | "resolvedUnique" | "resolvedMultiple" | "notFound" | "skipped"> {
@@ -222,7 +284,7 @@ function decideExit(report: ProbeReport): number {
   return 0;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseCliArgs();
   const locators = extractLocators(args.probe);
   if (locators.length === 0) {
@@ -230,7 +292,7 @@ function main(): void {
       `::warning::dom-ground: 0 locators found in ${args.probe}. Probably not a spec file.\n`,
     );
   }
-  const probed = probeLocators(locators, args.url, args.mode);
+  const probed = await probeLocators(locators, args.url, args.mode);
   const report: ProbeReport = {
     timestamp: new Date().toISOString(),
     url: args.url,
@@ -251,4 +313,4 @@ function main(): void {
   process.exit(decideExit(report));
 }
 
-main();
+await main();

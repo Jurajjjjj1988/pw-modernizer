@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>PWmodernizer Metrics</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+<main class="max-w-6xl mx-auto p-6 space-y-6">
+  <header class="flex flex-col gap-1">
+    <h1 class="text-2xl font-bold">PWmodernizer metrics dashboard</h1>
+    <p id="status" class="text-sm text-slate-600">Loading…</p>
+  </header>
+  <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-semibold mb-2">Per source framework</h2>
+      <canvas id="frameworkChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-semibold mb-2">Verdict distribution</h2>
+      <canvas id="verdictChart" height="200"></canvas>
+    </div>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Confidence trend (last 30)</h2>
+    <canvas id="trendChart" height="120"></canvas>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Top 10 KB-IDs cited</h2>
+    <table class="w-full text-sm">
+      <thead><tr class="text-left border-b"><th class="py-1">KB-ID</th><th class="py-1">Citations</th></tr></thead>
+      <tbody id="kbTable"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+(async () => {
+  const res = await fetch('/api/data');
+  const data = await res.json();
+  const fmtTs = (t) => t ? new Date(t * 1000).toISOString().slice(0, 19).replace('T', ' ') : '(none)';
+  document.getElementById('status').textContent =
+    'Last updated: ' + fmtTs(data.generatedAtUnix) + ' · ' +
+    data.summary.totalMigrations + ' migrations / ' +
+    data.summary.totalPlans + ' plans / ' +
+    data.summary.totalVerifications + ' verifications';
+  new Chart(document.getElementById('frameworkChart'), {
+    type: 'bar',
+    data: {
+      labels: data.perFramework.map((f) => f.framework),
+      datasets: [
+        { label: 'Count', data: data.perFramework.map((f) => f.count), backgroundColor: '#3b82f6', yAxisID: 'y' },
+        { label: 'Avg confidence', data: data.perFramework.map((f) => f.avgAggregateConfidence), backgroundColor: '#10b981', yAxisID: 'y1' },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true, position: 'left', title: { display: true, text: 'count' } },
+        y1: { beginAtZero: true, position: 'right', max: 1, title: { display: true, text: 'confidence' }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+  new Chart(document.getElementById('verdictChart'), {
+    type: 'pie',
+    data: {
+      labels: data.verdicts.map((v) => v.verdict + ' (' + v.pct.toFixed(1) + '%)'),
+      datasets: [{ data: data.verdicts.map((v) => v.count), backgroundColor: ['#10b981', '#f59e0b', '#ef4444'] }],
+    },
+  });
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels: data.confidenceTrend.map((p) => p.inputBasename),
+      datasets: [{ label: 'Aggregate confidence', data: data.confidenceTrend.map((p) => p.aggregateConfidence), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.15)', fill: true, tension: 0.25 }],
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true, max: 1 } } },
+  });
+  const tbody = document.getElementById('kbTable');
+  if (data.topKbIds.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" class="py-2 text-slate-500">No plans recorded yet.</td></tr>';
+  } else {
+    tbody.innerHTML = data.topKbIds
+      .map((kb) => '<tr class="border-b"><td class="py-1 font-mono">' + kb.kbId + '</td><td class="py-1">' + kb.count + '</td></tr>')
+      .join('');
+  }
+})();
+</script>
+</body>
+</html>

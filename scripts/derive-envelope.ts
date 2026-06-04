@@ -81,7 +81,7 @@ function splitSections(md: string): Map<string, string> {
   let currentBody: string[] = [];
   for (const line of lines) {
     const h2 = /^## (.+?)\s*$/.exec(line);
-    if (h2 && h2[1]) {
+    if (h2?.[1]) {
       if (currentHeader !== null) {
         sections.set(currentHeader, currentBody.join("\n").trim());
       }
@@ -188,13 +188,13 @@ function parseStructuralChanges(body: string): { requiredPOMs: string[]; require
   for (const line of body.split("\n")) {
     const trimmed = line.trim().replace(/^[-*]\s*\*?\*?/, "").replace(/\*\*/g, "");
     const pomMatch = /Extract POM:\s*yes\s*[—-]?\s*([A-Za-z0-9_./-]+(?:\.page\.ts)?)/i.exec(trimmed);
-    if (pomMatch && pomMatch[1]) {
-      const name = pomMatch[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    if (pomMatch?.[1]) {
+      const name = pomMatch[1].toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/-+/g, "-").replaceAll(/^-|-$/g, "");
       requiredPOMs.push(`outputs/tests/pages/${name}.page.ts`);
     }
     const fixMatch = /Extract fixture:\s*yes\s*[—-]?\s*([A-Za-z0-9_./-]+(?:\.fixture\.ts)?)/i.exec(trimmed);
-    if (fixMatch && fixMatch[1]) {
-      const name = fixMatch[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    if (fixMatch?.[1]) {
+      const name = fixMatch[1].toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/-+/g, "-").replaceAll(/^-|-$/g, "");
       requiredFixtures.push(`outputs/tests/fixtures/${name}.fixture.ts`);
     }
   }
@@ -205,7 +205,7 @@ function parseExpectedMetrics(body: string): Envelope["expectedMetrics"] {
   const get = (label: RegExp): string | null => {
     for (const line of body.split("\n")) {
       const m = label.exec(line);
-      if (m && m[1]) return m[1].trim();
+      if (m?.[1]) return m[1].trim();
     }
     return null;
   };
@@ -269,7 +269,7 @@ function parseScenarios(summaryBody: string): ScenarioEntry[] {
     if (inChecklist && /^##/.test(line)) break;
     if (inChecklist) {
       const m = /^-\s*\[\s*[x ]\s*\]\s+(.+)$/i.exec(line.trim());
-      if (m && m[1]) assertions.push(m[1].trim());
+      if (m?.[1]) assertions.push(m[1].trim());
     }
   }
   if (assertions.length === 0) {

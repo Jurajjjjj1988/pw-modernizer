@@ -102,9 +102,10 @@ jobs:
           # KB and its own Open-questions section. Catches Cleanlab-style noisy
           # few-shot rot: a pin citing Q-greeting / KB-1.1.99 silently teaches
           # Stage 1 to hallucinate the same dangling reference.
-          # WARN mode per Sakasegawa 2026 (uncalibrated validator should not gate
-          # PRs). Switch to --strict in v0.5 once fixtures are calibrated.
-          npx tsx scripts/validate-examples.ts --warn
+          # PROMOTED to --strict 2026-06-04: calibration fixtures (3+3) are
+          # green (tools/calibrate-pipeline/), validator is trustworthy enough
+          # to block on real findings. Corpus baseline: 12 plans, 0 findings.
+          npx tsx scripts/validate-examples.ts --strict
 
       - name: Prompt files non-empty
         shell: bash

@@ -96,17 +96,21 @@ inputs/bad-playwright/foo.spec.ts
 |---|---|---|
 | `npm run quickstart` | 9-check onboarding (Node, deps, types, KB, examples, fragments, envelope, calibration) with hints | First time setup; debugging "why does CI fail?" |
 | `npm run smoke` | Same as CI: typecheck + 6 validators + calibration + eslint. Silent on success | Pre-push, every commit |
-| `npm run validate:all` | 5 validators + 24 calibration fixtures | When touching scripts/ or examples/ |
+| `npm run validate:all` | 6 validators + 40 calibration fixtures | When touching scripts/ or examples/ |
 | `npm run check:kb` | KB ID uniqueness + references resolve | When editing knowledge-base.md or expected-plan.md |
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve + `prompts/_assembled/` is in sync with source | When editing prompts/_fragments/ or prompts/*.md (stale detection catches forgotten `npm run assemble-prompts`) |
 | `npm run check:envelope` | Canonical envelope schema sanity | When editing scripts/plan-envelope.schema.json |
 | `npm run check:derive` | derive-envelope works on every example plan (12/12 roundtrip) | When editing scripts/derive-envelope.ts or example expected-plan.md |
 | `npm run check:coverage` | plan-vs-code coverage check (LPW closure) — verifies envelope scenario IDs appear as `// plan:scenario=X` comments in code | When editing scripts/plan-code-coverage.ts or testing a Stage 2 output locally |
+| `npm run check:envelope:code` | Unified envelope `--code` mode — cross-references `// plan:scenario=<id>` pins in `.spec.ts` against envelope scenarios | When editing scripts/plan-envelope-validate.ts |
+| `npm run check:dom-ground` | DOM grounding smoke (mock URL, 8 locators from canonical good output) | When editing scripts/dom-ground.ts |
+| `npm run ast-diff:sweep` | Threshold-sensitivity sweep across 10 AST-diff calibration fixtures + safe-band report | When considering retuning the 5% threshold |
+| `npm run stress:test-stage0` | Run Stage 0 sanity simulator against 8 adversarial fixtures (empty/huge/encoding/credentials) | When editing the Stage 0 sanity gate in plan.yml |
 | `npm run build-inventory` | Builds `outputs/.snippets-inventory.md` from existing POMs/fixtures/helpers (Aider/Cody pattern) | Debugging Stage 2 inventory output |
 | `npm run metrics:report` | Reads `outputs/.metrics.db` and prints cross-run trends (per-framework counts, KB-ID frequency, verdict distribution, confidence sparkline) | Inspecting pipeline trends after ≥3 real runs |
 | `npm run metrics:export` | Exports the same data as JSON | CI artifact upload, future dashboard backend |
-| `npm run dashboard` | Starts a read-only web UI at http://localhost:8000 reading `outputs/.metrics.db` (3 charts + KB-ID table) | Visual review of cross-run metrics |
+| `npm run dashboard` | Starts a read-only web UI at http://localhost:8000 reading `outputs/.metrics.db` (5 charts including per-framework stacked verdict + multi-line confidence trend + "Migrator quality by framework" table) | Visual review of cross-run metrics |
 | `npm run calibrate` | Run each validator against 3 good + 3 bad fixtures | After validator code changes |
 | `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
 | `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
@@ -149,17 +153,22 @@ Without this, START OVER verdicts only label the PR (`verify:start-over`); a rev
 ```
 PWmodernizer/
 ├── .github/workflows/
-│   ├── plan.yml             # Stage 1 — generates migration plan markdown
-│   ├── migrate.yml          # Stage 2 — generates Playwright TS code
-│   ├── verify.yml           # Multi-model consensus (only on low-confidence)
-│   └── lint-output.yml      # Standalone eslint on outputs/tests/**
+│   ├── plan.yml                  # Stage 1 — generates migration plan markdown
+│   ├── migrate.yml               # Stage 2 — generates Playwright TS code (+ dom-ground opt-in)
+│   ├── verify.yml                # CANDOR 2-agent verify (SDET + Code Review + tally)
+│   ├── lint-output.yml           # Standalone eslint on outputs/tests/**
+│   ├── regression-test.yml       # CI matrix: 10 parallel checks (45-60s vs 5min sequential)
+│   ├── regression-semantic.yml   # Manual pre-release semantic regression sweep
+│   └── regenerate-dispatch.yml   # /regenerate slash-command handler
 ├── config/
 │   ├── migration-rules.md   # Target style + structure contract (~4,300 words, 85 rules)
-│   └── knowledge-base.md    # Anti-pattern catalog + API translation tables (~7,200 words, 52 anti-patterns, 155 mappings)
+│   └── knowledge-base.md    # Anti-pattern catalog + API translation tables (98 KB IDs across 4 frameworks; pw + cy 50 entries each, sel 25)
 ├── prompts/
 │   ├── analyze.md           # Stage 1 system prompt
 │   ├── generate.md          # Stage 2 system prompt
-│   └── verify.md            # Verify-stage system prompt
+│   ├── verify-sdet.md       # Verify SDET sub-agent (CANDOR pattern)
+│   ├── verify-code-review.md # Verify Code Review sub-agent (CANDOR pattern)
+│   └── verify.md            # Legacy single-Opus verify prompt (kept for migration reference)
 ├── inputs/
 │   ├── bad-playwright/      # Step 1 — focus
 │   ├── cypress/             # Step 2 — content ready, gate closed
@@ -175,15 +184,35 @@ PWmodernizer/
 │   │   └── company-style.spec.ts  # The gold-standard target Claude anchors on
 │   ├── bad-playwright-01-flaky-waits/   # input + expected-output + expected-plan
 │   ├── bad-playwright-02-nth-selectors/
-│   ├── cypress-01-login-flow/           # Step 2 reference (not yet active)
+│   ├── bad-playwright-03-silent-conditionals/
+│   ├── bad-playwright-04-missing-await/
+│   ├── bad-playwright-05-force-clicks/
+│   ├── cypress-01-login-flow/           # Step 2 reference
 │   ├── cypress-02-form-validation/
-│   ├── selenium-java-01-search/         # Step 3 reference (not yet active)
+│   ├── cypress-03-intercept-stubbing/
+│   ├── cypress-04-session-auth/
+│   ├── cypress-05-conditional-and-jquery/
+│   ├── selenium-java-01-search/         # Step 3 reference
 │   ├── selenium-java-02-checkout/
+│   ├── selenium-java-03-multifile-login/
 │   ├── selenium-python-01-login/
 │   └── selenium-python-02-modal-interaction/
 ├── scripts/
-│   ├── evaluate.ts                  # Emits per-migration metrics report
-│   └── ast-diff-trivial-check.ts    # Fails the build on cosmetic-only migrations
+│   ├── evaluate.ts                  # Emits per-migration metrics report + confidence v2 (5-signal)
+│   ├── ast-diff-trivial-check.ts    # Zhang-Shasha tree-edit-distance, identifier normalization
+│   ├── ast-diff-threshold-sweep.ts  # Threshold sensitivity sweep across calibration fixtures
+│   ├── dom-ground.ts                # Probes locators against SUT (mock + live modes)
+│   ├── plan-envelope-validate.ts    # Strict schema + --code mode (pin verification)
+│   ├── plan-code-coverage.ts        # LPW closure — scenario IDs ↔ plan:scenario pins
+│   ├── derive-envelope.ts           # Backfill envelope from markdown plan (safety net)
+│   ├── build-inventory.ts           # SHA-256 cached POM/fixture/helper enumeration
+│   ├── kb-validate.ts               # KB ID uniqueness + reference resolution
+│   ├── validate-examples.ts         # Examples KB-ID cross-check (strict)
+│   ├── assemble-prompts.ts          # Expands {{include:_fragments/...}} markers
+│   ├── metrics-{report,export}.ts   # SQLite cross-run aggregates
+│   ├── dashboard.ts + dashboard.html # Web UI (5 charts, per-framework bins)
+│   ├── semantic-regression-check.ts # 5-axis prompt-tuning regression sweep
+│   └── test-stage0.ts                # Local Stage 0 sanity simulator
 ├── tsconfig.json            # Strict TS root config (scripts)
 ├── outputs/tests/tsconfig.json  # Strict TS for generated tests
 ├── .eslintrc.cjs            # eslint-plugin-playwright + TS strictness
@@ -275,6 +304,10 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 - **SQLite metrics persistence** — every Stage 1 / Stage 2 / verify run logs to `outputs/.metrics.db` (3 tables: migrations, plans, verifications). `npm run metrics:report` shows cross-run trends; `npm run dashboard` opens a read-only web UI; `npm run metrics:export` emits JSON for downstream tooling.
 - **Semantic regression workflow** — manually-triggered `regression-semantic.yml` samples 3-5 examples, runs real Claude analyze stage against each, compares to `expected-plan.md` via 5 axes (anti-pattern total, KB-ID coverage, locator total, confidence histogram, required sections). Catches "prompt change degraded quality" before release.
 - **Parallel regression-test CI** — 13 sequential gates → 10 matrix entries with shared npm cache. Estimated runtime ~5 min → ~45-60s (5-10× speedup).
+- **CANDOR multi-agent verify** (commit `3993b01`) — verify stage splits a single Opus call into two parallel sub-agents: SDET (locators / web-first / flakiness / pin-compliance) and Code Review (TS strict / KB-ID grounding / structural conformance). Each emits an independent verdict; a tally job aggregates 2/2 SHIP IT → SHIP IT, 1/2 → FIX FIRST, 0/2 → START OVER. A missing or unparseable sub-report counts as START OVER for that lens (conservative fallback). Per CANDOR / ai-debug-accelerator pattern.
+- **Plan envelope hard enforcement** (commit `1c46c14`) — Stage 1 mandates BOTH markdown plan AND JSON envelope; Stage 2 validates the envelope BEFORE reading the plan body (fail-fast contract); generated `.spec.ts` must carry `// plan:scenario=<id>` pins on every test block, verified by `plan-envelope-validate.ts --code`. `derive-envelope` safety net catches Stage 1 emission misses.
+- **Per-framework quality bins** (commit `200dabc`) — SQLite schema carries a `source_framework` dimension; dashboard adds stacked verdict-by-framework chart, multi-line confidence trend per framework, and a sorted "Migrator quality by framework" table so the next prompt-tuning iteration knows which framework is the weakest link.
+- **DOM grounding Phase 1-7b** (commits `f2e383c`, `e41a73c`, latest) — `scripts/dom-ground.ts` probes every `getByRole/Label/TestId/Text/Placeholder/AltText/Title/locator` call in generated specs against the SUT at `MIGRATION_TARGET_URL`. Mock probe via `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing; live probe via direct `chromium.launch`. Wired into migrate.yml as opt-in step; `DOM_GROUND_STRICT=true` repo var promotes soft → hard gate. 6/6 calibration fixtures.
 
 ## Contributing
 

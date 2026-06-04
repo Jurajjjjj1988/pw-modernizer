@@ -13,6 +13,7 @@
 
 | Doc | What it covers |
 |---|---|
+| [`walkthrough.md`](walkthrough.md) | End-to-end walkthrough of a real migration using PR #3 as the running example. |
 | [`troubleshooting.md`](troubleshooting.md) | Known failure modes + the exact fix. Updated when a real-world bug surfaces. |
 | [`baselines.md`](baselines.md) | Measured smoke + calibrate + per-validator wall-clock timings. Use to spot regressions. |
 

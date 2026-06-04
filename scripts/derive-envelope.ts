@@ -352,6 +352,12 @@ function main(): void {
     console.error("Usage: derive-envelope --plan <plan.md> --out <envelope.json>");
     process.exit(2);
   }
+  try {
+    readFileSync(values.plan, "utf-8");
+  } catch {
+    process.stderr.write(`::error::derive-envelope: --plan not found at ${values.plan}\n`);
+    process.exit(1);
+  }
   const md = readFileSync(values.plan, "utf-8");
   const inputBasename = basename(values.plan).replace(/\.md$/, "");
   const envelope = deriveEnvelope(md, inputBasename);

@@ -1,0 +1,61 @@
+{
+  "inputBasename": "pw-deeply-nested-describe.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "disables Save when display name is empty @edge",
+      "userAction": "Navigate to /account/settings/profile, enter display name edit mode, clear the display name input, and verify the Save button is disabled.",
+      "expectedAssertions": [
+        "Save button (getByRole button /save/i) is disabled after display name input is cleared"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "enables Save when display name is non-empty @positive",
+      "userAction": "Navigate to /account/settings/profile, enter display name edit mode, type a non-empty display name, and verify the Save button is enabled.",
+      "expectedAssertions": [
+        "Save button (getByRole button /save/i) is enabled after display name input is filled with a non-empty value"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.getByRole('button', { name: /edit display name/i })",
+      "target": "page.getByRole('button', { name: /edit display name/i })",
+      "confidence": "high",
+      "notes": "Already canonical; specific text is unlikely to collide with other buttons on the page."
+    },
+    {
+      "original": "page.getByLabel(/display name/i)",
+      "target": "page.getByLabel(/display name/i)",
+      "confidence": "high",
+      "notes": "Already canonical; label-based match is stable on a profile settings page."
+    },
+    {
+      "original": "page.getByRole('button', { name: /save/i })",
+      "target": "page.getByRole('button', { name: /save/i })",
+      "confidence": "med",
+      "notes": "Profile settings page may render multiple Save buttons (one per section). Consider anchoring to /^save$/i or scoping to the display-name section container. See pin 1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Display name editor Save button",
+      "assumedLocator": "page.getByRole('button', { name: /save/i })",
+      "sourceLocator": "page.getByRole('button', { name: /save/i })",
+      "whyComment": "Q1 unresolved: /save/i may match sibling-section Save buttons on the profile page — assuming only one is visible in display-name edit mode.",
+      "reviewerFallback": "Ask frontend team to add data-testid=\"display-name-save\" and replace with page.getByTestId('display-name-save'), or scope the locator to its parent container."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -2,
+    "locDelta": -13,
+    "antiPatternCoverage": "2/2"
+  }
+}

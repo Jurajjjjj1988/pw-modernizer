@@ -6,6 +6,38 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
+### Added (2026-06-04 multi-agent supercycle — 99 total commits)
+
+**Batch 3 (2 agents): stress tests + auto-regen**
+- Stress test fixtures (`716815a` + `2ad6882`): 8 adversarial inputs under `inputs/_stress/` + `scripts/test-stage0.ts` simulator. Verdict matrix: 4 REJECT + 2 WARN + 2 PASS. Risk 4 thoroughly validated.
+- Auto-regen on START OVER (`8d48060`): verify.yml fires `repository_dispatch type: regenerate-plan` automatically, with `regen-attempt:N` counter cap 3, then `regen-attempt:max-reached`. Closes loop without manual `/regenerate`.
+
+**Batch 2 (3 agents): dashboard + regression-semantic + CI speedup**
+- Web dashboard (`f8994b3`): `scripts/dashboard.ts` 240 LOC + HTML 90 LOC. Vanilla http + Chart.js/Tailwind CDN. 3 charts + KB-ID frequency table. `npm run dashboard`.
+- Semantic regression workflow (`a4c0c26`): `.github/workflows/regression-semantic.yml` 348 LOC + `scripts/semantic-regression-check.ts` 440 LOC. Manual pre-release sweep with 5 comparison axes. Closes v0.5 "Semantic regression" ROADMAP item.
+- CI matrix parallelization (`3d4065e`): regression-test 13 sequential → 10 matrix entries. Runtime ~5min → ~45-60s.
+
+**Batch 1 (5 agents): tree-sitter + SQLite + LPW + build-inventory + workflow wiring**
+- tree-sitter Java/Python AST diff (`666332a`): Risk 1 v2 closure. Real Zhang-Shasha tree-edit-distance for `.java`/`.py`. Calibration 6/6 → 10/10.
+- SQLite metrics (`bef0e84` + `325101a`): MetricsDB 3 tables wired into all 3 stages. `npm run metrics:{report,export}`.
+- Plan-vs-code coverage (`5f9cff7`): arXiv 2411.14503 LPW closure. Calibration 6/6.
+- build-inventory extraction (`01f907d`): 95 LOC inline bash → 417 LOC ts-morph script.
+- Integration (`be80841`): +5 devDeps + +4 npm scripts + migrate.yml wires new steps.
+
+**Polish & docs (between/around batches):**
+- assemble-prompts stale detection (`9f8571b`)
+- kb-validate scope → outputs/plans (`e08e424`)
+- validate:all matches CI strict (`a7fc8f7`)
+- smoke includes eslint (`c69ce24`)
+- npm run quickstart 10-check onboarding (`3887bd1` + `569427f`)
+- README badges + Local commands table + 6 new research-backed defenses (`f9931ce` + `9278def` + `1be8a3d`)
+- CONTRIBUTING + CODEOWNERS + PR template + 2 issue templates (`ac2f953` + `21d9f0b` + `4a35198`)
+- File-existence guards across evaluate/derive/verify (`4faee68` + `84c105d` + `9bcc590`)
+- Confidence formula v2 (5-signal output-aware): PR #2 lifted 0.65 → 0.75 (`4e2f16e`)
+- regression-test triggers + outputs/plans envelope gate (`dd3372e` + `4b26eb5`)
+- Verify SHIP IT override removes confidence:low (`0c9f234`)
+- ROADMAP closures: 8 v0.5 items + 2 v1.0 items
+
 ### Added (2026-06-04 late session — 80+ total commits, second hardening pass)
 - **scripts/derive-envelope.ts** (`31a2bfa` + `c3215a4`): markdown plan → JSON envelope parser. Works on all 12 example plans + the real flaky-waits.spec.ts plan. Wired as safety net in plan.yml + migrate.yml so envelope ALWAYS exists. Backfilled `outputs/plans/flaky-waits.spec.ts.envelope.json` for the existing real plan.
 - **Confidence formula v2** (`4e2f16e`): 5-signal output-aware (0.4 plan + 0.25 selector + 0.1 webfirst + 0.15 smell-removal + 0.1 forbidden-absence). PR #2's high-quality output now reads 0.75 instead of 0.65 — triggers verify only when there's real cause. Plus per-signal breakdown table in the report.

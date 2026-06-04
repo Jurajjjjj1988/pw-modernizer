@@ -17,6 +17,12 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts"],
-  "exclude": ["node_modules", "outputs", "inputs", "examples"]
+  "include": ["scripts/**/*.ts", "tools/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "outputs",
+    "inputs",
+    "examples",
+    "tools/calibrate-pipeline/fixtures"
+  ]
 }

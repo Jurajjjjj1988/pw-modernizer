@@ -115,17 +115,16 @@ jobs:
         run: |
           set -euo pipefail
           BASE="${{ needs.guard.outputs.input_basename }}"
+          PLAN="${{ needs.guard.outputs.plan_path }}"
           ENV="outputs/plans/${BASE}.envelope.json"
           if [ ! -f "$ENV" ]; then
-            # v0.4 → v0.5 transition: envelope is optional. If absent, Stage 2
-            # proceeds in markdown-only mode (still works, just no machine
-            # contract). Promote to hard fail in v0.5 after enforcement.
-            echo "::warning::Envelope $ENV missing — Stage 2 runs in markdown-only mode."
-            echo "has_envelope=false" >> "$GITHUB_OUTPUT"
-          else
-            npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
-            echo "has_envelope=true" >> "$GITHUB_OUTPUT"
+            # Safety net (same as plan.yml): derive from markdown if missing.
+            # Stage 2 should never run without an envelope contract.
+            echo "::notice::Envelope $ENV missing — deriving from markdown plan."
+            npx tsx scripts/derive-envelope.ts --plan "$PLAN" --out "$ENV"
           fi
+          npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
+          echo "has_envelope=true" >> "$GITHUB_OUTPUT"
         id: envelope
 
       # ---------------------------------------------------------------------

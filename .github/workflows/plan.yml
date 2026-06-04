@@ -419,15 +419,16 @@ jobs:
         run: |
           set -euo pipefail
           BASE="${{ steps.idempotency.outputs.input_basename }}"
+          PLAN="outputs/plans/${BASE}.md"
           ENV="outputs/plans/${BASE}.envelope.json"
           if [ ! -f "$ENV" ]; then
-            # Soft gate during v0.4 → v0.5 transition: Claude may not yet be
-            # reliably emitting envelopes. Warn but don't block. Promote to
-            # hard fail in v0.5 after observing 5+ successful envelopes.
-            echo "::warning::Envelope $ENV not produced by Stage 1. Stage 2 will fall back to markdown-only mode."
-            exit 0
+            # Safety net: if Claude didn't emit the envelope, derive it from
+            # the markdown plan. This guarantees Stage 2 always has a
+            # machine-readable contract to validate against.
+            echo "::notice::Envelope missing — deriving from markdown plan."
+            npx tsx scripts/derive-envelope.ts --plan "$PLAN" --out "$ENV"
           fi
-          # Schema validation via the canonical validator.
+          # Schema validation via the canonical validator (gates on real shape).
           npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
 
       - name: Compute severity histogram

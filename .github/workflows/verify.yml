@@ -132,6 +132,26 @@ jobs:
             fi
           done
 
+      - name: Persist verify metrics
+        env:
+          METRICS_DB: outputs/.metrics.db
+          GITHUB_SHA: ${{ github.sha }}
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # v1 ROADMAP "Metrics dashboard" — write verify row to local SQLite.
+          # Runs AFTER the secret scan (so manual edits to verdict get captured)
+          # but BEFORE the PR-comment + label step (so a label-failure does not
+          # block the metrics write). Non-fatal on error — DB is a cache.
+          REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
+          if [ ! -f "$REPORT" ]; then
+            echo "::warning::persist-verify-metrics: report $REPORT missing — skipping metrics write"
+            exit 0
+          fi
+          npx tsx scripts/persist-verify-metrics.ts --report "$REPORT" || \
+            echo "::warning::persist-verify-metrics failed (non-fatal)"
+
       - name: Comment verify findings on code PR
         env:
           GH_TOKEN: ${{ github.token }}

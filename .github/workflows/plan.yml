@@ -451,6 +451,27 @@ jobs:
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "Histogram: $TOTAL anti-patterns ($H high, $M medium, $L low)"
 
+      - name: Persist plan metrics
+        if: steps.dedup.outputs.skip == 'false'
+        env:
+          METRICS_DB: outputs/.metrics.db
+          GITHUB_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # v1 ROADMAP "Metrics dashboard" — write Stage 1 row to local SQLite.
+          # Wrapped in `|| ::warning::` so DB write failures cannot fail Stage 1;
+          # the metrics DB is a reporting cache, not a system of record
+          # (see scripts/metrics.ts module docstring).
+          BASE="${{ steps.idempotency.outputs.input_basename }}"
+          ENV="outputs/plans/${BASE}.envelope.json"
+          if [ ! -f "$ENV" ]; then
+            echo "::warning::persist-plan-metrics: envelope $ENV missing — skipping metrics write"
+            exit 0
+          fi
+          npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" || \
+            echo "::warning::persist-plan-metrics failed (non-fatal)"
+
       - name: Open plan PR
         if: steps.dedup.outputs.skip == 'false'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5

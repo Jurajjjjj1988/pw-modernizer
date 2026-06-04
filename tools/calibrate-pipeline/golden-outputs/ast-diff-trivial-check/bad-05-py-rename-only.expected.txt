@@ -1,0 +1,3 @@
+# Exit 1. Python identifiers/strings renamed only; normalised AST is identical.
+[tree-sitter-python]
+rename-only / cosmetic

@@ -137,22 +137,39 @@ function runEnvelope(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("plan-envelope-validate", stem)));
 }
 
+// Output may be .spec.ts (good migration), .py, or .java (bad rename-only
+// where the LLM never ported the language).
 function findOutputFile(dir: string): string | null {
-  return readdirSync(dir).find((n) => /^output\.[\w.-]*ts$/.test(n)) ?? null;
+  const entries = readdirSync(dir);
+  const tsHit = entries.find((n) => /^output\.[\w.-]*ts$/.test(n));
+  if (tsHit) return tsHit;
+  return entries.find((n) => /^output\.(java|py)$/.test(n)) ?? null;
+}
+
+// Input may be .ts (legacy), .java (Selenium Java), or .py (Selenium Python).
+function findInputFile(dir: string): string | null {
+  const entries = readdirSync(dir);
+  for (const ext of [".ts", ".java", ".py"]) {
+    const hit = entries.find((n) => n === `input${ext}`);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function runAstDiff(fixtureName: string): FixtureResult {
   const fixtureDir = join(FIXTURES_ROOT, "ast-diff-trivial-check", fixtureName);
+  const inputName = findInputFile(fixtureDir);
   const outputName = findOutputFile(fixtureDir);
-  if (outputName === null) {
+  if (inputName === null || outputName === null) {
+    const missing = inputName === null ? "(no input.* file)" : "(no output.* file)";
     return {
       fixture: fixtureName, expectedExit: expectedExitFromName(fixtureName),
-      actualExit: -1, missingSubstrings: ["(no output.*.ts file)"], passed: false,
+      actualExit: -1, missingSubstrings: [missing], passed: false,
     };
   }
   const r = spawnSync("npx", [
     "tsx", join(SCRIPTS_DIR, "ast-diff-trivial-check.ts"),
-    "--input", join(fixtureDir, "input.ts"),
+    "--input", join(fixtureDir, inputName),
     "--output", join(fixtureDir, outputName),
   ], { cwd: REPO_ROOT, encoding: "utf8" });
   return buildResult(fixtureName, r, parseGolden(goldenPath("ast-diff-trivial-check", fixtureName)));

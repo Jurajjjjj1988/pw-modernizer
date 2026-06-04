@@ -1,0 +1,3 @@
+# Exit 0. Python input was reshaped into a Playwright TS spec — different shape.
+[tree-sitter-python]
+substantively non-trivial

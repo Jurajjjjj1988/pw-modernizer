@@ -1,0 +1,3 @@
+# Exit 1. Java identifiers/strings renamed only; normalised AST is identical.
+[tree-sitter-java]
+rename-only / cosmetic

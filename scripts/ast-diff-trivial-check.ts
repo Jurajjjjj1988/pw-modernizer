@@ -4,17 +4,28 @@
  * renamed identifiers (Type-2 clones per Roy/Cordy NiCad, Jiang/Misherghi
  * Deckard taxonomy).
  *
- * Approach:
- *   1. Parse both files into TypeScript AST via ts-morph.
- *   2. Normalize identifiers — Identifier nodes -> "$id", StringLiteral
- *      nodes -> "$str", NumericLiteral -> "$num". This kills cosmetic renames.
- *   3. Compute APTED tree-edit-distance between normalized trees
- *      (Pawlik & Augsten 2015, optimal worst-case O(n^3) but typically faster).
- *   4. Reject if (distance / max(|T1|, |T2|)) < 0.05 — i.e. < 5% of nodes
- *      had to change. That's a rename-only migration, not real restructuring.
+ * Routing (by input extension):
+ *   .ts / .tsx / .js / .jsx -> ts-morph + Zhang-Shasha    [ts-morph]
+ *   .java                   -> tree-sitter-java + Zhang-Shasha [tree-sitter-java]
+ *   .py                     -> tree-sitter-python + Zhang-Shasha [tree-sitter-python]
+ *   anything else           -> legacy LCS string overlap  [fallback LCS]
  *
- * Fallback: if ts-morph cannot parse the input (e.g. Selenium .java, .py),
- * fall back to the legacy LCS-based check with a clear warning.
+ * Output (the LLM's emitted spec) is always TS by contract, so ts-morph
+ * always handles the output side. Comparing trees across languages is fine
+ * here because we only care about whether the *structure* changed under
+ * identifier erasure — both sides are normalised to `$id`/`$str`/`$num`
+ * labels plus a syntax-kind string.
+ *
+ * Normalisation:
+ *   - identifier-like nodes      -> "$id"
+ *   - string/char-literal nodes  -> "$str"
+ *   - numeric-literal nodes      -> "$num"
+ *   - everything else            -> the parser's node-kind name
+ * That kills cosmetic renames (Type-2 clones collapse to identical trees).
+ *
+ * Threshold: reject if normalized tree-edit distance < 5% of max(|T1|,|T2|).
+ * Same threshold across languages today — future tuning may differ per
+ * language; the per-language label spaces are slightly different.
  *
  * Exit codes:
  *   0 = output is substantively different (good)
@@ -22,9 +33,15 @@
  */
 
 import { readFileSync, statSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, extname } from "node:path";
 import { parseArgs } from "node:util";
 import { Project, Node, SyntaxKind, ts } from "ts-morph";
+
+// tree-sitter ships as a CommonJS native module; require() under ESM via
+// createRequire keeps the import side-effect-free and dodges the "default
+// vs namespace export" interop trap for native bindings.
+const require = createRequire(import.meta.url);
 
 interface Args {
   input: string;
@@ -81,10 +98,8 @@ function resolveSourceFile(p: string, preferSpec: boolean): string {
   return p;
 }
 
-/**
- * Build a normalized AST tree. Identifier / literal payloads are erased so
- * that Type-2 clones (renames) collapse to identical structure.
- */
+/* ---------------- ts-morph normalisation (TS/JS) ---------------- */
+
 const NORM_LABEL: ReadonlyMap<SyntaxKind, string> = new Map([
   [SyntaxKind.Identifier, "$id"],
   [SyntaxKind.PrivateIdentifier, "$id"],
@@ -98,15 +113,103 @@ const NORM_LABEL: ReadonlyMap<SyntaxKind, string> = new Map([
   [SyntaxKind.RegularExpressionLiteral, "$regex"],
 ]);
 
-function buildNormalizedTree(node: Node): NormalizedNode {
+function buildNormalizedTreeTs(node: Node): NormalizedNode {
   const kind = node.getKind();
   const label = NORM_LABEL.get(kind) ?? SyntaxKind[kind] ?? String(kind);
   const children: NormalizedNode[] = [];
   node.forEachChild((child: Node) => {
-    children.push(buildNormalizedTree(child));
+    children.push(buildNormalizedTreeTs(child));
   });
   return { label, children };
 }
+
+/* ---------------- tree-sitter normalisation (Java / Python) ---------------- */
+
+// Minimal structural typing for the tree-sitter SyntaxNode subset we need.
+// Avoids `any` while staying decoupled from the CJS module's full surface.
+interface TsSyntaxNode {
+  type: string;
+  isNamed: boolean;
+  namedChildren: TsSyntaxNode[];
+}
+interface TsTree {
+  rootNode: TsSyntaxNode;
+}
+interface TsParser {
+  setLanguage(lang: unknown): void;
+  parse(src: string): TsTree;
+}
+type TsParserCtor = new () => TsParser;
+
+// Tree-sitter node-kind names we normalise. Lists are the *grammar* names
+// from tree-sitter-java and tree-sitter-python — kept narrow so we only erase
+// what's safe to erase (avoid collapsing structural kinds by accident).
+const TS_IDENTIFIER_KINDS = new Set<string>([
+  "identifier",
+  "type_identifier",
+  "field_identifier",
+  "scoped_identifier",
+  "scoped_type_identifier",
+  "simple_identifier",
+  "dotted_name",
+]);
+const TS_STRING_KINDS = new Set<string>([
+  "string_literal",
+  "character_literal",
+  "string",
+  "string_fragment",
+  "string_content",
+  "escape_sequence",
+  "interpolation",
+  "concatenated_string",
+]);
+const TS_NUMBER_KINDS = new Set<string>([
+  "decimal_integer_literal",
+  "hex_integer_literal",
+  "octal_integer_literal",
+  "binary_integer_literal",
+  "decimal_floating_point_literal",
+  "hex_floating_point_literal",
+  "integer",
+  "float",
+]);
+
+function normaliseTreeSitterLabel(kind: string): string {
+  if (TS_IDENTIFIER_KINDS.has(kind)) return "$id";
+  if (TS_STRING_KINDS.has(kind)) return "$str";
+  if (TS_NUMBER_KINDS.has(kind)) return "$num";
+  return kind;
+}
+
+function buildNormalizedTreeFromTs(node: TsSyntaxNode): NormalizedNode {
+  const label = normaliseTreeSitterLabel(node.type);
+  const children: NormalizedNode[] = [];
+  for (const c of node.namedChildren) {
+    children.push(buildNormalizedTreeFromTs(c));
+  }
+  return { label, children };
+}
+
+type Lang = "java" | "python";
+
+function parseWithTreeSitter(src: string, lang: Lang): NormalizedNode | null {
+  try {
+    const ParserMod = require("tree-sitter") as TsParserCtor;
+    const grammarPkg = lang === "java" ? "tree-sitter-java" : "tree-sitter-python";
+    const grammar = require(grammarPkg) as unknown;
+    const parser = new ParserMod();
+    parser.setLanguage(grammar);
+    const tree = parser.parse(src);
+    return buildNormalizedTreeFromTs(tree.rootNode);
+  } catch (err) {
+    process.stderr.write(
+      `::warning::tree-sitter parse for ${lang} failed: ${(err as Error).message}\n`,
+    );
+    return null;
+  }
+}
+
+/* ---------------- Tree-edit distance (Zhang-Shasha) ---------------- */
 
 function countNodes(t: NormalizedNode): number {
   let n = 1;
@@ -114,17 +217,6 @@ function countNodes(t: NormalizedNode): number {
   return n;
 }
 
-/**
- * APTED-style tree edit distance. We use a Zhang-Shasha-equivalent dynamic
- * program here: APTED's all-path strategy on small ASTs (a single test file
- * is typically < ~3000 nodes after normalization) reduces to the same
- * recurrence with comparable runtime. A faithful port of the full APTED
- * Algorithm class is ~200 LOC and not noticeably faster on this size class.
- *
- * Reference: Zhang & Shasha 1989, "Simple Fast Algorithms for the Editing
- * Distance between Trees and Related Problems." APTED (Pawlik & Augsten
- * 2015/2016) is an optimised variant of the same DP.
- */
 interface TedCtx {
   f1: Flattened;
   f2: Flattened;
@@ -164,6 +256,12 @@ function fillForestDist(ctx: TedCtx, i: number, j: number): void {
   }
 }
 
+/**
+ * Zhang-Shasha tree edit distance (Zhang & Shasha 1989). APTED (Pawlik &
+ * Augsten 2015/2016) is an optimised variant with the same recurrence; on
+ * the < ~3000-node trees produced by a single test file the two are
+ * indistinguishable in wall-clock terms.
+ */
 function treeEditDistance(t1: NormalizedNode, t2: NormalizedNode): number {
   const f1 = flatten(t1);
   const f2 = flatten(t2);
@@ -215,6 +313,30 @@ function computeKeyroots(lLeaf: number[]): number[] {
   return [...seen.values()].sort((a, b) => a - b);
 }
 
+/**
+ * Cheap fallback for ASTs too large for Zhang-Shasha. Multiset distance over
+ * (label, child-count) pairs — symmetric difference normalised by larger
+ * multiset size. Not as precise as APTED but stable for the trivial-rewrite
+ * detection goal.
+ */
+function bagDistance(t1: NormalizedNode, t2: NormalizedNode): number {
+  const bag1 = new Map<string, number>();
+  const bag2 = new Map<string, number>();
+  function fill(t: NormalizedNode, bag: Map<string, number>): void {
+    const key = `${t.label}/${t.children.length}`;
+    bag.set(key, (bag.get(key) ?? 0) + 1);
+    for (const c of t.children) fill(c, bag);
+  }
+  fill(t1, bag1);
+  fill(t2, bag2);
+  let diff = 0;
+  const keys = new Set([...bag1.keys(), ...bag2.keys()]);
+  for (const k of keys) {
+    diff += Math.abs((bag1.get(k) ?? 0) - (bag2.get(k) ?? 0));
+  }
+  return diff;
+}
+
 /* ---------------- Fallback: legacy LCS check ---------------- */
 
 const IMPORT_RX = /^\s*(import|from|const\s+\w+\s+=\s+require|using\s+|package\s+|@\w)/;
@@ -261,11 +383,11 @@ function fallbackLcsCheck(
   outputSrc: string,
   reason: string,
 ): never {
-  process.stderr.write(`::warning::ts-morph parse failed (${reason}) — falling back to LCS heuristic.\n`);
+  process.stderr.write(`::warning::[fallback LCS] ${reason}\n`);
   const a = normalizeForLcs(inputSrc);
   const b = normalizeForLcs(outputSrc);
   if (a.length === 0) {
-    process.stdout.write("input was empty after normalize — passing\n");
+    process.stdout.write("[fallback LCS] input was empty after normalize — passing\n");
     process.exit(0);
   }
   const lcsLen = longestCommonSubstring(a, b);
@@ -275,14 +397,14 @@ function fallbackLcsCheck(
   );
   if (overlap > 0.8) {
     process.stderr.write(
-      `::error::Fallback LCS check — ${(overlap * 100).toFixed(1)}% verbatim overlap. Reject as cosmetic.\n`,
+      `::error::[fallback LCS] ${(overlap * 100).toFixed(1)}% verbatim overlap. Reject as cosmetic.\n`,
     );
     process.exit(1);
   }
   process.exit(0);
 }
 
-/* ---------------- Main ---------------- */
+/* ---------------- TS parsing helpers ---------------- */
 
 function tryParseTs(path: string, src: string): Node | null {
   try {
@@ -299,6 +421,50 @@ function tryParseTs(path: string, src: string): Node | null {
   }
 }
 
+/* ---------------- Routing ---------------- */
+
+type Mode = "ts-morph" | "tree-sitter-java" | "tree-sitter-python";
+
+const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ""]);
+
+function pickMode(inputExt: string): Mode | null {
+  if (TS_EXTS.has(inputExt)) return "ts-morph";
+  if (inputExt === ".java") return "tree-sitter-java";
+  if (inputExt === ".py") return "tree-sitter-python";
+  return null;
+}
+
+interface ParseResult {
+  inputTree: NormalizedNode;
+  outputTree: NormalizedNode;
+  mode: Mode;
+}
+
+function parseBoth(
+  mode: Mode,
+  inputPath: string,
+  inputSrc: string,
+  outputPath: string,
+  outputSrc: string,
+): ParseResult | null {
+  // Output is always TS by contract — use ts-morph on it regardless of mode.
+  const outAst = tryParseTs(outputPath, outputSrc);
+  if (!outAst) return null;
+  const outputTree = buildNormalizedTreeTs(outAst);
+
+  if (mode === "ts-morph") {
+    const inAst = tryParseTs(inputPath, inputSrc);
+    if (!inAst) return null;
+    return { inputTree: buildNormalizedTreeTs(inAst), outputTree, mode };
+  }
+  const lang: Lang = mode === "tree-sitter-java" ? "java" : "python";
+  const inputTree = parseWithTreeSitter(inputSrc, lang);
+  if (!inputTree) return null;
+  return { inputTree, outputTree, mode };
+}
+
+/* ---------------- Main ---------------- */
+
 function main(): void {
   const args = parseCliArgs();
   const threshold = Number.parseFloat(args.threshold ?? "0.05");
@@ -309,44 +475,59 @@ function main(): void {
   const inputSrc = readFileSync(inputPath, "utf8");
   const outputSrc = readFileSync(outputPath, "utf8");
 
-  // Input may be Java/Python — fall back. Output is always TS by contract.
   const inputExt = extname(inputPath).toLowerCase();
-  if (![".ts", ".tsx", ".js", ".jsx", ""].includes(inputExt)) {
-    fallbackLcsCheck(inputSrc, outputSrc, `input ext ${inputExt} not TS`);
+  const outputExt = extname(outputPath).toLowerCase();
+  const mode = pickMode(inputExt);
+  if (mode === null) {
+    fallbackLcsCheck(inputSrc, outputSrc, `input ext ${inputExt} unsupported`);
   }
-  const inAst = tryParseTs(inputPath, inputSrc);
-  const outAst = tryParseTs(outputPath, outputSrc);
-  if (!inAst || !outAst) fallbackLcsCheck(inputSrc, outputSrc, "ts-morph parse null");
 
-  const t1 = buildNormalizedTree(inAst);
-  const t2 = buildNormalizedTree(outAst);
-  const size1 = countNodes(t1);
-  const size2 = countNodes(t2);
+  // tree-sitter modes still rely on ts-morph for the OUTPUT side. If the
+  // output isn't TS (e.g. bad fixture where the LLM never converted away
+  // from Java), parse the output with the same tree-sitter language instead
+  // so we compare like-with-like.
+  let parsed: ParseResult | null;
+  if (
+    (mode === "tree-sitter-java" && outputExt === ".java") ||
+    (mode === "tree-sitter-python" && outputExt === ".py")
+  ) {
+    const lang: Lang = mode === "tree-sitter-java" ? "java" : "python";
+    const inputTree = parseWithTreeSitter(inputSrc, lang);
+    const outputTree = parseWithTreeSitter(outputSrc, lang);
+    parsed = inputTree && outputTree ? { inputTree, outputTree, mode } : null;
+  } else {
+    parsed = parseBoth(mode, inputPath, inputSrc, outputPath, outputSrc);
+  }
+  if (!parsed) fallbackLcsCheck(inputSrc, outputSrc, `${mode} parse failed`);
+
+  const { inputTree, outputTree, mode: usedMode } = parsed;
+  const size1 = countNodes(inputTree);
+  const size2 = countNodes(outputTree);
   const larger = Math.max(size1, size2);
 
   if (larger === 0) {
-    process.stdout.write("empty AST — passing vacuously\n");
+    process.stdout.write(`[${usedMode}] empty AST — passing vacuously\n`);
     process.exit(0);
   }
 
-  // APTED on >4000 nodes is too slow in pure JS — degrade to bag distance.
+  // Zhang-Shasha on >4000 nodes is too slow in pure JS — degrade to bag.
   const useBag = size1 > 4000 || size2 > 4000;
-  const distance = useBag ? bagDistance(t1, t2) : treeEditDistance(t1, t2);
-  const mode = useBag ? "bag-of-subtrees (large input)" : "APTED/Zhang-Shasha";
+  const distance = useBag ? bagDistance(inputTree, outputTree) : treeEditDistance(inputTree, outputTree);
+  const algo = useBag ? "bag-of-subtrees (large input)" : "Zhang-Shasha";
 
   const normalized = distance / larger;
   process.stdout.write(
-    `Input AST nodes (normalized): ${size1}\n` +
-      `Output AST nodes (normalized): ${size2}\n` +
-      `Tree edit distance (${mode}): ${distance}\n` +
-      `Normalized distance: ${(normalized * 100).toFixed(2)}% of larger tree\n` +
-      `Trivial threshold: ${(threshold * 100).toFixed(0)}%\n`,
+    `[${usedMode}] Input AST nodes (normalized): ${size1}\n` +
+      `[${usedMode}] Output AST nodes (normalized): ${size2}\n` +
+      `[${usedMode}] Tree edit distance (${algo}): ${distance}\n` +
+      `[${usedMode}] Normalized distance: ${(normalized * 100).toFixed(2)}% of larger tree\n` +
+      `[${usedMode}] Trivial threshold: ${(threshold * 100).toFixed(0)}%\n`,
   );
 
   if (normalized < threshold) {
     process.stderr.write(
-      `::error::AST diff is rename-only / cosmetic — normalized tree-edit ` +
-        `distance is ${(normalized * 100).toFixed(2)}% (< ${(threshold * 100).toFixed(0)}%). ` +
+      `::error::[${usedMode}] AST diff is rename-only / cosmetic — normalized ` +
+        `tree-edit distance is ${(normalized * 100).toFixed(2)}% (< ${(threshold * 100).toFixed(0)}%). ` +
         `Identifiers were erased before comparison, so this is not just a ` +
         `variable rename — the structures are nearly identical. ` +
         `The LLM appears to have copied the input verbatim. Reject migration.\n`,
@@ -354,32 +535,8 @@ function main(): void {
     process.exit(1);
   }
 
-  process.stdout.write("AST diff is substantively non-trivial — passing.\n");
+  process.stdout.write(`[${usedMode}] AST diff is substantively non-trivial — passing.\n`);
   process.exit(0);
-}
-
-/**
- * Cheap fallback for ASTs too large for Zhang-Shasha. Multiset distance over
- * (label, child-count) pairs — symmetric difference normalised by larger
- * multiset size. Not as precise as APTED but stable for the trivial-rewrite
- * detection goal.
- */
-function bagDistance(t1: NormalizedNode, t2: NormalizedNode): number {
-  const bag1 = new Map<string, number>();
-  const bag2 = new Map<string, number>();
-  function fill(t: NormalizedNode, bag: Map<string, number>): void {
-    const key = `${t.label}/${t.children.length}`;
-    bag.set(key, (bag.get(key) ?? 0) + 1);
-    for (const c of t.children) fill(c, bag);
-  }
-  fill(t1, bag1);
-  fill(t2, bag2);
-  let diff = 0;
-  const keys = new Set([...bag1.keys(), ...bag2.keys()]);
-  for (const k of keys) {
-    diff += Math.abs((bag1.get(k) ?? 0) - (bag2.get(k) ?? 0));
-  }
-  return diff;
 }
 
 main();

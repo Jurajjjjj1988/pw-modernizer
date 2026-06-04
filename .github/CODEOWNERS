@@ -1,0 +1,10 @@
+# Default owner — auto-requests review on every PR.
+* @Jurajjjjj1988
+
+# High-leverage areas where stricter review is warranted.
+# (Same owner today; placeholder for future contributors.)
+/config/                        @Jurajjjjj1988
+/prompts/                       @Jurajjjjj1988
+/scripts/                       @Jurajjjjj1988
+/tools/calibrate-pipeline/      @Jurajjjjj1988
+/.github/workflows/             @Jurajjjjj1988

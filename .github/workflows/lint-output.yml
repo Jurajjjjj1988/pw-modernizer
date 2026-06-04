@@ -49,7 +49,17 @@ jobs:
         run: npx eslint 'outputs/tests/**/*.ts'
 
       - name: Playwright parse
-        run: npx playwright test --list 'outputs/tests/**/*.spec.ts'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # playwright test --list interprets a bare glob as a test-name regex
+          # ('Nothing to repeat' error). Enumerate spec files via find first.
+          mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts')
+          if [ "${#SPECS[@]}" -gt 0 ]; then
+            npx playwright test --list "${SPECS[@]}"
+          else
+            echo "No .spec.ts files under outputs/tests — nothing to lint-parse."
+          fi
 
       - name: Forbidden patterns hard-fail check
         shell: bash

@@ -95,7 +95,7 @@ inputs/bad-playwright/foo.spec.ts
 | Command | What it does | When to run |
 |---|---|---|
 | `npm run quickstart` | 9-check onboarding (Node, deps, types, KB, examples, fragments, envelope, calibration) with hints | First time setup; debugging "why does CI fail?" |
-| `npm run smoke` | Same as CI: typecheck + 5 validators + calibration. Silent on success | Pre-push, every commit |
+| `npm run smoke` | Same as CI: typecheck + 6 validators + calibration + eslint. Silent on success | Pre-push, every commit |
 | `npm run validate:all` | 5 validators + 24 calibration fixtures | When touching scripts/ or examples/ |
 | `npm run check:kb` | KB ID uniqueness + references resolve | When editing knowledge-base.md or expected-plan.md |
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |

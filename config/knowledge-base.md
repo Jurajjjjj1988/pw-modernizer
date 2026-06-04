@@ -320,6 +320,213 @@ test.describe('Acme Shop login', () => {
 
 Rationale: nested `describe` blocks justify themselves only when they have siblings (e.g., `describe('sso')` alongside `describe('credentials')`). A single-child describe doubles the indentation budget and adds noise to test runner output without grouping value. Max 2 levels — see `config/migration-rules.md` §2.
 
+#### 1.1.16 `waitForLoadState('networkidle')` as universal wait
+
+```ts
+// ANTI-PATTERN
+await page.goto('/dashboard');
+await page.waitForLoadState('networkidle');
+await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+```
+
+```ts
+// CANONICAL — wait on the actual user-visible state
+await page.goto('/dashboard');
+await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+```
+
+Rationale: `networkidle` waits for ZERO in-flight requests for 500ms — that includes ad pixels, analytics beacons, polling sockets, and Intercom-style chat widgets that NEVER go idle in production. The test then hangs or flakes on unrelated third-party network noise that has zero bearing on whether the user can see the dashboard. Playwright's own docs (since v1.30) explicitly discourage `networkidle` outside of unusual cases. Auto-waiting locators + web-first assertions already wait for the right thing. Prevents `NetworkNoiseFlake` bug class. See [playwright.dev/docs/api/class-page#page-wait-for-load-state](https://playwright.dev/docs/api/class-page#page-wait-for-load-state).
+
+#### 1.1.17 Raw XPath via `xpath=` selector engine
+
+```ts
+// ANTI-PATTERN — survived a Selenium-to-Playwright translator
+await page.locator('xpath=//div[@class="header"]/button[2]').click();
+await page.locator('xpath=//*[contains(text(),"Continue")]').click();
+```
+
+```ts
+// CANONICAL — role-based, accessible-name, getByText
+await page.getByRole('banner').getByRole('button', { name: 'Save' }).click();
+await page.getByRole('button', { name: 'Continue' }).click();
+```
+
+Rationale: raw XPath is a tell that this file came out of a Selenium translator without semantic rework. Playwright supports XPath for completeness but it loses every advantage of role-based locators — no a11y-tree grounding, brittle to DOM refactors, opaque at the call site. Positional XPath (`button[2]`) recreates the `nth()` anti-pattern (1.1.2) in a different syntax. Prevents `SeleniumTranslationLeak` bug class. See [playwright.dev/docs/locators#locate-by-css-or-xpath](https://playwright.dev/docs/locators#locate-by-css-or-xpath).
+
+#### 1.1.18 `.all()` then manual `for` loop with count assertions
+
+```ts
+// ANTI-PATTERN
+const items = await page.locator('[data-testid="row"]').all();
+expect(items.length).toBe(5);
+for (const item of items) {
+  expect(await item.textContent()).toContain('OK');
+}
+```
+
+```ts
+// CANONICAL — web-first count + iteration on a live locator
+const rows = page.getByTestId('row');
+await expect(rows).toHaveCount(5);
+await expect(rows).toContainText(['OK', 'OK', 'OK', 'OK', 'OK']);
+```
+
+Rationale: `.all()` snapshots the locator into a fixed array — auto-retry semantics die immediately. If the list is still rendering when `.all()` resolves, the count assertion fails for a UI bug that doesn't exist. `toHaveCount` and `toContainText(array)` poll until the expected count is reached. Same family as the Selenium `find-elements-snapshot` smell. Prevents `SnapshotIterationRace` bug class.
+
+#### 1.1.19 `innerText()` / `textContent()` string compare instead of `toHaveText`
+
+```ts
+// ANTI-PATTERN
+const heading = await page.getByRole('heading').innerText();
+expect(heading).toBe('Welcome back');
+```
+
+```ts
+// CANONICAL — web-first, polls until match
+await expect(page.getByRole('heading')).toHaveText('Welcome back');
+```
+
+Rationale: `innerText()` is a one-shot snapshot — same flake mode as `isVisible()` (1.1.5) but for text content. If the heading renders one tick after the snapshot, the assertion fails on a non-existent bug. `toHaveText` polls and also normalizes whitespace by default (a common source of `have.text` flakes — see Cypress 1.2.35 sibling). Prevents `TextSnapshotRace` bug class. See [`eslint-plugin-playwright/prefer-to-have-text`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/prefer-to-have-text.md).
+
+#### 1.1.20 `expect(await locator.isChecked()).toBe(true)` — sync probe on stateful methods
+
+```ts
+// ANTI-PATTERN — variant of 1.1.5 on isChecked/isEnabled/isEditable
+expect(await page.getByLabel('Remember me').isChecked()).toBe(true);
+expect(await page.getByRole('button', { name: 'Submit' }).isEnabled()).toBe(true);
+expect(await page.getByLabel('Comment').isEditable()).toBe(true);
+```
+
+```ts
+// CANONICAL — web-first state assertions
+await expect(page.getByLabel('Remember me')).toBeChecked();
+await expect(page.getByRole('button', { name: 'Submit' })).toBeEnabled();
+await expect(page.getByLabel('Comment')).toBeEditable();
+```
+
+Rationale: same family as 1.1.5 but applied to the other sync probes — `isChecked`, `isEnabled`, `isEditable`, `isDisabled`, `isHidden`. Each returns a one-shot boolean with no auto-retry. The web-first counterparts (`toBeChecked`, `toBeEnabled`, `toBeEditable`, `toBeDisabled`, `toBeHidden`) poll until the assertion timeout. The lint rule covers all of them. Prevents `StateProbeRace` bug class. See [`eslint-plugin-playwright/prefer-web-first-assertions`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/prefer-web-first-assertions.md).
+
+#### 1.1.21 Manual `clearCookies` / `clearPermissions` in `beforeEach`
+
+```ts
+// ANTI-PATTERN — ceremonial isolation
+test.beforeEach(async ({ context }) => {
+  await context.clearCookies();
+  await context.clearPermissions();
+  await context.storageState({ path: undefined });
+});
+```
+
+```ts
+// CANONICAL — Playwright creates a fresh BrowserContext per test by default
+test('logged-out user sees marketing page', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+});
+```
+
+Rationale: Playwright's default test fixture creates a NEW `BrowserContext` per test — cookies, localStorage, sessionStorage, IndexedDB, and granted permissions all reset for free. Manual `clearCookies` in `beforeEach` is leftover Selenium-era muscle memory and clutters every spec. The only legitimate use is when explicitly opting into a shared context (e.g., `storageState` auth reuse) AND wanting to invalidate it mid-suite — both rare. Prevents `IsolationCeremonyClutter` bug class. See [playwright.dev/docs/browser-contexts#why-browser-contexts](https://playwright.dev/docs/browser-contexts#why-browser-contexts).
+
+#### 1.1.22 `test.describe.configure({ mode: 'serial' })` as state-bug workaround
+
+```ts
+// ANTI-PATTERN — serial mode hides shared-state coupling
+test.describe.configure({ mode: 'serial' });
+
+test.describe('user CRUD', () => {
+  test('creates user', async ({ page }) => { /* writes to module-scope createdUserId */ });
+  test('edits that user', async ({ page }) => { /* reads createdUserId */ });
+  test('deletes that user', async ({ page }) => { /* reads createdUserId */ });
+});
+```
+
+```ts
+// CANONICAL — hermetic tests with per-test setup
+test('creates a user', async ({ page, freshUser }) => {
+  await createUser(page, freshUser);
+  await expect(page.getByText(freshUser.email)).toBeVisible();
+});
+
+test('edits an existing user', async ({ page, seededUser }) => {
+  await editUser(page, seededUser, { name: 'New Name' });
+  await expect(page.getByText('New Name')).toBeVisible();
+});
+```
+
+Rationale: `mode: 'serial'` forces tests to run in declaration order on one worker AND aborts the suite at the first failure. It's almost always a workaround for shared-state bugs (e.g., test 2 depends on side effects of test 1). The fix is to make each test hermetic via fixtures (`freshUser`, `seededUser`) — not to constrain the runner. Serial mode also disables sharding speedups. Legitimate uses (e.g., one-shot DB migration in setup project) are rare and belong in a `setup` project, not in feature specs. Prevents `SerialModeStateLeak` bug class. See [playwright.dev/docs/test-parallel#serial-mode](https://playwright.dev/docs/test-parallel#serial-mode).
+
+#### 1.1.23 `page.on('console', ...)` listener left in committed tests
+
+```ts
+// ANTI-PATTERN — debug observability leaked into CI
+test('checkout flow', async ({ page }) => {
+  page.on('console', msg => console.log('BROWSER:', msg.text()));
+  page.on('pageerror', err => console.log('PAGE ERROR:', err));
+  await page.goto('/checkout');
+  // ... rest of test
+});
+```
+
+```ts
+// CANONICAL — either delete OR convert to an assertion on quality bar
+test('checkout flow produces no console errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText('Thank you')).toBeVisible();
+  expect(errors, 'no console errors during checkout').toEqual([]);
+});
+```
+
+Rationale: a `console.log` listener with no assertion bloats CI logs (every browser-side log line spams the runner output) without ever failing the test. Either the listener should drive an assertion (the canonical form turns "no console errors" into a real quality gate) OR it should be deleted. Leftover debug listeners are the test-code equivalent of `console.log('here')` shipping to production. Prevents `DebugListenerLeak` bug class.
+
+#### 1.1.24 `page.screenshot({ path: 'debug.png' })` left in committed tests
+
+```ts
+// ANTI-PATTERN — debug artifact leaked into repo
+test('payment form', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.screenshot({ path: 'debug.png' });
+  await page.screenshot({ path: 'after-fill.png' });
+  await page.getByRole('button', { name: 'Pay' }).click();
+});
+```
+
+```ts
+// CANONICAL — let Playwright handle on-failure artifacts via config
+// playwright.config.ts:
+//   use: { screenshot: 'only-on-failure', trace: 'retain-on-failure' }
+test('payment form', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText('Payment received')).toBeVisible();
+});
+```
+
+Rationale: manual `page.screenshot({ path })` writes a PNG to the working directory on every run — on CI that means orphan artifacts, in dev that means a polluted git status. Playwright's config-level `screenshot: 'only-on-failure'` plus `trace: 'retain-on-failure'` produces richer failure artifacts (full DOM snapshot, network, console) and only when something actually broke. Manual screenshots also leak sensitive data (the card number above lands on disk). Visual regression is a separate concern handled via `toHaveScreenshot()`, not ad-hoc PNG dumps. Prevents `DebugArtifactLeak` bug class. See [playwright.dev/docs/test-use-options#recording-options](https://playwright.dev/docs/test-use-options#recording-options).
+
+#### 1.1.25 Short `waitForTimeout(100)` masquerading as a non-hard-wait
+
+```ts
+// ANTI-PATTERN — "tiny" timeout, same anti-pattern as 1.1.1
+await page.getByRole('button', { name: 'Save' }).click();
+await page.waitForTimeout(100);  // "let React rerender"
+await page.waitForTimeout(50);   // "small debounce"
+await page.waitForTimeout(300);  // "animation"
+await expect(page.getByText('Saved')).toBeVisible();
+```
+
+```ts
+// CANONICAL — wait on the visible state, not on a guess
+await page.getByRole('button', { name: 'Save' }).click();
+await expect(page.getByText('Saved')).toBeVisible();
+```
+
+Rationale: developers normalize the `waitForTimeout` smell by using "small" values (50ms, 100ms, 300ms) and rationalizing them as "just letting React rerender" or "small debounce". The anti-pattern is identical to 1.1.1 — a sleep with no relation to the actual UI state, just a guess that happens to work on one machine. On loaded CI runners those 100ms become 800ms and the test still races. The lint rule `no-wait-for-timeout` fires regardless of N — it's the call that's wrong, not the size. Prevents `ShortHardWaitRationalization` bug class. See [`eslint-plugin-playwright/no-wait-for-timeout`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/no-wait-for-timeout.md).
+
 ---
 
 ### 1.2 Cypress anti-patterns

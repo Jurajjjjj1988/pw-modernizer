@@ -59,6 +59,16 @@ Each old ID becomes a **deprecated alias** pointing at the new ID. The validator
 | KB-1.1.13 | `pw/structure/try-catch-swallow` | deprecated, alias for `pw/structure/try-catch-swallow` |
 | KB-1.1.14 | `pw/config/hardcoded-url` | deprecated, alias for `pw/config/hardcoded-url` (added 2026-06-03 after Phase 1 audit) |
 | KB-1.1.15 | `pw/structure/unnecessary-describe-nesting` | deprecated, alias for `pw/structure/unnecessary-describe-nesting` (added 2026-06-03 after Phase 1 audit) |
+| KB-1.1.16 | `pw/timing/network-idle-universal-wait` | deprecated, alias for `pw/timing/network-idle-universal-wait` (added 2026-06-04 — `waitForLoadState('networkidle')` couples to third-party noise) |
+| KB-1.1.17 | `pw/selector/raw-xpath` | deprecated, alias for `pw/selector/raw-xpath` (added 2026-06-04 — `xpath=` survives Selenium translator) |
+| KB-1.1.18 | `pw/assertion/all-snapshot-iteration` | deprecated, alias for `pw/assertion/all-snapshot-iteration` (added 2026-06-04 — `.all()` snapshots before list renders) |
+| KB-1.1.19 | `pw/assertion/inner-text-string-compare` | deprecated, alias for `pw/assertion/inner-text-string-compare` (added 2026-06-04 — `innerText()` then `toBe` bypasses web-first) |
+| KB-1.1.20 | `pw/assertion/state-probe-sync` | deprecated, alias for `pw/assertion/state-probe-sync` (added 2026-06-04 — `isChecked()`/`isEnabled()`/`isEditable()` one-shot probes) |
+| KB-1.1.21 | `pw/fixture/manual-context-clear` | deprecated, alias for `pw/fixture/manual-context-clear` (added 2026-06-04 — `clearCookies`/`clearPermissions` ceremony in `beforeEach`) |
+| KB-1.1.22 | `pw/config/serial-mode-state-workaround` | deprecated, alias for `pw/config/serial-mode-state-workaround` (added 2026-06-04 — `describe.configure({ mode: 'serial' })` hides shared-state bugs) |
+| KB-1.1.23 | `pw/debug/console-listener-leak` | deprecated, alias for `pw/debug/console-listener-leak` (added 2026-06-04 — `page.on('console', ...)` log noise without assertion) |
+| KB-1.1.24 | `pw/debug/screenshot-leak` | deprecated, alias for `pw/debug/screenshot-leak` (added 2026-06-04 — `page.screenshot({ path })` debug artifact in committed test) |
+| KB-1.1.25 | `pw/timing/short-hard-wait` | deprecated, alias for `pw/timing/short-hard-wait` (added 2026-06-04 — `waitForTimeout(100)` rationalized as non-hard-wait) |
 
 ### 2.2 Cypress (was §1.2) — `cy/...`
 

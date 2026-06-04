@@ -185,6 +185,13 @@ jobs:
           # always exists. See scripts/plan-envelope-validate.ts header for the
           # LPW (arXiv 2411.14503) / Routine (arXiv 2507.14447) background.
           npx tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json
+          # Also validate every envelope that exists under outputs/plans/ —
+          # catches real Stage 1 emissions that drift from the schema.
+          shopt -s nullglob
+          for env in outputs/plans/*.envelope.json; do
+            echo "Validating $env"
+            npx tsx scripts/plan-envelope-validate.ts --envelope "$env"
+          done
 
       - name: Derive envelope works on every example plan
         shell: bash

@@ -175,8 +175,32 @@ function main(): number {
     );
     return 0;
   }
+  // --check mode: ALSO verify the on-disk _assembled/ files match what we'd
+  // generate. Catches "edited a fragment but forgot to run --write" — that
+  // file would commit with stale assembled content while CI's Claude step
+  // reads the stale version, silently degrading behaviour.
+  const staleFiles: string[] = [];
+  for (const [file, text] of assembled) {
+    const name = file.substring(PROMPTS_DIR.length + 1);
+    const outPath = join(ASSEMBLED_DIR, name);
+    if (!existsSync(outPath)) {
+      staleFiles.push(`${outPath} (missing — run 'npm run assemble-prompts')`);
+      continue;
+    }
+    const onDisk = readFileSync(outPath, "utf8");
+    if (onDisk !== text) {
+      staleFiles.push(`${outPath} (stale — re-run 'npm run assemble-prompts' and commit)`);
+    }
+  }
+  if (staleFiles.length > 0) {
+    for (const s of staleFiles) {
+      process.stderr.write(`::error file=${s.split(" ")[0]}::${s}\n`);
+    }
+    process.stderr.write(`\nassemble-prompts: ${staleFiles.length} stale/missing assembled file(s)\n`);
+    return 1;
+  }
   process.stdout.write(
-    `assemble-prompts: ${assembled.size} prompt(s) validated; all includes resolve cleanly.\n`,
+    `assemble-prompts: ${assembled.size} prompt(s) validated; all includes resolve + assembled/ in sync.\n`,
   );
   return 0;
 }

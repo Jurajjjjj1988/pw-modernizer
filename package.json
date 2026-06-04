@@ -11,6 +11,7 @@
     "check:examples": "tsx scripts/validate-examples.ts --warn",
     "check:assemble": "tsx scripts/assemble-prompts.ts --check",
     "check:envelope": "tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json",
+    "derive-envelope": "tsx scripts/derive-envelope.ts",
     "assemble-prompts": "tsx scripts/assemble-prompts.ts --write",
     "calibrate": "tsx tools/calibrate-pipeline/run-calibration.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",

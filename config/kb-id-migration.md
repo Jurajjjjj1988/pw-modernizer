@@ -78,6 +78,12 @@ Each old ID becomes a **deprecated alias** pointing at the new ID. The validator
 | KB-1.2.12 | `cy/fixture/json-rot`           | deprecated, alias for `cy/fixture/json-rot` |
 | KB-1.2.13 | `cy/magic/viewport-per-test`    | deprecated, alias for `cy/magic/viewport-per-test` |
 | KB-1.2.14 | `cy/fixture/cy-task-bypass`     | deprecated, alias for `cy/fixture/cy-task-bypass` |
+| KB-1.2.15 | `cy/fixture/session-no-cache-bust` | deprecated, alias for `cy/fixture/session-no-cache-bust` (added 2026-06-04 — `cy.session()` without invalidation) |
+| KB-1.2.16 | `cy/assertion/internals-leak`   | deprecated, alias for `cy/assertion/internals-leak` (added 2026-06-04 — reaching into framework store) |
+| KB-1.2.17 | `cy/fixture/spy-stub-leak`      | deprecated, alias for `cy/fixture/spy-stub-leak` (added 2026-06-04 — `cy.spy`/`cy.stub` across tests) |
+| KB-1.2.18 | `cy/assertion/stale-snapshot`   | deprecated, alias for `cy/assertion/stale-snapshot` (added 2026-06-04 — `cy.then` sync/async mix) |
+| KB-1.2.19 | `cy/fixture/commands-overwrite` | deprecated, alias for `cy/fixture/commands-overwrite` (added 2026-06-04 — `Cypress.Commands.overwrite`) |
+| KB-1.2.20 | `cy/assertion/premature-absence` | deprecated, alias for `cy/assertion/premature-absence` (added 2026-06-04 — `should('not.exist')` race) |
 
 ### 2.3 Selenium WebDriver Java (was §1.3) — `sel/...`
 

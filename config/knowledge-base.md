@@ -581,6 +581,139 @@ test('with seeded user', async ({ request, page }) => {
 
 Rationale: `cy.task` runs in Node context bypassing the network — easy to drift away from production. APIRequestContext goes through real HTTP, matching how real clients use the system.
 
+#### 1.2.15 `cy.session()` without explicit cache invalidation
+
+```js
+// ANTI-PATTERN
+beforeEach(() => {
+  cy.session('admin', () => {
+    cy.visit('/login');
+    cy.get('#email').type('admin@x.com');
+    cy.get('#password').type('pw');
+    cy.get('#submit').click();
+  });
+});
+```
+
+```ts
+// CANONICAL — storageState produced once, consumed via project config
+// playwright.config.ts
+projects: [
+  {
+    name: 'authed',
+    use: { storageState: 'playwright/.auth/admin.json' },
+  },
+],
+// playwright/global-setup.ts produces admin.json (signed-in localStorage + cookies).
+```
+
+Rationale: `cy.session` caches by key but offers no automatic invalidation when the auth flow changes — stale sessions silently mask login regressions. Playwright `storageState` is produced explicitly in global setup, with version pinning if needed. Prevents `StaleAuthMasksRegression` bug class.
+
+#### 1.2.16 `cy.window().its('app.store')` reaching into framework internals
+
+```js
+// ANTI-PATTERN
+cy.window().its('app.store').invoke('getState').should('deep.include', {
+  user: { id: 42 },
+});
+```
+
+```ts
+// CANONICAL — assert through the user-perceivable surface
+await expect(page.getByRole('heading', { name: /welcome,? alice/i })).toBeVisible();
+await expect(page.getByTestId('account-id')).toHaveText('42');
+```
+
+Rationale: reaching into Redux/Vuex/store internals couples tests to implementation. Refactoring state shape — even with identical UX — breaks the test. Web-first assertions exercise the same path real users see. Prevents `StoreShapeCoupling` bug class.
+
+#### 1.2.17 `cy.spy()` / `cy.stub()` without cleanup discipline
+
+```js
+// ANTI-PATTERN
+beforeEach(() => {
+  cy.window().then((win) => {
+    cy.stub(win.console, 'error').as('consoleError');
+  });
+});
+
+it('does X', () => {
+  // ... action ...
+  cy.get('@consoleError').should('not.have.been.called');
+});
+```
+
+```ts
+// CANONICAL — Playwright captures console events with explicit lifecycle
+test('does X', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  });
+  // ... action ...
+  expect(errors).toEqual([]);
+});
+```
+
+Rationale: Cypress stubs sometimes survive across `it` blocks if cleanup goes wrong; the listener stays attached. Playwright `page.on` is auto-scoped to the test fixture lifecycle. Prevents `CrossTestSpyLeak` bug class.
+
+#### 1.2.18 `cy.then()` mixing synchronous assertions with async chain
+
+```js
+// ANTI-PATTERN
+cy.get('.row').then(($rows) => {
+  expect($rows).to.have.length(3);
+  cy.get('.row').first().click(); // re-queries DOM — original $rows may be stale
+});
+```
+
+```ts
+// CANONICAL — single locator, flat assertions
+const rows = page.getByRole('row');
+await expect(rows).toHaveCount(3);
+await rows.first().click();
+```
+
+Rationale: `cy.then` captured snapshots get stale; subsequent `cy.get` re-queries the DOM but the assertion above ran on stale data. Playwright locators are LAZY descriptors — each method call re-resolves against the current DOM. Prevents `StaleSnapshotAssertion` bug class.
+
+#### 1.2.19 `Cypress.Commands.overwrite` monkey-patching base commands
+
+```js
+// ANTI-PATTERN — repo-wide override
+Cypress.Commands.overwrite('visit', (originalFn, url, options) => {
+  return originalFn(url, { ...options, timeout: 60000 });
+});
+```
+
+```ts
+// CANONICAL — explicit per-call, or project-level config
+// playwright.config.ts
+use: {
+  navigationTimeout: 60000, // applies globally, discoverable in config
+},
+// OR per-call:
+await page.goto('/slow-route', { timeout: 60000 });
+```
+
+Rationale: monkey-patching `cy.visit` makes the actual behavior invisible at call sites — readers think `cy.visit('/foo')` uses the default timeout when it doesn't. Playwright forces the choice to be visible (either in config or at the call). Prevents `HiddenBehaviorOverride` bug class.
+
+#### 1.2.20 `.should('not.exist')` masking page-not-yet-loaded races
+
+```js
+// ANTI-PATTERN
+cy.visit('/profile');
+cy.get('.error-toast').should('not.exist'); // passes before page renders
+cy.get('.username').should('have.text', 'alice');
+```
+
+```ts
+// CANONICAL — wait for positive signal first, then assert absence
+await page.goto('/profile');
+await expect(page.getByText('alice')).toBeVisible(); // page has rendered
+await expect(page.getByRole('alert')).toHaveCount(0); // now check absence
+```
+
+Rationale: `should('not.exist')` returns immediately if the element hasn't been added yet (it doesn't wait). Tests pass during the loading window before the toast appears. Playwright's `toHaveCount(0)` polls, but the safer pattern is to wait on a positive signal first. Prevents `PrematureAbsenceCheck` bug class. See [`playwright-rules/absence-after-presence`](https://github.com/microsoft/playwright/issues/15391) discussion.
+
 ---
 
 ### 1.3 Selenium WebDriver (Java) anti-patterns

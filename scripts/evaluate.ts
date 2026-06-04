@@ -299,6 +299,31 @@ interface Report {
   outputLoc: number;
 }
 
+// Output quality signals (introduced 2026-06-04):
+//   smellRemovalRate: fraction of source smells eliminated in output. 1.0 =
+//     every source smell removed; 0.0 = none removed (or smells added).
+//   forbiddenAbsence: 1.0 if no forbidden patterns in output, else 0.0.
+// Previous formula was 0.6/0.3/0.1 over plan/selector/webfirst — output
+// quality only impacted aggregate via selector + webfirst. High-quality
+// Stage 2 work couldn't lift confidence above the plan's ceiling. New
+// formula reduces plan weight to 0.4 and adds smell-removal + forbidden-
+// absence so a clean migration of an ambitious plan reads above 0.7.
+function computeAggregateConfidence(r: Report): number {
+  const sourceSmellTotal = Object.values(r.source).reduce((a, b) => a + b, 0);
+  const outputSmellTotal = Object.values(r.outputSmells).reduce((a, b) => a + b, 0);
+  const smellRemovalRate = sourceSmellTotal === 0
+    ? 1
+    : Math.max(0, (sourceSmellTotal - outputSmellTotal) / sourceSmellTotal);
+  const forbiddenAbsence = r.forbidden.length === 0 ? 1 : 0;
+  return (
+    r.confidence.aggregate * 0.4
+    + r.selectorQuality * 0.25
+    + r.webFirstRate * 0.1
+    + smellRemovalRate * 0.15
+    + forbiddenAbsence * 0.1
+  );
+}
+
 function renderReport(r: Report): string {
   const deltaSmells: Record<string, number> = {};
   for (const k of Object.keys(r.source) as (keyof SmellCount)[]) {
@@ -307,7 +332,7 @@ function renderReport(r: Report): string {
   const smellTable = Object.entries(deltaSmells)
     .map(([k, v]) => `| ${k} | ${r.source[k as keyof SmellCount]} | ${r.outputSmells[k as keyof SmellCount]} | ${v >= 0 ? "+" : ""}${v} |`)
     .join("\n");
-  const totalConfidence = (r.confidence.aggregate * 0.6 + r.selectorQuality * 0.3 + r.webFirstRate * 0.1).toFixed(2);
+  const totalConfidence = computeAggregateConfidence(r).toFixed(2);
   return `# Migration report: ${basename(r.input)}
 
 ## Source → Target
@@ -320,6 +345,15 @@ function renderReport(r: Report): string {
 - Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% canonical (${r.selector.canonical} canonical / ${r.selector.fragile} fragile)
 - Web-first assertion rate: ${(r.webFirstRate * 100).toFixed(0)}%
 - Plan confidence: ${r.confidence.high} high / ${r.confidence.med} med / ${r.confidence.low} low → avg ${r.confidence.aggregate.toFixed(2)}
+
+### Confidence breakdown
+| Signal | Value | Weight | Contribution |
+|---|---|---|---|
+| Plan confidence | ${r.confidence.aggregate.toFixed(2)} | 0.40 | ${(r.confidence.aggregate * 0.4).toFixed(3)} |
+| Selector quality | ${r.selectorQuality.toFixed(2)} | 0.25 | ${(r.selectorQuality * 0.25).toFixed(3)} |
+| Web-first rate | ${r.webFirstRate.toFixed(2)} | 0.10 | ${(r.webFirstRate * 0.1).toFixed(3)} |
+| Smell removal rate | ${(Object.values(r.source).reduce((a, b) => a + b, 0) === 0 ? 1 : Math.max(0, (Object.values(r.source).reduce((a, b) => a + b, 0) - Object.values(r.outputSmells).reduce((a, b) => a + b, 0)) / Object.values(r.source).reduce((a, b) => a + b, 0))).toFixed(2)} | 0.15 | — |
+| Forbidden absence | ${r.forbidden.length === 0 ? "1.00" : "0.00"} | 0.10 | ${r.forbidden.length === 0 ? "0.100" : "0.000"} |
 
 ## Smell count (source → output → delta)
 | Smell | Source | Output | Delta |
@@ -375,10 +409,10 @@ function main(): void {
   mkdirSync(dirname(args["report-out"]), { recursive: true });
   writeFileSync(args["report-out"], renderReport(report));
 
-  // Aggregate confidence to stdout — workflow consumes this.
-  const aggregate = confidence.aggregate * 0.6 + selectorQuality * 0.3 + webFirstRate * 0.1;
-  // Round to 2 decimals for clean comparison in workflow.
-  process.stdout.write(aggregate.toFixed(2));
+  // Aggregate confidence to stdout — workflow consumes this. Uses the same
+  // formula as the rendered report (computeAggregateConfidence) so the
+  // workflow-routed value cannot drift from the human-readable report.
+  process.stdout.write(computeAggregateConfidence(report).toFixed(2));
 }
 
 main();

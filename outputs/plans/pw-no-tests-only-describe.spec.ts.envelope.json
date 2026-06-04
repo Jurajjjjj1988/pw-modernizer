@@ -1,0 +1,41 @@
+{
+  "inputBasename": "pw-no-tests-only-describe.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "BLOCKED: Acme Shop search — reviewer must supply test body before Stage 2",
+      "userAction": "BLOCKED — test.describe('Acme Shop search') contains no test() calls; reviewer must define the user action to verify in the search feature before Stage 2 can generate this scenario (see Q2 in plan)",
+      "expectedAssertions": [
+        "BLOCKED — reviewer must specify search assertions before Stage 2 can run (see Q2 in plan)"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "BLOCKED: Acme Shop checkout — reviewer must supply test body before Stage 2",
+      "userAction": "BLOCKED — test.describe('Acme Shop checkout') contains no test() calls; reviewer must define the user action to verify in the checkout flow before Stage 2 can generate this scenario (see Q3 in plan)",
+      "expectedAssertions": [
+        "BLOCKED — reviewer must specify checkout assertions before Stage 2 can run (see Q3 in plan)"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "BLOCKED: Acme Shop profile — reviewer must supply test body before Stage 2",
+      "userAction": "BLOCKED — test.describe('Acme Shop profile') contains no test() calls; reviewer must define the user action to verify in the profile feature before Stage 2 can generate this scenario (see Q4 in plan)",
+      "expectedAssertions": [
+        "BLOCKED — reviewer must specify profile assertions before Stage 2 can run (see Q4 in plan)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -5,
+    "locDelta": -33,
+    "antiPatternCoverage": "5/5"
+  }
+}

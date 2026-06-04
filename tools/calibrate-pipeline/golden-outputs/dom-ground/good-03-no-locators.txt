@@ -1,0 +1,3 @@
+# good-03-no-locators: 0 locators, expect exit 0 with warning about empty spec
+dom-ground: 0 locator(s) probed
+0 locators found

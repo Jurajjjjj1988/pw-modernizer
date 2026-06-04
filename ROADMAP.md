@@ -91,7 +91,9 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [x] Phase 4 — live probe driver via `chromium.launch` (direct Playwright; MCP layer not needed for server-side CI gate)
 - [x] Phase 5 — wire dom-ground into migrate.yml as opt-in step (soft gate, persists `outputs/reports/*-dom-probe.json` for verify)
 - [ ] Phase 6 — `@playwright/mcp` Stage 1 enrichment: Sonnet receives a DOM snapshot during plan generation, locator table annotates each row with DOM evidence
-- [ ] Phase 7 — hard gate + calibration fixtures (3 good URLs + 3 bad URLs against a known SUT). Currently soft gate to avoid false-fails before SUT calibration.
+- [x] Phase 7a — calibration fixtures (3 good + 3 bad mock URLs in `tools/calibrate-pipeline/fixtures/dom-ground/`; integrated into `npm run calibrate`, currently 6/6 passing). Mock-mode proves gate logic without needing a real SUT.
+- [x] Phase 7b — hard-gate flag: `DOM_GROUND_STRICT=true` repo var promotes the migrate.yml step from soft (warn) to hard (fail). Default soft until SUT calibration in place.
+- [ ] Phase 7c — live-mode SUT calibration (3 good URLs + 3 bad URLs against a known-stable test fixture site). Final step before flipping `DOM_GROUND_STRICT` to true.
 - [ ] HIGH-confidence locators (currently mechanical mapping only) get an additional check against the DOM before emission
 - [ ] LOW-confidence pin rules become enforced: if DOM evidence contradicts the assumed locator, the fallback is taken AND the WHY-comment is materialized in the output
 

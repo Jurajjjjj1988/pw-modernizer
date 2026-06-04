@@ -1,0 +1,4 @@
+# bad-01-all-not-found: 4 locators, mock://always-fail, expect exit 1
+dom-ground: 4 locator(s) probed
+not-found: 4
+resolved-unique: 0

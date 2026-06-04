@@ -35,12 +35,12 @@ const FIXTURE_SPLIT = "<!--FIXTURE-SPLIT-->";
 type ValidatorName =
   | "kb-validate" | "plan-envelope-validate"
   | "ast-diff-trivial-check" | "validate-examples"
-  | "plan-code-coverage";
+  | "plan-code-coverage" | "dom-ground";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
   "ast-diff-trivial-check", "validate-examples",
-  "plan-code-coverage",
+  "plan-code-coverage", "dom-ground",
 ];
 
 interface FixtureResult {
@@ -213,12 +213,34 @@ function runPlanCodeCoverage(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("plan-code-coverage", fixtureName)));
 }
 
+function runDomGround(fixtureName: string): FixtureResult {
+  // Each dom-ground fixture has probe.spec.ts + mock-url.txt. Invoke
+  // dom-ground in mock mode; the calibration proves the gate logic
+  // (resolved-unique → exit 0; not-found/ambiguous → exit 1) end-to-end
+  // without needing a real SUT. Live-mode calibration lands when we have
+  // a known-stable SUT to point at.
+  const fixtureDir = join(FIXTURES_ROOT, "dom-ground", fixtureName);
+  const probe = join(fixtureDir, "probe.spec.ts");
+  const urlFile = join(fixtureDir, "mock-url.txt");
+  const url = readFileSync(urlFile, "utf8").trim();
+  const tmpReport = join(tmpdir(), `dom-ground-${fixtureName}.json`);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "dom-ground.ts"),
+    "--url", url,
+    "--probe", probe,
+    "--report", tmpReport,
+    "--mode", "mock",
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("dom-ground", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
   "ast-diff-trivial-check": runAstDiff,
   "validate-examples": runValidateExamples,
   "plan-code-coverage": runPlanCodeCoverage,
+  "dom-ground": runDomGround,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

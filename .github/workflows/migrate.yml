@@ -486,6 +486,7 @@ jobs:
         id: dom_ground
         env:
           MIGRATION_TARGET_URL: ${{ secrets.MIGRATION_TARGET_URL }}
+          DOM_GROUND_STRICT: ${{ vars.DOM_GROUND_STRICT || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -520,9 +521,15 @@ jobs:
           elif [ "$DG_EXIT" -eq 0 ]; then
             echo "dom_probe_status=pass" >> "$GITHUB_OUTPUT"
           fi
-          # Soft gate today: we surface the warning + persist the report. Verify
-          # stage consumes it. Hard gate (exit 1 here) ships once we have real
-          # SUT calibration to avoid false-fails on flaky DOM.
+          # Soft gate by default: surface the warning + persist the report, let
+          # verify decide. Set DOM_GROUND_STRICT=true (repo secret/variable) to
+          # promote to hard gate — Stage 2 fails this step on any not-found or
+          # ambiguous match. Recommended only after SUT calibration is in place
+          # so the gate isn't tripped by flaky DOM.
+          if [ "${DOM_GROUND_STRICT:-}" = "true" ] && [ "$DG_EXIT" -ne 0 ]; then
+            echo "::error::dom-ground hard gate (DOM_GROUND_STRICT=true): exit $DG_EXIT — failing the migrate job"
+            exit "$DG_EXIT"
+          fi
 
       - name: Evaluate migration (metrics + confidence)
         id: evaluate

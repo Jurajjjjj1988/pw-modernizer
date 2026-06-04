@@ -1,0 +1,5 @@
+# good-01-all-resolve: 3 locators, mock://always-resolve, expect exit 0
+dom-ground: 3 locator(s) probed
+resolved-unique: 3
+resolved-multiple: 0
+not-found: 0

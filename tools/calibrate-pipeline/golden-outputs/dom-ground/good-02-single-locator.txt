@@ -1,0 +1,4 @@
+# good-02-single-locator: 1 locator, mock://always-resolve, expect exit 0
+dom-ground: 1 locator(s) probed
+resolved-unique: 1
+not-found: 0

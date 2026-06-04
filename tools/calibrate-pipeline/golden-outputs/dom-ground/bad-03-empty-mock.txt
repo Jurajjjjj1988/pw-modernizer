@@ -1,0 +1,3 @@
+# bad-03-empty-mock: 1 locator, unknown mock scheme falls through to "no-match", expect exit 1
+dom-ground: 1 locator(s) probed
+not-found: 1

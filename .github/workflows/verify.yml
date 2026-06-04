@@ -24,7 +24,14 @@ on:
         type: string
 
 permissions:
-  contents: read
+  # contents:write — needed by `gh api repos/.../dispatches` in the
+  # Auto-regen branch (see "Comment verify findings" step). GitHub's
+  # POST /repos/{owner}/{repo}/dispatches endpoint requires write access
+  # to repository contents for the github.token to fire it.
+  # NB: repository_dispatch fired with github.token DOES re-trigger
+  # downstream `repository_dispatch` listeners (this is documented
+  # behavior — `push` listeners are the special case that DOESN'T fire).
+  contents: write
   pull-requests: write
   id-token: write
 
@@ -178,13 +185,104 @@ jobs:
           VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
           case "$VERDICT" in
             "START OVER")
+              # ---------------------------------------------------------------
+              # Auto-regen on START OVER (closes the manual /regenerate loop).
+              #
+              # Counter mechanism: every auto-fired dispatch leaves a
+              # `regen-attempt:N` label on this code PR. On the NEXT START OVER
+              # for the same code PR, we count existing labels and:
+              #   count == 0 → fire dispatch, add `regen-attempt:1`
+              #   count == 1 → fire dispatch, add `regen-attempt:2`
+              #   count == 2 → fire dispatch, add `regen-attempt:3` (last shot)
+              #   count >= 3 → HALT — add `regen-attempt:max-reached`, require
+              #                a human to either /regenerate manually or close.
+              #
+              # This bounds the worst case at 3 dispatches per input (so Opus
+              # can't spin Sonnet in an infinite "still bad" loop). The cap
+              # could ALSO be enforced inside plan.yml by reading
+              # client_payload.regen_attempt (defense-in-depth), but that
+              # change is out of scope here — this workflow alone enforces it.
+              #
+              # Auth: `gh api repos/{owner}/{repo}/dispatches` requires
+              # `contents: write` for github.token — granted at the workflow
+              # `permissions:` block above. Repository_dispatch fired with
+              # github.token DOES re-trigger downstream `repository_dispatch`
+              # listeners (this is the documented carve-out; `push` listeners
+              # are the special case that does NOT re-trigger). So plan.yml's
+              # `regenerate-plan` handler will fire from this dispatch.
+              # ---------------------------------------------------------------
               gh pr edit "$PR_NUMBER" --add-label "verify:start-over"
-              # Block-as-failed-check: a START OVER verdict means the verifier
-              # rejected the migration. Exit 1 so this workflow run shows as a
-              # failed check on the PR. Combined with a branch-protection rule
-              # requiring this check, the code PR cannot be merged until the
-              # reviewer either fixes the issues or comments /regenerate (see
-              # regenerate-dispatch.yml).
+              # Count prior auto-regen attempts.
+              REGEN_COUNT=$(gh pr view "$PR_NUMBER" --json labels \
+                --jq '[.labels[].name | select(startswith("regen-attempt:") and . != "regen-attempt:max-reached")] | length')
+              REGEN_COUNT=${REGEN_COUNT:-0}
+              echo "Auto-regen counter: $REGEN_COUNT prior attempts on PR #$PR_NUMBER"
+              if [ "$REGEN_COUNT" -ge 3 ]; then
+                # Cap hit — stop the loop, require human.
+                gh pr edit "$PR_NUMBER" --add-label "regen-attempt:max-reached" 2>/dev/null || true
+                echo "::error::Auto-regen cap (3/3) hit for PR #$PR_NUMBER. Human review required — comment /regenerate manually if a 4th attempt is warranted."
+                exit 1
+              fi
+              # Parse input_path from the code PR body (same format as the
+              # plan PR — migrate.yml writes **Input:** `<path>` on its own
+              # line; see regenerate-dispatch.yml step 'Verify PR has
+              # migrator:plan label + extract input path' for the canonical
+              # regex pattern this mirrors).
+              PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+              INPUT_PATH=$(printf '%s\n' "$PR_BODY" | grep -oE '\*\*Input:\*\* `[^`]+`' | head -1 | sed -E 's/^\*\*Input:\*\* `([^`]+)`$/\1/')
+              if [ -z "$INPUT_PATH" ]; then
+                echo "::error::Could not parse **Input:** \`<path>\` from PR #$PR_NUMBER body — cannot auto-regen. Falling back to manual /regenerate."
+                echo "::error::Verifier verdict: START OVER. Code PR #$PR_NUMBER blocked from merge."
+                exit 1
+              fi
+              NEXT_ATTEMPT=$((REGEN_COUNT + 1))
+              # Build feedback payload: full verify report as the freeform
+              # feedback text that plan.yml will splice into the analyze prompt
+              # (matches client_payload.slash_command.args.all shape used by
+              # the manual /regenerate flow — see plan.yml step 'Run Claude
+              # (analyze stage)' env REGENERATE_FEEDBACK).
+              FEEDBACK=$(cat "$REPORT")
+              # Construct the dispatch payload. plan.yml reads:
+              #   client_payload.slash_command.args.named.input_path
+              #   client_payload.slash_command.args.all
+              # so we mirror that shape exactly. `regen_attempt` is a
+              # defense-in-depth signal for plan.yml to OPTIONALLY enforce
+              # the same cap on its side; this workflow's counter is
+              # authoritative.
+              PAYLOAD=$(jq -nc \
+                --arg input_path "$INPUT_PATH" \
+                --arg all "$FEEDBACK" \
+                --argjson regen_attempt "$NEXT_ATTEMPT" \
+                '{event_type: "regenerate-plan",
+                  client_payload: {
+                    slash_command: {
+                      command: "regenerate",
+                      args: {
+                        named: {input_path: $input_path},
+                        all: $all
+                      }
+                    },
+                    regen_attempt: $regen_attempt,
+                    triggered_by: "verify-auto-regen"
+                  }
+                 }')
+              # Fire repository_dispatch on this repo. `gh api` POSTs to
+              # /repos/{owner}/{repo}/dispatches which fires the event.
+              if printf '%s' "$PAYLOAD" | gh api \
+                  --method POST \
+                  -H "Accept: application/vnd.github+json" \
+                  "repos/${{ github.repository }}/dispatches" \
+                  --input -; then
+                gh pr edit "$PR_NUMBER" --add-label "regen-attempt:$NEXT_ATTEMPT" 2>/dev/null || true
+                gh pr edit "$PR_NUMBER" --add-label "verify:auto-regen-fired" 2>/dev/null || true
+                echo "::notice::Auto-regen fired (attempt $NEXT_ATTEMPT/3). New plan PR will be opened by plan.yml. This code PR will be closed when the new code PR is approved."
+              else
+                echo "::error::repository_dispatch POST failed — falling back to manual /regenerate. Reviewer must comment /regenerate on the plan PR."
+              fi
+              # Always exit 1: this verify run failed (START OVER).
+              # Even on successful dispatch, this code PR check stays red so
+              # branch protection holds. The NEW code PR (from the dispatched
+              # plan.yml run) will get its own verify check.
               echo "::error::Verifier verdict: START OVER. Code PR #$PR_NUMBER blocked from merge."
               exit 1
               ;;

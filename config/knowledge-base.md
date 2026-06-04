@@ -714,6 +714,521 @@ await expect(page.getByRole('alert')).toHaveCount(0); // now check absence
 
 Rationale: `should('not.exist')` returns immediately if the element hasn't been added yet (it doesn't wait). Tests pass during the loading window before the toast appears. Playwright's `toHaveCount(0)` polls, but the safer pattern is to wait on a positive signal first. Prevents `PrematureAbsenceCheck` bug class. See [`playwright-rules/absence-after-presence`](https://github.com/microsoft/playwright/issues/15391) discussion.
 
+#### 1.2.21 `cy.get('parent').get('child')` chained instead of scoped `.find()`
+
+```js
+// ANTI-PATTERN
+cy.get('.order-row').get('.delete-btn').first().click();
+```
+
+```ts
+// CANONICAL
+await page.getByRole('row').filter({ hasText: 'Order #42' }).getByRole('button', { name: 'Delete' }).click();
+```
+
+Rationale: chaining `cy.get('.parent').get('.child')` re-queries the WHOLE document for `.child` — it does NOT scope the second query under the first match. Selecting the wrong delete button on a different row passes the test but corrupts data. Prevents `UnscopedDescendantSelection` bug class.
+
+#### 1.2.22 `cy.contains('Save ')` whitespace-sensitive text match
+
+```js
+// ANTI-PATTERN
+cy.contains('Save changes ').click(); // trailing space copy-pasted from designer
+```
+
+```ts
+// CANONICAL — regex with anchored boundary
+await page.getByRole('button', { name: /^save changes$/i }).click();
+```
+
+Rationale: Cypress `cy.contains` uses substring matching with the exact string including whitespace; a designer-pasted trailing space breaks the test in a way that's invisible in code review. Playwright `getByRole` normalizes accessible names. Prevents `InvisibleWhitespaceMismatch` bug class.
+
+#### 1.2.23 `cy.get('[data-cy=user-row]')` data-attribute without quotes
+
+```js
+// ANTI-PATTERN
+cy.get('[data-cy=user row]').click(); // breaks: unquoted multi-word value
+cy.get('[data-test=row-1]').click();  // works but pollutes prod DOM
+```
+
+```ts
+// CANONICAL
+await page.getByTestId('user-row').click();
+// playwright.config.ts: use: { testIdAttribute: 'data-cy' }
+```
+
+Rationale: unquoted attribute values fail silently on multi-word strings; quoted ones work but typos go undetected because CSS selectors don't validate. `getByTestId` with a project-level `testIdAttribute` config is the canonical form — typos at call sites surface as missing-element errors immediately. Prevents `SilentSelectorTypo` bug class.
+
+#### 1.2.24 `cy.get(':contains("Sign in"):eq(0)')` jQuery pseudo-selector escape hatch
+
+```js
+// ANTI-PATTERN
+cy.get(':contains("Sign in"):eq(0)').click();
+```
+
+```ts
+// CANONICAL
+await page.getByRole('link', { name: 'Sign in' }).click();
+```
+
+Rationale: jQuery pseudo-selectors mix CSS with substring matching and ordinal indexing — three foot-guns in one selector. Playwright role queries express the intent at the level the user perceives. Prevents `JQueryAntiPatternResurrection` bug class.
+
+#### 1.2.25 `cy.get('#submit')` CSS-id when role would be stable
+
+```js
+// ANTI-PATTERN
+cy.get('#submit').click();
+```
+
+```ts
+// CANONICAL
+await page.getByRole('button', { name: 'Submit order' }).click();
+```
+
+Rationale: framework-generated IDs (React, Angular auto-IDs) churn across major versions. Even stable hand-written IDs couple the test to implementation rather than to what the user sees. Role + accessible name survive refactors that preserve UX. Prevents `IdChurnOnFrameworkBump` bug class.
+
+#### 1.2.26 `cy.click().click()` double-click retry workaround
+
+```js
+// ANTI-PATTERN — masks a real race with no fix
+cy.get('#submit').click().click();
+```
+
+```ts
+// CANONICAL — wait for the button to be enabled, then single click
+const submit = page.getByRole('button', { name: 'Submit' });
+await expect(submit).toBeEnabled();
+await submit.click();
+```
+
+Rationale: double-clicking to "make it work" hides actionability problems — the button is disabled, the modal hasn't rendered, the form is mid-validation. Playwright's actionability checks (`toBeEnabled`, automatic stability wait) handle the root cause. Prevents `DoubleClickMaskingRace` bug class.
+
+#### 1.2.27 `cy.type('hello', { delay: 100 })` hardcoded inter-keystroke delay
+
+```js
+// ANTI-PATTERN
+cy.get('#search').type('quarterly report', { delay: 150 });
+```
+
+```ts
+// CANONICAL
+await page.getByRole('searchbox').fill('quarterly report');
+// If real typing is needed (autocomplete triggers, e.g.):
+await page.getByRole('searchbox').pressSequentially('quarterly', { delay: 50 });
+await expect(page.getByRole('option')).toHaveCount(3);
+```
+
+Rationale: `delay` is a sympathetic-magic fix for autocomplete races. Either no delay is needed (`fill` is instant and works for most inputs) or the test should assert on the visible result of typing instead of waiting blindly. Prevents `SympatheticMagicDelay` bug class.
+
+#### 1.2.28 `cy.check()` without verifying state
+
+```js
+// ANTI-PATTERN
+cy.get('#tos').check();
+cy.get('#submit').click(); // — if check() silently no-op'd, click fails ambiguously
+```
+
+```ts
+// CANONICAL
+const tos = page.getByRole('checkbox', { name: 'I agree to terms' });
+await tos.check();
+await expect(tos).toBeChecked(); // confirm state changed
+await page.getByRole('button', { name: 'Submit' }).click();
+```
+
+Rationale: `check()` is idempotent — if the box is already checked, nothing happens. If a previous test left the page in a checked state and `beforeEach` failed to reset, the next assertion fails in a way that points at the WRONG bug. Explicit state assertions catch this. Prevents `IdempotentNoOpHidesState` bug class.
+
+#### 1.2.29 `cy.get('select').select(2)` by index
+
+```js
+// ANTI-PATTERN
+cy.get('#country').select(2); // — what country is index 2?
+```
+
+```ts
+// CANONICAL
+await page.getByLabel('Country').selectOption('Czech Republic');
+```
+
+Rationale: option order changes when the data source changes — adding a new country alphabetically shifts every index downstream. The test passes but tests the wrong country. Selecting by visible label survives data churn. Prevents `OrdinalDataDrift` bug class.
+
+#### 1.2.30 `cy.get(...).clear().type(...)` clear-then-type pattern
+
+```js
+// ANTI-PATTERN
+cy.get('#email').clear().type('new@x.com');
+```
+
+```ts
+// CANONICAL
+await page.getByLabel('Email').fill('new@x.com');
+```
+
+Rationale: `fill` replaces input value atomically; the manual `clear().type()` pattern can race if the underlying React/Vue input handler fires onChange between the two operations and re-validates mid-replacement. Atomic fill removes the race. Prevents `ClearTypeReactStateRace` bug class.
+
+#### 1.2.31 `should('be.visible').should('contain', text)` chained assertion ladder
+
+```js
+// ANTI-PATTERN
+cy.get('.welcome').should('be.visible').should('contain', 'alice');
+```
+
+```ts
+// CANONICAL — one assertion that subsumes both
+await expect(page.getByText('Welcome, alice', { exact: false })).toBeVisible();
+```
+
+Rationale: chained `.should` re-queries the DOM between each link in the chain. If the element re-renders (React conditional render) between visibility check and contain check, the test passes against a stale element. Single web-first assertion against the user-visible string is atomic. Prevents `ChainedShouldStaleAssertion` bug class.
+
+#### 1.2.32 `cy.url().should('eq', 'https://staging.example.com/full/path?q=1')` over partial match
+
+```js
+// ANTI-PATTERN
+cy.url().should('eq', 'https://staging.example.com/orders/42?status=new');
+```
+
+```ts
+// CANONICAL — assert what the test actually cares about (route + key params)
+await expect(page).toHaveURL(/\/orders\/\d+\?.*status=new/);
+```
+
+Rationale: full-URL equality couples to environment (staging vs prod hostname), to query-string ordering, and to optional tracking params. Pattern-match against the route + meaningful params. Prevents `URLOverSpecification` bug class.
+
+#### 1.2.33 `cy.contains('Order')` matching too broadly
+
+```js
+// ANTI-PATTERN — matches "Order #42", "Order summary", "Ordering...", "Reorder"
+cy.contains('Order').click();
+```
+
+```ts
+// CANONICAL — anchored, scoped, role-targeted
+await page.getByRole('heading', { name: /^order #\d+$/i }).click();
+```
+
+Rationale: substring text matching against unanchored single words is a source of CI flakes — a UI string addition can shift which element matches first. Role + anchored pattern eliminates the ambiguity. Prevents `TextSubstringFlakeAmplification` bug class.
+
+#### 1.2.34 `cy.then(($el) => expect($el.attr('href')).toEqual(...))` jQuery property extraction
+
+```js
+// ANTI-PATTERN
+cy.get('.docs-link').then(($el) => {
+  expect($el.attr('href')).to.equal('/docs');
+});
+```
+
+```ts
+// CANONICAL — Playwright has direct DOM property assertions
+await expect(page.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
+```
+
+Rationale: reaching into jQuery's `$el` mixes synchronous DOM access into Cypress's command queue and bypasses retry. Playwright's `toHaveAttribute` polls until the assertion holds. Prevents `JQueryAttrSyncMismatch` bug class.
+
+#### 1.2.35 `should('have.text', '  Submit  ')` whitespace-trim sensitivity
+
+```js
+// ANTI-PATTERN
+cy.get('.btn').should('have.text', 'Submit'); // fails if text is "  Submit  "
+```
+
+```ts
+// CANONICAL — explicit normalization or pattern match
+await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
+// or: expect(await btn.textContent()).toMatch(/^\s*Submit\s*$/);
+```
+
+Rationale: `have.text` does an exact-match string comparison; CSS `white-space: pre` styling can leave invisible padding. `getByRole` normalizes accessible names. Prevents `WhitespaceExactMatchFailure` bug class.
+
+#### 1.2.36 `cy.wait('@createOrder')` without explicit timeout
+
+```js
+// ANTI-PATTERN — defaults to 5s, may flake on slow CI
+cy.wait('@createOrder');
+```
+
+```ts
+// CANONICAL — explicit, with intent
+const orderResp = await page.waitForResponse(
+  r => r.url().includes('/api/orders') && r.request().method() === 'POST',
+  { timeout: 30000 }
+);
+expect(orderResp.status()).toBe(201);
+```
+
+Rationale: implicit 5-second default works in dev but fails when staging is under load. Explicit timeout documents the SLO. Plus Playwright's pattern matcher is more precise than alias-based wait. Prevents `ImplicitTimeoutFlake` bug class.
+
+#### 1.2.37 `cy.wait(['@a', '@b'])` ordering assumption
+
+```js
+// ANTI-PATTERN — assumes both already fired
+cy.wait(['@createOrder', '@logEvent']);
+```
+
+```ts
+// CANONICAL — Promise.all races them, no ordering assumption
+const [order, log] = await Promise.all([
+  page.waitForResponse(r => r.url().includes('/api/orders')),
+  page.waitForResponse(r => r.url().includes('/api/events')),
+]);
+expect(order.status()).toBe(201);
+expect(log.status()).toBe(200);
+```
+
+Rationale: `cy.wait(['@a', '@b'])` semantically races but past Cypress versions enforced array order; the migration target shouldn't carry that brittleness forward. Promise.all is explicitly unordered. Prevents `AliasArrayOrderingDrift` bug class.
+
+#### 1.2.38 `cy.request('/health')` polling instead of fixture readiness
+
+```js
+// ANTI-PATTERN — polls in beforeEach until backend wakes up
+beforeEach(() => {
+  cy.request({ url: '/health', retryOnStatusCodeFailure: true });
+});
+```
+
+```ts
+// CANONICAL — global-setup waits once, tests assume ready state
+// playwright/global-setup.ts
+async function globalSetup() {
+  const r = await fetch(`${process.env.MIGRATION_TARGET_URL}/health`);
+  if (!r.ok) throw new Error(`Backend not ready: ${r.status}`);
+}
+```
+
+Rationale: per-test health polling wastes minutes on a 30-test suite. Global setup proves readiness once per worker. Prevents `PerTestReadinessProbeWaste` bug class.
+
+#### 1.2.39 `cy.intercept('GET', '/api/foo', ...)` without `.as()` alias
+
+```js
+// ANTI-PATTERN — can't wait on it later
+cy.intercept('GET', '/api/orders', { fixture: 'orders.json' });
+cy.visit('/orders');
+// Test can't synchronize on the intercept firing
+```
+
+```ts
+// CANONICAL — route + waitForResponse
+await page.route('**/api/orders', (route) =>
+  route.fulfill({ body: JSON.stringify(ordersFixture) })
+);
+const respPromise = page.waitForResponse('**/api/orders');
+await page.goto('/orders');
+await respPromise;
+```
+
+Rationale: aliasless intercepts leave the test without a sync point — assertions race the network. Explicit waiters tie the assertion to the network response. Prevents `UnaliasedInterceptRace` bug class.
+
+#### 1.2.40 `cy.intercept(..., { times: 1 })` count limit brittleness
+
+```js
+// ANTI-PATTERN — fails the second call (e.g., on retry)
+cy.intercept('POST', '/api/login', { statusCode: 401 }).as('login');
+// If frontend retries on 401, second call hits the real endpoint
+```
+
+```ts
+// CANONICAL — explicit per-call control or unmocked retry
+let callCount = 0;
+await page.route('**/api/login', (route) => {
+  callCount++;
+  if (callCount === 1) return route.fulfill({ status: 401 });
+  return route.continue(); // let retries through
+});
+```
+
+Rationale: implicit `times: 1` semantics (or any count limit) couples the test to retry behavior in the SUT. Explicit per-call logic documents the intent. Prevents `InterceptCountCoupling` bug class.
+
+#### 1.2.41 `cy.origin()` ceremony for SSO flow
+
+```js
+// ANTI-PATTERN — requires special config + plugin
+cy.origin('auth.example.com', () => {
+  cy.get('#user').type('alice');
+  cy.get('#pass').type('pw');
+  cy.get('#login').click();
+});
+```
+
+```ts
+// CANONICAL — Playwright follows cross-origin redirects natively
+await page.goto('/protected'); // redirects to auth.example.com
+await page.getByLabel('Username').fill('alice');
+await page.getByLabel('Password').fill('pw');
+await page.getByRole('button', { name: 'Log in' }).click();
+// Or skip the UI entirely:
+await page.context().addCookies([{ name: 'session', value: token, domain: 'example.com', path: '/' }]);
+```
+
+Rationale: Cypress's same-origin restriction birthed `cy.origin` ceremony; Playwright operates per-Page not per-origin, so cross-origin flows just work. Prevents `OriginCeremonyCarryover` bug class.
+
+#### 1.2.42 `cy.request(...)` without `failOnStatusCode: false` for expected errors
+
+```js
+// ANTI-PATTERN — test crashes on expected 404
+cy.request('/api/missing-resource'); // crashes the test instead of returning the response
+```
+
+```ts
+// CANONICAL — APIRequestContext returns the response regardless of status
+const resp = await request.get('/api/missing-resource');
+expect(resp.status()).toBe(404);
+```
+
+Rationale: Cypress's `cy.request` throws on non-2xx by default — tests checking for 404 must opt out with `failOnStatusCode: false`. Playwright's APIRequestContext returns the response uniformly; status check is explicit. Prevents `ImplicitFailOnNon2xx` bug class.
+
+#### 1.2.43 `@alias` leaking across `describe` blocks
+
+```js
+// ANTI-PATTERN
+describe('A', () => {
+  beforeEach(() => cy.fixture('user').as('user'));
+  it('uses @user', () => { /* ok */ });
+});
+describe('B', () => {
+  it('also uses @user', () => { cy.get('@user'); }); // — works if A ran first, fails if B runs alone
+});
+```
+
+```ts
+// CANONICAL — per-describe fixtures via Playwright's fixture system
+import { test } from './fixtures';
+test.describe('B', () => {
+  test('uses user', async ({ user, page }) => {
+    // user is a scoped fixture
+  });
+});
+```
+
+Rationale: Cypress aliases live on the test runner singleton and leak across describes; test isolation breaks under `--testPathPattern` runs that pick only describe B. Playwright fixtures are explicit and per-test. Prevents `AliasGlobalScopeLeak` bug class.
+
+#### 1.2.44 `beforeEach(() => sharedArr.push(...))` shared-state mutation
+
+```js
+// ANTI-PATTERN
+const seen = [];
+beforeEach(() => {
+  seen.push(Date.now()); // each test mutates a module-scoped array
+});
+```
+
+```ts
+// CANONICAL — fixture-scoped state, fresh per test
+test.beforeEach(({ }, testInfo) => {
+  testInfo.attach('seen-at', { body: String(Date.now()) });
+});
+```
+
+Rationale: module-scoped mutation makes test order matter — running test 5 in isolation sees an empty array; running the full suite sees an array with 4 entries. Either is "test passes" but they assert different things. Prevents `OrderDependentSharedState` bug class.
+
+#### 1.2.45 `cy.clearCookies()` / `cy.clearLocalStorage()` in every `beforeEach`
+
+```js
+// ANTI-PATTERN — adds 50-100ms × N tests to suite runtime
+beforeEach(() => {
+  cy.clearCookies();
+  cy.clearLocalStorage();
+});
+```
+
+```ts
+// CANONICAL — fresh BrowserContext per test (default behavior)
+test('starts clean', async ({ page }) => {
+  // Playwright gives each test a fresh context; no cookies/storage carry over.
+});
+```
+
+Rationale: Cypress shares a single browser context across tests so cleanup ceremony is required. Playwright defaults to per-test context isolation — the cleanup is automatic and faster. Prevents `ManualIsolationCeremony` bug class.
+
+#### 1.2.46 `describe.skip('flaky', ...)` without a tracking issue
+
+```js
+// ANTI-PATTERN — silently disabled forever
+describe.skip('checkout flow', () => { /* ... */ });
+```
+
+```ts
+// CANONICAL — link the ticket and set a deadline
+test.skip('checkout flow — re-enable after #4231 lands (target: 2026-Q3)', async ({ page }) => {
+  // ...
+});
+// OR fixme for known-broken pending repair:
+test.fixme('payment redirect', async ({ page }) => { /* tracked */ });
+```
+
+Rationale: untraced skips rot into permanent dead code. The linked-ticket convention forces a re-enable window. Prevents `OrphanedSkipDecay` bug class.
+
+#### 1.2.47 `cy.then(() => Promise.all([...]))` mixing Cypress and native async
+
+```js
+// ANTI-PATTERN
+cy.then(() => {
+  return Promise.all([fetchA(), fetchB()]);
+});
+```
+
+```ts
+// CANONICAL — Playwright is async/await native, no mixing
+const [a, b] = await Promise.all([fetchA(), fetchB()]);
+```
+
+Rationale: Cypress's command queue and native Promise chains have different error semantics — a Promise rejection inside `cy.then` may or may not fail the test depending on Cypress version. Pure async/await has one error model. Prevents `MixedAsyncErrorSemantics` bug class.
+
+#### 1.2.48 4-level `describe` nesting (`describe(describe(describe(it)))`)
+
+```js
+// ANTI-PATTERN
+describe('Auth', () => {
+  describe('Login', () => {
+    describe('Valid credentials', () => {
+      describe('Remember me checked', () => {
+        it('persists session', () => { /* ... */ });
+      });
+    });
+  });
+});
+```
+
+```ts
+// CANONICAL — flat structure, intent in test title
+test('login: valid creds + remember-me persists session', async ({ page }) => {
+  // ...
+});
+```
+
+Rationale: deep nesting fragments the reader's mental model and makes `before`/`after` ordering hard to trace. Playwright community convention is ≤ 1 level of describe; intent goes in the test title. Prevents `NestingMazeReadability` bug class.
+
+#### 1.2.49 Hardcoded test emails (`admin@x.com`) without isolation
+
+```js
+// ANTI-PATTERN
+cy.get('#email').type('admin@x.com');
+// — every parallel worker types the same email, races on user lookup
+```
+
+```ts
+// CANONICAL — generated unique per test
+const email = `admin+${test.info().workerIndex}-${Date.now()}@example.com`;
+await page.getByLabel('Email').fill(email);
+```
+
+Rationale: hardcoded test data makes parallel test runs race on the same backend record. Unique-per-worker emails eliminate the contention. Prevents `ParallelWorkerDataCollision` bug class.
+
+#### 1.2.50 `cy.log('about to click')` debug leftover
+
+```js
+// ANTI-PATTERN — commits debug output to CI logs
+cy.log('about to click submit');
+cy.get('#submit').click();
+cy.log('clicked');
+```
+
+```ts
+// CANONICAL — test.step for structured grouping (visible in HTML report)
+await test.step('submit the form', async () => {
+  await page.getByRole('button', { name: 'Submit' }).click();
+});
+```
+
+Rationale: `cy.log` was a debug aid that survived into committed code; CI logs fill with noise. Playwright `test.step` produces structured trace entries visible in the HTML report — useful AND survives review. Prevents `DebugLogOnboardNoise` bug class.
+
 ---
 
 ### 1.3 Selenium WebDriver (Java) anti-patterns

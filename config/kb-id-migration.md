@@ -84,6 +84,36 @@ Each old ID becomes a **deprecated alias** pointing at the new ID. The validator
 | KB-1.2.18 | `cy/assertion/stale-snapshot`   | deprecated, alias for `cy/assertion/stale-snapshot` (added 2026-06-04 — `cy.then` sync/async mix) |
 | KB-1.2.19 | `cy/fixture/commands-overwrite` | deprecated, alias for `cy/fixture/commands-overwrite` (added 2026-06-04 — `Cypress.Commands.overwrite`) |
 | KB-1.2.20 | `cy/assertion/premature-absence` | deprecated, alias for `cy/assertion/premature-absence` (added 2026-06-04 — `should('not.exist')` race) |
+| KB-1.2.21 | `cy/selector/chained-get-unscoped` | deprecated, alias for `cy/selector/chained-get-unscoped` (added 2026-06-04 — chained cy.get re-queries document) |
+| KB-1.2.22 | `cy/selector/contains-whitespace` | deprecated, alias for `cy/selector/contains-whitespace` (added 2026-06-04 — designer trailing space) |
+| KB-1.2.23 | `cy/selector/data-cy-unquoted` | deprecated, alias for `cy/selector/data-cy-unquoted` (added 2026-06-04 — data-cy attribute typo silent failure) |
+| KB-1.2.24 | `cy/selector/jquery-pseudo` | deprecated, alias for `cy/selector/jquery-pseudo` (added 2026-06-04 — `:contains():eq()` escape hatch) |
+| KB-1.2.25 | `cy/selector/css-id-over-role` | deprecated, alias for `cy/selector/css-id-over-role` (added 2026-06-04 — framework-generated IDs churn) |
+| KB-1.2.26 | `cy/action/double-click-retry` | deprecated, alias for `cy/action/double-click-retry` (added 2026-06-04 — masks actionability bug) |
+| KB-1.2.27 | `cy/timing/type-keystroke-delay` | deprecated, alias for `cy/timing/type-keystroke-delay` (added 2026-06-04 — sympathetic-magic delay) |
+| KB-1.2.28 | `cy/action/check-no-verify` | deprecated, alias for `cy/action/check-no-verify` (added 2026-06-04 — idempotent no-op masks state) |
+| KB-1.2.29 | `cy/action/select-by-index` | deprecated, alias for `cy/action/select-by-index` (added 2026-06-04 — ordinal data drift) |
+| KB-1.2.30 | `cy/action/clear-then-type` | deprecated, alias for `cy/action/clear-then-type` (added 2026-06-04 — React onChange race) |
+| KB-1.2.31 | `cy/assertion/chained-should-stale` | deprecated, alias for `cy/assertion/chained-should-stale` (added 2026-06-04 — re-render between chain links) |
+| KB-1.2.32 | `cy/assertion/url-full-equality` | deprecated, alias for `cy/assertion/url-full-equality` (added 2026-06-04 — env coupling) |
+| KB-1.2.33 | `cy/selector/contains-broad-match` | deprecated, alias for `cy/selector/contains-broad-match` (added 2026-06-04 — unanchored substring) |
+| KB-1.2.34 | `cy/assertion/jquery-attr-sync` | deprecated, alias for `cy/assertion/jquery-attr-sync` (added 2026-06-04 — `$el.attr` no retry) |
+| KB-1.2.35 | `cy/assertion/text-exact-whitespace` | deprecated, alias for `cy/assertion/text-exact-whitespace` (added 2026-06-04 — `have.text` trim sensitivity) |
+| KB-1.2.36 | `cy/timing/wait-alias-no-timeout` | deprecated, alias for `cy/timing/wait-alias-no-timeout` (added 2026-06-04 — implicit 5s default flake) |
+| KB-1.2.37 | `cy/timing/wait-alias-array-order` | deprecated, alias for `cy/timing/wait-alias-array-order` (added 2026-06-04 — version-drift ordering) |
+| KB-1.2.38 | `cy/fixture/health-poll-per-test` | deprecated, alias for `cy/fixture/health-poll-per-test` (added 2026-06-04 — global-setup belongs once) |
+| KB-1.2.39 | `cy/network/intercept-no-alias` | deprecated, alias for `cy/network/intercept-no-alias` (added 2026-06-04 — no sync point) |
+| KB-1.2.40 | `cy/network/intercept-times-coupling` | deprecated, alias for `cy/network/intercept-times-coupling` (added 2026-06-04 — count limit retry brittleness) |
+| KB-1.2.41 | `cy/network/origin-ceremony` | deprecated, alias for `cy/network/origin-ceremony` (added 2026-06-04 — Playwright follows cross-origin natively) |
+| KB-1.2.42 | `cy/network/request-fail-on-status` | deprecated, alias for `cy/network/request-fail-on-status` (added 2026-06-04 — implicit non-2xx throw) |
+| KB-1.2.43 | `cy/fixture/alias-cross-describe-leak` | deprecated, alias for `cy/fixture/alias-cross-describe-leak` (added 2026-06-04 — singleton scope leak) |
+| KB-1.2.44 | `cy/fixture/before-each-shared-state` | deprecated, alias for `cy/fixture/before-each-shared-state` (added 2026-06-04 — module-scope mutation) |
+| KB-1.2.45 | `cy/fixture/manual-cleanup-ceremony` | deprecated, alias for `cy/fixture/manual-cleanup-ceremony` (added 2026-06-04 — clearCookies in beforeEach) |
+| KB-1.2.46 | `cy/debug/describe-skip-orphan` | deprecated, alias for `cy/debug/describe-skip-orphan` (added 2026-06-04 — untraced skip rot) |
+| KB-1.2.47 | `cy/structure/mixed-async-semantics` | deprecated, alias for `cy/structure/mixed-async-semantics` (added 2026-06-04 — cy.then + Promise.all) |
+| KB-1.2.48 | `cy/structure/describe-nesting-deep` | deprecated, alias for `cy/structure/describe-nesting-deep` (added 2026-06-04 — readability fragmentation) |
+| KB-1.2.49 | `cy/magic/hardcoded-test-data` | deprecated, alias for `cy/magic/hardcoded-test-data` (added 2026-06-04 — parallel-worker collision) |
+| KB-1.2.50 | `cy/debug/cy-log-leftover` | deprecated, alias for `cy/debug/cy-log-leftover` (added 2026-06-04 — CI log noise; prefer test.step) |
 
 ### 2.3 Selenium WebDriver Java (was §1.3) — `sel/...`
 

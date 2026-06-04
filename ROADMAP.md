@@ -115,7 +115,7 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 - [ ] `examples/cypress-*/` corpus expansion to 5+ examples
 - [ ] `inputs/cypress/` first real input
-- [ ] `cy/...` KB-ID namespace expansion (14 → 20 done in commit `e30bcc8` adding 6 high-impact entries; ~30 more entries deferred until first real Cypress input lands)
+- [x] `cy/...` KB-ID namespace expansion: 50 Cypress entries total (commit `e30bcc8` 14→20, this commit 20→50). kb-validate: 98 IDs total. Parity with bad-PW reached.
 
 ---
 

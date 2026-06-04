@@ -244,9 +244,13 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 
 ## Contributing
 
-PRs that improve `config/migration-rules.md`, `config/knowledge-base.md`, `examples/reference/company-style.spec.ts`, or `prompts/*.md` directly improve every future migration. PRs that add new validation gates to `scripts/` raise the quality floor.
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide — onboarding, PR impact tier, review contract, project values.
+
+Quick orientation: PRs that improve `config/migration-rules.md`, `config/knowledge-base.md`, `examples/reference/company-style.spec.ts`, or `prompts/*.md` directly improve every future migration. PRs that add new validation gates to `scripts/` raise the quality floor.
 
 PRs that add a new input source (Cypress, Selenium) should also include 2+ seed examples in `examples/` and unlock the gate in `README.md` only after the bad-Playwright corpus hits the 70% bar.
+
+Before opening a PR, run `npm run quickstart` — it runs the same gates CI runs and explains each one. Issue templates live in `.github/ISSUE_TEMPLATE/`.
 
 ## License
 

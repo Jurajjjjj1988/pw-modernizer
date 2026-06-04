@@ -60,6 +60,11 @@ const steps: Step[] = [
     hint: "The canonical envelope example doesn't match its schema. Either the schema or the example drifted.",
   },
   {
+    label: "Derive-envelope roundtrip (12 example plans)",
+    cmd: "npm run check:derive --silent",
+    hint: "scripts/derive-envelope.ts can't parse some example plan into a schema-valid envelope. Either the plan markdown drifted from §9 schema or the derive parser needs updating.",
+  },
+  {
     label: "Validators calibrated (24 fixtures)",
     cmd: "npx tsx tools/calibrate-pipeline/run-calibration.ts",
     hint: "A validator accepted a bad fixture or rejected a good one. Calibration is required before promoting --warn → --strict per Sakasegawa 2026.",

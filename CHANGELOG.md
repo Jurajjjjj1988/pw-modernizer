@@ -6,7 +6,13 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 multi-agent supercycle — 108 total commits)
+### Added (2026-06-04 multi-agent supercycle — 113 total commits)
+
+**Wave 3 evening final push (5 sequential commits, no parallel):**
+- DOM grounding Phase 1-5 (commits `f2e383c` + `e41a73c`): `scripts/dom-ground.ts` (CLI contract + ts-morph locator parser for 8 method families + mock probe with `mock://` URLs + live driver via direct `chromium.launch` + migrate.yml opt-in step gated on `MIGRATION_TARGET_URL`). 261 LOC + 146 LOC. Closes Risk-1 Phase 1-5; Phase 6 LLM enrichment via `@playwright/mcp` and Phase 7 hard gate remain future work.
+- Cypress KB expansion 20 → 50 (commit `0f2643a`): 30 new high-impact entries across selector/action/assertion/timing/network/fixture/structure/debug/magic topics. kb-validate: 68 → 98 IDs. ROADMAP "Phase 3 Cypress" parity target reached.
+- Beyond-v1 research notes (commit `fc80844`): `docs/beyond-v1-research.md` — per-direction scope + feasibility for LangGraph, SDK rewrite, auto-PR-merge, GitHub App. Cross-cutting sequencing recommendation + off-ramp.
+- Selenium corpus prep — marked done in ROADMAP (140 LOC `inputs/selenium-java/` already on disk; only Stage 1→2 trigger remains, gated on Claude session reset 22:50 UTC).
 
 **Wave 1+2 evening sweep (3 parallel agents + 6 sequential commits):**
 - Multi-agent verify CANDOR (`3993b01`): `verify.yml` split into `verify-subagent` matrix `[sdet, code-review]` + `tally` job. New prompts `verify-sdet.md` (175 LOC) + `verify-code-review.md` (171 LOC). Verdict ladder 2/2 SHIP IT → SHIP IT, 1/2 → FIX FIRST, 0/2 → START OVER. Auto-regen + secret-scan + label state machine preserved. Closes v1.0 "Multi-agent verify (CANDOR)" ROADMAP item.

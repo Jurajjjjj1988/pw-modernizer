@@ -188,11 +188,15 @@ Write exactly this structure to `outputs/reports/<input-basename>-verify.md`:
 - Each pattern with file:line and KB-ID, or "none"
 
 ## Report metric verification
+
+<!-- include-begin: metric-verification-output -->
 - Selector quality score claimed: ... — verified: ... (match / discrepancy)
 - Web-first assertion rate claimed: ... — verified: ...
 - Smell count delta claimed: ... — verified: ...
 - AST-diff-not-trivial claimed: yes/no — verified: yes/no
 - TypeScript strict mode claimed: pass/fail — verified: pass/fail
+
+<!-- include-end: metric-verification-output -->
 
 ## Verdict
 

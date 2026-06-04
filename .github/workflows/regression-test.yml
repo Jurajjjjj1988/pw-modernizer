@@ -155,11 +155,15 @@ jobs:
           done
           echo "migration-rules schema sections complete."
 
-      - name: Scripts compile under strict TS
+      - name: Scripts + outputs compile under strict TS
         shell: bash
         run: |
           set -euo pipefail
+          # Root tsconfig covers scripts/ and tools/.
           npx tsc --noEmit -p tsconfig.json
+          # outputs/tests/ tsconfig covers playwright.config.ts + any
+          # migration-output specs / pages / fixtures present.
+          npx tsc --noEmit -p outputs/tests/tsconfig.json
 
       - name: Validators calibrated against fixtures (Sakasegawa 2026)
         shell: bash

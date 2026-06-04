@@ -539,9 +539,10 @@ jobs:
             ## Stage 2 — Generated migration
 
             **Input:** `${{ needs.guard.outputs.input_path }}`
-            **Plan:** `${{ needs.guard.outputs.plan_path }}` (merged in #${{ github.event.pull_request.number }})
+            **Plan:** `${{ needs.guard.outputs.plan_path }}`${{ github.event_name == 'pull_request' && format(' (merged in #{0})', github.event.pull_request.number) || ' (workflow_dispatch trigger)' }}
             **Migration report:** `outputs/reports/${{ needs.guard.outputs.input_basename }}.md`
             **Aggregate confidence:** ${{ steps.evaluate.outputs.confidence }}
+            **Triggered by:** `${{ github.event_name }}`
 
             ### Validation gates (all passed)
 

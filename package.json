@@ -8,7 +8,7 @@
     "evaluate": "tsx scripts/evaluate.ts",
     "check:trivial": "tsx scripts/ast-diff-trivial-check.ts",
     "check:kb": "tsx scripts/kb-validate.ts",
-    "check:examples": "tsx scripts/validate-examples.ts --warn",
+    "check:examples": "tsx scripts/validate-examples.ts --strict",
     "check:assemble": "tsx scripts/assemble-prompts.ts --check",
     "check:envelope": "tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json",
     "derive-envelope": "tsx scripts/derive-envelope.ts",

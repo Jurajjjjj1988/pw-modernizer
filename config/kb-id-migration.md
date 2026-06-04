@@ -57,6 +57,8 @@ Each old ID becomes a **deprecated alias** pointing at the new ID. The validator
 | KB-1.1.11 | `pw/structure/test-order-coupling` | deprecated, alias for `pw/structure/test-order-coupling` |
 | KB-1.1.12 | `pw/structure/conditional-in-test` | deprecated, alias for `pw/structure/conditional-in-test` |
 | KB-1.1.13 | `pw/structure/try-catch-swallow` | deprecated, alias for `pw/structure/try-catch-swallow` |
+| KB-1.1.14 | `pw/config/hardcoded-url` | deprecated, alias for `pw/config/hardcoded-url` (added 2026-06-03 after Phase 1 audit) |
+| KB-1.1.15 | `pw/structure/unnecessary-describe-nesting` | deprecated, alias for `pw/structure/unnecessary-describe-nesting` (added 2026-06-03 after Phase 1 audit) |
 
 ### 2.2 Cypress (was §1.2) — `cy/...`
 

@@ -34,9 +34,19 @@ In rough order of impact per LOC:
 ## Pre-push checklist
 
 ```bash
-npm run smoke            # MUST pass — typecheck + 5 validators + calibration (24 fixtures)
+npm run smoke            # MUST pass — typecheck + 6 validators + calibration (24 fixtures) + eslint
 git push
 ```
+
+If you edited any file under `prompts/_fragments/` you ALSO need to run:
+
+```bash
+npm run assemble-prompts # regenerates prompts/_assembled/*.md from fragments
+git add prompts/_assembled/
+git commit --amend --no-edit  # or a fresh commit
+```
+
+`npm run smoke` (via `check:assemble`) will fail if the committed `_assembled/` files don't match what fresh assembly would produce — better to catch locally than in CI.
 
 CI (`regression-test.yml`) runs equivalent checks on every PR; if smoke passes locally, CI should pass too. If they diverge, the divergence is the bug.
 

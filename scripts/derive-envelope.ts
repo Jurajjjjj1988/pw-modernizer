@@ -98,18 +98,15 @@ function splitSections(md: string): Map<string, string> {
 }
 
 function parseSourceFramework(body: string): Envelope["sourceFramework"] {
-  // Take the first non-empty line; strip markdown emphasis; lower-case; match.
-  const first = body
-    .split("\n")
-    .map((l) => l.replace(/[*_`]/g, "").trim())
-    .find((l) => l.length > 0);
-  if (!first) throw new Error("Source framework section is empty");
-  const lowered = first.toLowerCase();
+  // Look for a known framework keyword anywhere in the body — tolerant of
+  // both '## Source framework\n\nbad-playwright' and '## Source → Target\n\n- Source framework: selenium-java'
+  // shapes seen across plan styles.
+  const lowered = body.toLowerCase();
   if (lowered.includes("bad-playwright")) return "bad-playwright";
-  if (lowered.includes("cypress")) return "cypress";
   if (lowered.includes("selenium-java") || lowered.includes("selenium java")) return "selenium-java";
   if (lowered.includes("selenium-python") || lowered.includes("selenium python")) return "selenium-python";
-  throw new Error(`Source framework not recognised: "${first}"`);
+  if (lowered.includes("cypress")) return "cypress";
+  throw new Error(`Source framework not recognised in: "${body.slice(0, 200)}"`);
 }
 
 /**
@@ -321,7 +318,10 @@ function parseScenarios(summaryBody: string): ScenarioEntry[] {
 function deriveEnvelope(md: string, inputBasename: string): Envelope {
   const sections = splitSections(md);
   const get = (key: string): string => sections.get(key) ?? "";
-  const sourceFramework = parseSourceFramework(get("Source framework"));
+  // Source framework: prefer dedicated section, but multi-file plans use
+  // '## Source → Target' instead. Fall back to scanning the whole markdown.
+  const frameworkBody = get("Source framework") || get("Source → Target") || md;
+  const sourceFramework = parseSourceFramework(frameworkBody);
   const locatorTable = parseLocatorTable(get("Locator translation table"));
   const { requiredPOMs, requiredFixtures } = parseStructuralChanges(get("Structural changes"));
   const expectedMetrics = parseExpectedMetrics(get("Expected metrics"));

@@ -180,10 +180,40 @@ jobs:
         run: |
           set -euo pipefail
           # Keeps scripts/plan-envelope.schema.json and the canonical example
-          # envelope in sync. Opt-in for v0.4 (not yet wired into plan.yml /
-          # migrate.yml). See scripts/plan-envelope-validate.ts header for the
+          # envelope in sync. Wired into plan.yml / migrate.yml since commit
+          # a3a6cc5; derive-envelope.ts (31a2bfa) is the safety net so envelope
+          # always exists. See scripts/plan-envelope-validate.ts header for the
           # LPW (arXiv 2411.14503) / Routine (arXiv 2507.14447) background.
           npx tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json
+
+      - name: Derive envelope works on every example plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Catches regressions in derive-envelope.ts that would break the
+          # plan.yml/migrate.yml fallback. Every plan in examples/ must
+          # derive to a schema-valid envelope. Skips examples/reference/.
+          TMPDIR=$(mktemp -d)
+          FAILED=0
+          for plan in examples/*/expected-plan.md; do
+            base=$(basename "$(dirname "$plan")")
+            if [ "$base" = "reference" ]; then continue; fi
+            ENV="$TMPDIR/${base}.envelope.json"
+            if ! npx tsx scripts/derive-envelope.ts --plan "$plan" --out "$ENV" >/dev/null 2>&1; then
+              echo "::error file=$plan::derive-envelope failed"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+            if ! npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV" >/dev/null 2>&1; then
+              echo "::error file=$plan::derived envelope failed schema validation"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED example plans failed derive→validate roundtrip"
+            exit 1
+          fi
+          echo "All examples derive to valid envelopes."
 
       - name: Verify verdict ladder consistency
         shell: bash

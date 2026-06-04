@@ -34,10 +34,12 @@
     "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
     "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:envelope:code && npm run check:derive && npm run check:coverage && npm run calibrate",
     "smoke": "npm run typecheck:all && npm run validate:all && npm run lint",
-    "quickstart": "tsx scripts/quickstart-check.ts"
+    "quickstart": "tsx scripts/quickstart-check.ts",
+    "dom:snapshot": "tsx scripts/dom-snapshot.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@playwright/mcp": "^0.0.75",
     "@playwright/test": "^1.56.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",

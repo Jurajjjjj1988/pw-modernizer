@@ -148,97 +148,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Extracted from inline bash (95 LOC) to scripts/build-inventory.ts
+          # (ts-morph-based, 417 LOC). See commit 01f907d. Same output format;
+          # script handles empty-case + missing-dir + parse errors gracefully.
           INV="outputs/.snippets-inventory.md"
-          mkdir -p outputs
-          : > "$INV"
-
-          # Collect candidate files. Use -print0 + sort for deterministic order.
-          mapfile -d '' POMS < <(find outputs/tests/pages -type f -name '*.page.ts' -print0 2>/dev/null | sort -z || true)
-          mapfile -d '' FIXTURES < <(find outputs/tests/fixtures -type f -name '*.fixture.ts' -print0 2>/dev/null | sort -z || true)
-          mapfile -d '' HELPERS < <(find outputs/tests/helpers -type f -name '*.ts' -print0 2>/dev/null | sort -z || true)
-
-          TOTAL=$(( ${#POMS[@]} + ${#FIXTURES[@]} + ${#HELPERS[@]} ))
-
-          if [ "$TOTAL" -eq 0 ]; then
-            {
-              echo "## Existing POMs / fixtures / helpers Claude MUST consider for reuse:"
-              echo ""
-              echo "(No existing POMs/fixtures/helpers — this is the first migration.)"
-            } > "$INV"
-            echo "Inventory empty — first migration."
-            echo "inventory_path=$INV" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "## Existing POMs / fixtures / helpers Claude MUST consider for reuse:" > "$INV"
-          echo "" >> "$INV"
-
-          # Extract exported class name + public method names from a POM file.
-          # Heuristic only — grep-based, intentionally tolerant. The point is
-          # to give Claude a recall hint, not to be a TS parser.
-          extract_pom() {
-            local file="$1"
-            local cls
-            cls=$(grep -Eo 'export[[:space:]]+(default[[:space:]]+)?(abstract[[:space:]]+)?class[[:space:]]+[A-Za-z0-9_]+' "$file" \
-              | head -n1 | awk '{print $NF}')
-            [ -z "$cls" ] && cls="(unknown class)"
-            # public methods: lines that look like `methodName(...)` or `async methodName(...)`
-            # excluding `constructor`, `private`, `protected`.
-            local methods
-            methods=$(grep -E '^[[:space:]]+(public[[:space:]]+)?(async[[:space:]]+)?[a-z_][A-Za-z0-9_]*[[:space:]]*\(' "$file" \
-              | grep -vE '^[[:space:]]+(private|protected|constructor)' \
-              | sed -E 's/^[[:space:]]+(public[[:space:]]+)?(async[[:space:]]+)?([a-zA-Z0-9_]+)[[:space:]]*\(([^)]*)\).*/\3(\4)/' \
-              | awk 'NF' | sort -u | paste -sd', ' -)
-            [ -z "$methods" ] && methods="(no public methods detected)"
-            echo "- $file → $cls { $methods }"
-          }
-
-          # Extract exported fixture name (or default name) from a fixture file.
-          extract_fixture() {
-            local file="$1"
-            # Look for `export const X = ...` or `export const test = base.extend<{X:T}>`.
-            local exports
-            exports=$(grep -Eo 'export[[:space:]]+(const|function|type|interface)[[:space:]]+[A-Za-z0-9_]+' "$file" \
-              | awk '{print $NF}' | sort -u | paste -sd', ' -)
-            # Try to capture the extend<{...}> shape too (just the keys).
-            local shape
-            shape=$(grep -Eo 'extend<\{[^}]*\}>' "$file" | head -n1 \
-              | sed -E 's/extend<\{|\}>//g; s/[[:space:]]+/ /g' || true)
-            [ -z "$exports" ] && exports="(no named exports detected)"
-            if [ -n "$shape" ]; then
-              echo "- $file → exports: $exports; fixture shape: { $shape }"
-            else
-              echo "- $file → exports: $exports"
-            fi
-          }
-
-          # Extract exported function/const names from a helper file.
-          extract_helper() {
-            local file="$1"
-            local exports
-            exports=$(grep -Eo 'export[[:space:]]+(const|function|async[[:space:]]+function|type|interface)[[:space:]]+[A-Za-z0-9_]+' "$file" \
-              | awk '{print $NF}' | sort -u | paste -sd', ' -)
-            [ -z "$exports" ] && exports="(no named exports detected)"
-            echo "- $file → exports: $exports"
-          }
-
-          if [ "${#POMS[@]}" -gt 0 ]; then
-            echo "### POMs" >> "$INV"
-            for f in "${POMS[@]}"; do extract_pom "$f" >> "$INV"; done
-            echo "" >> "$INV"
-          fi
-          if [ "${#FIXTURES[@]}" -gt 0 ]; then
-            echo "### Fixtures" >> "$INV"
-            for f in "${FIXTURES[@]}"; do extract_fixture "$f" >> "$INV"; done
-            echo "" >> "$INV"
-          fi
-          if [ "${#HELPERS[@]}" -gt 0 ]; then
-            echo "### Helpers" >> "$INV"
-            for f in "${HELPERS[@]}"; do extract_helper "$f" >> "$INV"; done
-            echo "" >> "$INV"
-          fi
-
-          echo "Inventory written ($TOTAL files): $INV"
+          npx tsx scripts/build-inventory.ts --out "$INV"
           echo "inventory_path=$INV" >> "$GITHUB_OUTPUT"
 
       # Note: Fragment assembly happens in the "Assemble prompt fragments" step
@@ -492,6 +406,21 @@ jobs:
           npx tsx scripts/ast-diff-trivial-check.ts \
             --input "${{ needs.guard.outputs.input_path }}" \
             --output "outputs/tests/${{ needs.guard.outputs.input_basename }}"
+
+      - name: Plan-vs-code coverage check (LPW contract closure)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Closes the LPW pattern (arXiv 2411.14503): envelope is the contract,
+          # this script enforces it post-generation. Validates every
+          # scenarios[].id has a // plan:scenario=<id> comment in the spec,
+          # requiredPOMs/Fixtures files exist, subtractive plans import only
+          # @playwright/test + relative paths. Strict mode by default.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          ENV="outputs/plans/${BASE}.envelope.json"
+          npx tsx scripts/plan-code-coverage.ts \
+            --envelope "$ENV" \
+            --output "outputs/tests/${BASE}"
 
       - name: Output secret scan (mirror Stage 0)
         shell: bash

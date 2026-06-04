@@ -11,6 +11,11 @@
 # Semantic regression (does Claude still produce equivalent output?) is too
 # expensive for per-PR CI. Run `gh workflow run regression-semantic.yml` manually
 # before tagging a release (TODO: v0.5 scope).
+#
+# Parallelization (2026-06-04): originally 13 sequential steps in one job, ~5 min.
+# Refactored to fan out the independent gates across a matrix so they run in
+# parallel. Setup job pre-warms a shared actions/cache so each matrix worker
+# restores node_modules in ~5s instead of re-running `npm ci` (~30s).
 
 name: Regression — structural contracts
 
@@ -32,7 +37,10 @@ permissions:
   contents: read
 
 jobs:
-  structural-checks:
+  # Pre-warm the npm cache so every matrix worker in `checks` restores
+  # node_modules from cache instead of re-running `npm ci`. We don't run any
+  # gates here — just populate the cache. Total cost ≈ 30s, paid once.
+  setup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -40,11 +48,79 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - run: npm ci
+      - name: Cache npm + node_modules
+        id: cache-npm
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node22-
 
+      - name: Install deps (only on cache miss)
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
+
+  # Fan out the gates across a matrix. Each entry checks out, restores the
+  # node_modules cache primed by `setup`, and runs its slice of the gates.
+  # All original 13 gates are mapped to one of these 10 matrix entries;
+  # see `name` on each include below for the mapping.
+  checks:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: examples-contract
+            name: Examples contract check
+          - check: kb-ids
+            name: KB unique IDs + KB validate
+          - check: validate-examples
+            name: Validate examples (strict)
+          - check: prompts-and-fragments
+            name: Prompts non-empty + fragments resolve
+          - check: migration-rules-schema
+            name: migration-rules schema sections
+          - check: typecheck
+            name: Scripts + outputs tsc strict
+          - check: envelope-and-derive
+            name: Plan envelope + derive roundtrip + outputs/plans validate
+          - check: calibrate
+            name: Validators calibrated (Sakasegawa 2026)
+          - check: verify-verdict-ladder
+            name: Verify verdict ladder consistency
+          - check: regenerate-dispatch
+            name: Regenerate-dispatch flow wired end-to-end
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      - name: Restore npm + node_modules cache
+        id: cache-restore
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node22-
+
+      - name: Install deps (fallback if cache miss)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # ----- Original gate 1 -----
       - name: Examples contract check
+        if: matrix.check == 'examples-contract'
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +148,9 @@ jobs:
           fi
           echo "All examples have contract-complete file sets."
 
+      # ----- Original gates 2 + 3 (KB ID checks share state) -----
       - name: KB unique IDs check
+        if: matrix.check == 'kb-ids'
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +166,7 @@ jobs:
           echo "KB has $COUNT unique IDs."
 
       - name: KB IDs valid + referenced
+        if: matrix.check == 'kb-ids'
         shell: bash
         run: |
           set -euo pipefail
@@ -97,7 +176,9 @@ jobs:
           # from prompts/*.md or config/migration-rules.md.
           npx tsx scripts/kb-validate.ts
 
+      # ----- Original gate 4 -----
       - name: Examples KB/Q-ID cross-references valid
+        if: matrix.check == 'validate-examples'
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +191,9 @@ jobs:
           # to block on real findings. Corpus baseline: 12 plans, 0 findings.
           npx tsx scripts/validate-examples.ts --strict
 
+      # ----- Original gates 5 + 6 -----
       - name: Prompt files non-empty
+        if: matrix.check == 'prompts-and-fragments'
         shell: bash
         run: |
           set -euo pipefail
@@ -123,6 +206,7 @@ jobs:
           echo "Prompts present + non-empty."
 
       - name: Prompts fragments resolve
+        if: matrix.check == 'prompts-and-fragments'
         shell: bash
         run: |
           set -euo pipefail
@@ -132,7 +216,9 @@ jobs:
           # assemble-prompts) is a planned v0.5 hook for plan.yml / migrate.yml.
           npx tsx scripts/assemble-prompts.ts --check
 
+      # ----- Original gate 7 -----
       - name: migration-rules schema sections
+        if: matrix.check == 'migration-rules-schema'
         shell: bash
         run: |
           set -euo pipefail
@@ -158,7 +244,9 @@ jobs:
           done
           echo "migration-rules schema sections complete."
 
+      # ----- Original gate 8 -----
       - name: Scripts + outputs compile under strict TS
+        if: matrix.check == 'typecheck'
         shell: bash
         run: |
           set -euo pipefail
@@ -168,7 +256,9 @@ jobs:
           # migration-output specs / pages / fixtures present.
           npx tsc --noEmit -p outputs/tests/tsconfig.json
 
+      # ----- Original gate 9 -----
       - name: Validators calibrated against fixtures (Sakasegawa 2026)
+        if: matrix.check == 'calibrate'
         shell: bash
         run: |
           set -euo pipefail
@@ -178,7 +268,9 @@ jobs:
           # Required before any validator is promoted from --warn to --strict.
           npm run calibrate
 
+      # ----- Original gates 10 + 11 (envelope canonical + outputs/plans + derive roundtrip) -----
       - name: Plan envelope schema validates
+        if: matrix.check == 'envelope-and-derive'
         shell: bash
         run: |
           set -euo pipefail
@@ -197,6 +289,7 @@ jobs:
           done
 
       - name: Derive envelope works on every example plan
+        if: matrix.check == 'envelope-and-derive'
         shell: bash
         run: |
           set -euo pipefail
@@ -225,7 +318,9 @@ jobs:
           fi
           echo "All examples derive to valid envelopes."
 
+      # ----- Original gate 12 -----
       - name: Verify verdict ladder consistency
+        if: matrix.check == 'verify-verdict-ladder'
         shell: bash
         run: |
           set -euo pipefail
@@ -242,7 +337,9 @@ jobs:
           done
           echo "Verdict ladder consistent across prompt and workflow."
 
+      # ----- Original gate 13 -----
       - name: Regenerate-dispatch flow wired end-to-end
+        if: matrix.check == 'regenerate-dispatch'
         shell: bash
         run: |
           set -euo pipefail

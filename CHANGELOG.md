@@ -6,7 +6,15 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 multi-agent supercycle — 113 total commits)
+### Added (2026-06-04 multi-agent supercycle — 119 total commits)
+
+**Wave 4 night closure (6 sequential commits):**
+- 3 new Cypress examples (commit `3b6faf6`): cypress-03 intercept-stubbing, cypress-04 session-auth, cypress-05 conditional-and-jquery. Closes ROADMAP v1.0 "examples/cypress-*" → 5 entries.
+- CI peer-dep fix (commit `ca9afdb`): `.npmrc legacy-peer-deps=true` resolves tree-sitter@0.21 vs tree-sitter-python@0.23.6 ERESOLVE that was blocking ALL workflow runs.
+- DOM grounding Phase 7a-b (commit `b57d886`): 6 calibration fixtures (`tools/calibrate-pipeline/fixtures/dom-ground/`) + run-calibration.ts integration (40/40 fixtures total across 6 validators). `DOM_GROUND_STRICT=true` repo var flag promotes migrate.yml soft → hard gate.
+- Selenium-python corpus (commit `f5cff5f`): `inputs/selenium-python/` 123 LOC across 3 files. Mirrors inputs/selenium-java shape. Ready for plan.yml trigger.
+- README sync (commit `a192bae`): repository structure + 4 new research-backed defenses + 4 new local commands.
+- Selenium-java Stage 1 manually triggered via gh workflow run (run 26951267594, ~7+ min so far). Pipeline now runs against Wave 1-4 enhancements (CANDOR verify, envelope hard enforcement, per-fw bins).
 
 **Wave 3 evening final push (5 sequential commits, no parallel):**
 - DOM grounding Phase 1-5 (commits `f2e383c` + `e41a73c`): `scripts/dom-ground.ts` (CLI contract + ts-morph locator parser for 8 method families + mock probe with `mock://` URLs + live driver via direct `chromium.launch` + migrate.yml opt-in step gated on `MIGRATION_TARGET_URL`). 261 LOC + 146 LOC. Closes Risk-1 Phase 1-5; Phase 6 LLM enrichment via `@playwright/mcp` and Phase 7 hard gate remain future work.

@@ -28,7 +28,7 @@ visible result and use `page.route` for explicit per-call control.
 - [x] `cy.intercept('POST', '/foo', { times: 1, statusCode: 500 })` count
       coupling (line 29) — the migration plan must not carry forward the
       implicit count behavior; explicit per-call routing is cleaner
-      (KB-1.2.40 `cy/network/intercept-times-coupling`).
+      (KB-1.2.40).
 - [x] Deep CSS selectors (`input[name="card"]`, `button.pay-now`) — replace
       with `getByLabel` / `getByRole`.
 - [x] `cy.get('.cart-row').should('have.length.gte', 1)` chai chain — use

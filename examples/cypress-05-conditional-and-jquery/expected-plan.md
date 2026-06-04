@@ -19,19 +19,19 @@ user-perceivable assertions on the visible profile state.
 
 ## Anti-patterns detected
 - [x] `cy.wait(500)` / `cy.wait(1500)` arbitrary waits (lines 5, 32) —
-      KB-1.2.1 `cy/timing/hard-wait`. Replace with web-first assertions.
+      KB-1.2.1. Replace with web-first assertions.
 - [x] `if ($body.find('.cookie-banner').length > 0)` conditional inside
-      test (lines 10-13) — KB-1.2.10 `cy/structure/conditional-in-test`.
+      test (lines 10-13) — KB-1.2.10.
       Fixture sets the cookie pre-test.
 - [x] `cy.then(($el) => expect($el.attr(...)))` jQuery attr probing
-      (lines 22-24) — KB-1.2.34 `cy/assertion/jquery-attr-sync`. Use
+      (lines 22-24) — KB-1.2.34. Use
       `toHaveAttribute` web-first.
 - [x] `cy.window().its('app.store')` framework internals leak (lines
-      36-38) — KB-1.2.16 `cy/assertion/internals-leak`. Assert on visible
+      36-38) — KB-1.2.16. Assert on visible
       state.
-- [x] `.check({ force: true })` (line 20) — KB-1.2.4 `cy/action/force-true`.
+- [x] `.check({ force: true })` (line 20) — KB-1.2.4.
       Wait for actionability or fix the underlying overlay issue.
-- [x] `cy.clear().type(...)` (line 30) — KB-1.2.30 `cy/action/clear-then-type`.
+- [x] `cy.clear().type(...)` (line 30) — KB-1.2.30.
       Use atomic `fill`.
 - [x] `cy.contains('Save').click()` ambiguous text (line 31) — KB-1.2.6.
       Disambiguate with role.

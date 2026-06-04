@@ -16,21 +16,21 @@ project config — sessions are produced once per CI run, not per spec.
 
 ## Anti-patterns detected
 - [x] `cy.session(..., { cacheAcrossSpecs: true })` without explicit cache
-      invalidation (lines 5-14) — KB-1.2.15 `cy/fixture/session-no-cache-bust`.
+      invalidation (lines 5-14) — KB-1.2.15.
       Replace with `storageState` produced in global-setup; auth flow
       versioning lives in the global-setup script, not test code.
 - [x] `cy.clearCookies()` + `cy.clearLocalStorage()` in beforeEach (lines 16-17) —
-      KB-1.2.45 `cy/fixture/manual-cleanup-ceremony`. Playwright per-test
+      KB-1.2.45. Playwright per-test
       BrowserContext makes this automatic. Drop entirely.
 - [x] CSS-id selectors `#email`, `#password` (lines 8, 9) — KB-1.2.25
-      `cy/selector/css-id-over-role`. Switch to `getByLabel`.
+     . Switch to `getByLabel`.
 - [x] `cy.get('button[type="submit"]')` (line 10) — KB-1.2.25. Use role+name.
 - [x] Chained `.should('be.visible').should('contain', ...)` (line 21) —
-      KB-1.2.31 `cy/assertion/chained-should-stale`. Use single web-first.
+      KB-1.2.31. Use single web-first.
 - [x] `cy.get('.order-row').its('length').should('be.gte', 1)` (line 22) —
       cypress-specific chai chain; rewrite with `toHaveCount` negation.
 - [x] `cy.get('.order-row').eq(0)` index-based selector (line 26) —
-      KB-1.2.2 `cy/selector/eq-index`. Use accessible name or first()
+      KB-1.2.2. Use accessible name or first()
       with a filter.
 - [x] `cy.url().should('match', regex)` then `cy.contains` (lines 27-28) —
       both are independent assertions split across lines; single

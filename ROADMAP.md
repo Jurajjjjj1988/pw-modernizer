@@ -59,6 +59,13 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline
 - [ ] Tune ts-morph fallback (currently falls back to LCS for `.java` because ts-morph can't parse Java — consider adding tree-sitter-java for native AST diff)
 
+### Semantic regression workflow
+
+- [ ] `regression-semantic.yml` — manually-triggered workflow that runs Stage 1 + Stage 2 against every `examples/*/input.*` (sampled to 3-5 per release) and compares Claude's output to `expected-output.*` via:
+  - `ast-diff-trivial-check` (existing) — output must be non-trivial
+  - new `output-equivalence` script — output and expected-output must be semantically equivalent (web-first assertions match, locator hierarchy match, no forbidden patterns) within a threshold
+- Run before each release tag. Catches the "we changed a prompt and now Claude generates worse code" regression class that structural CI can't catch.
+
 ### Verify stage hardening
 
 - [x] `actions: write` permission for createWorkflowDispatch (commit 7c6bf16)

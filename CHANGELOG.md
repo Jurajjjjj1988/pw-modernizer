@@ -6,7 +6,13 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 multi-agent supercycle — 119 total commits)
+### Added (2026-06-04 multi-agent supercycle — 124 total commits)
+
+**Wave 5 Selenium-pipeline closure (4 sequential commits):**
+- ROADMAP cleanup (commit `996f6bb`): marked 3 stale items DONE — SQLite persistence, dashboard UI, cypress examples 5+ — all delivered earlier in batches but unchecked in ROADMAP.
+- CI fix: peter-evans 400 (commit `0b38aa5`): plan.yml + migrate.yml get `persist-credentials: false` on actions/checkout. Plan run 26951267594 hit `remote: Duplicate header: "Authorization"` → HTTP 400 → exit 128 at "Open plan PR" step (Claude analyze succeeded, PR open failed). Root cause: actions/checkout AUTHORIZATION extraheader collides with peter-evans/create-pull-request@v7's auth.
+- Selenium-java Stage 1 SUCCESS: re-trigger plan.yml run 26951988169 after CI fix landed → migrator/plan-EmployeesTest.java PR opened cleanly. **First real multi-file Selenium pipeline run shipped.**
+- Selenium KB expansion 33 → 40 (commit `d76f434`): 7 new high-impact anti-patterns (frame index switch, alert race, linkText drift, JS-runtime probe, session-scope driver, webdriver-manager network, tab-handle-array). kb-validate: 98 → 105 IDs.
 
 **Wave 4 night closure (6 sequential commits):**
 - 3 new Cypress examples (commit `3b6faf6`): cypress-03 intercept-stubbing, cypress-04 session-auth, cypress-05 conditional-and-jquery. Closes ROADMAP v1.0 "examples/cypress-*" → 5 entries.

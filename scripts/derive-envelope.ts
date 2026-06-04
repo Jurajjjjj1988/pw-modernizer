@@ -211,7 +211,7 @@ function parseExpectedMetrics(body: string): Envelope["expectedMetrics"] {
   };
   const selectorRaw = get(/Selector quality score[^:]*:\s*([0-9./]+)/i);
   const smellRaw = get(/Smell count delta[^:]*:\s*(-?\d+)/i);
-  const locRaw = get(/LOC delta[^:]*:\s*([+\-]?\d+)/i);
+  const locRaw = get(/LOC delta[^:]*:\s*([+-]?\d+)/i);
   const coverageRaw = get(/Anti-pattern coverage[^:]*:\s*(\d+\/\d+)/i);
   const parseRatio = (s: string | null): number => {
     if (!s) return 0;

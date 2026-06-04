@@ -57,14 +57,11 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 - [ ] `inputs/selenium-java/` (`EmployeesTest.java` + pages + helpers) — first multi-file Stage 1 → Stage 2 pipeline run (Claude session quota currently blocking; resumes 22:50 UTC)
 - [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline
-- [ ] Tune ts-morph fallback (currently falls back to LCS for `.java` because ts-morph can't parse Java — consider adding tree-sitter-java for native AST diff)
+- [x] Tune ts-morph fallback — tree-sitter-java + tree-sitter-python landed in Batch 1 (commit `666332a`); calibration 6/6 → 10/10. `.java` and `.py` get native Zhang-Shasha now.
 
 ### Semantic regression workflow
 
-- [ ] `regression-semantic.yml` — manually-triggered workflow that runs Stage 1 + Stage 2 against every `examples/*/input.*` (sampled to 3-5 per release) and compares Claude's output to `expected-output.*` via:
-  - `ast-diff-trivial-check` (existing) — output must be non-trivial
-  - new `output-equivalence` script — output and expected-output must be semantically equivalent (web-first assertions match, locator hierarchy match, no forbidden patterns) within a threshold
-- Run before each release tag. Catches the "we changed a prompt and now Claude generates worse code" regression class that structural CI can't catch.
+- [x] `regression-semantic.yml` + `scripts/semantic-regression-check.ts` (commit `a4c0c26`, 348 + 440 LOC). 3 jobs (select-samples → analyze matrix → tally), 5 comparison axes (anti-patterns ±20%, KB-ID coverage, locator total ±20%, confidence L1, required sections). Run before each release tag.
 
 ### Verify stage hardening
 
@@ -89,7 +86,10 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 > **Design brief**: [`docs/playwright-mcp-integration.md`](docs/playwright-mcp-integration.md) (commit `f4edcfb`) — API contract, integration shape, and 7-phase implementation order.
 
-- [ ] `playwright-mcp` integration: Stage 2 receives a real DOM snapshot from the SUT at `MIGRATION_TARGET_URL` and grounds locator decisions
+- [x] Phase 1-3 of brief — `scripts/dom-ground.ts` contract surface (CLI, report shape, exit codes), ts-morph locator parser (8 method families), MCP stub with `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing. `npm run check:dom-ground` smoke.
+- [ ] Phase 4 — wire `@playwright/mcp` devDep + replace stub with real `browser_navigate` + `browser_find_element` driver
+- [ ] Phase 5 — wire dom-ground into migrate.yml as a gate between Stage 2 and verify
+- [ ] `playwright-mcp` Stage 1 enrichment: Stage 2 receives a real DOM snapshot from the SUT at `MIGRATION_TARGET_URL` and grounds locator decisions
 - [ ] HIGH-confidence locators (currently mechanical mapping only) get an additional check against the DOM before emission
 - [ ] LOW-confidence pin rules become enforced: if DOM evidence contradicts the assumed locator, the fallback is taken AND the WHY-comment is materialized in the output
 

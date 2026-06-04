@@ -1,5 +1,8 @@
 # PWmodernizer
 
+[![Regression contracts](https://github.com/Jurajjjjj1988/PWmodernizer/actions/workflows/regression-test.yml/badge.svg)](https://github.com/Jurajjjjj1988/PWmodernizer/actions/workflows/regression-test.yml)
+[![Lint generated tests](https://github.com/Jurajjjjj1988/PWmodernizer/actions/workflows/lint-output.yml/badge.svg)](https://github.com/Jurajjjjj1988/PWmodernizer/actions/workflows/lint-output.yml)
+
 > An LLM-driven pipeline that turns bad Playwright tests into clean modern Playwright TypeScript. Cypress and Selenium support land in Step 2 and Step 3.
 
 **Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. Each migration produces a markdown plan + generated code + a metrics report. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before opening Step 2 (Cypress).

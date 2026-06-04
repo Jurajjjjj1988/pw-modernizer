@@ -70,7 +70,7 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 - [x] `actions: write` permission for createWorkflowDispatch (commit 7c6bf16)
 - [ ] verify.yml output secret scan mirror (currently only on input + output, not on verify report itself)
-- [ ] verify.yml: handle the case where confidence < 0.7 but verify itself ships a SHIP IT verdict (currently triggers but doesn't unblock the code PR automatically)
+- [x] verify.yml: handle the case where confidence < 0.7 but verify itself ships a SHIP IT verdict (commit `0c9f234` — Opus override removes confidence:low, adds confidence:high)
 
 ### Cleanup + polish
 

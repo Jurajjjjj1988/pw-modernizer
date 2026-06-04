@@ -71,6 +71,7 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [x] `actions: write` permission for createWorkflowDispatch (commit 7c6bf16)
 - [x] verify.yml output secret scan mirror (commit `482ac1e` — catches Opus-quoted credentials)
 - [x] verify.yml: explicit guard when Opus fails to produce report (commit `9bcc590`)
+- [x] Auto-regen on START OVER verdict — verify fires repository_dispatch with regen-attempt counter, cap 3 (commit `8d48060`)
 - [x] verify.yml: handle the case where confidence < 0.7 but verify itself ships a SHIP IT verdict (commit `0c9f234` — Opus override removes confidence:low, adds confidence:high)
 
 ### Cleanup + polish

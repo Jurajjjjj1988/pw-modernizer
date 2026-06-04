@@ -137,6 +137,11 @@ Java + Python collapse into one `sel/` framework — the anti-patterns are seman
 | KB-1.3.17 | `sel/frame/index-switch` | deprecated, alias for `sel/frame/index-switch` (added 2026-06-04 — `frame(0)` index-based race) |
 | KB-1.3.18 | `sel/alert/race-unprotected` | deprecated, alias for `sel/alert/race-unprotected` (added 2026-06-04 — `switchTo().alert()` without registered handler) |
 | KB-1.3.19 | `sel/selector/link-text-exact` | deprecated, alias for `sel/selector/link-text-exact` (added 2026-06-04 — `By.linkText` brittle on copy drift) |
+| KB-1.3.20 | `sel/magic/viewport-in-test` | deprecated, alias for `sel/magic/viewport-in-test` (added 2026-06-04 — `setSize` per-test resolution coupling) |
+| KB-1.3.21 | `sel/fixture/browser-flags-in-test` | deprecated, alias for `sel/fixture/browser-flags-in-test` (added 2026-06-04 — `ChromeOptions.addArguments` sprawl) |
+| KB-1.3.22 | `sel/assertion/css-value-coupling` | deprecated, alias for `sel/assertion/css-value-coupling` (added 2026-06-04 — `getCssValue` browser-render drift) |
+| KB-1.3.23 | `sel/assertion/auth-cookie-inspect` | deprecated, alias for `sel/assertion/auth-cookie-inspect` (added 2026-06-04 — cookie inspection couples to auth scheme) |
+| KB-1.3.24 | `sel/action/js-scroll-into-view` | deprecated, alias for `sel/action/js-scroll-into-view` (added 2026-06-04 — JS scroll bypasses actionability) |
 
 ### 2.4 Selenium WebDriver Python (was §1.4) — `sel/...`
 
@@ -161,6 +166,11 @@ Most map onto the same `sel/` IDs as §1.3 (cross-language equivalents). Python-
 | KB-1.4.19 | `sel/fixture/session-scope-driver` | deprecated, alias for `sel/fixture/session-scope-driver` (added 2026-06-04 — pytest `scope="session"` driver fixture) |
 | KB-1.4.20 | `sel/fixture/webdriver-manager-network` | deprecated, alias for `sel/fixture/webdriver-manager-network` (added 2026-06-04 — `webdriver-manager` installer network flake) |
 | KB-1.4.21 | `sel/frame/tab-handle-array` | deprecated, alias for `sel/frame/tab-handle-array` (added 2026-06-04 — `window_handles[-1]` race) |
+| KB-1.4.22 | `sel/timing/page-load-timeout-global` | deprecated, alias for `sel/timing/page-load-timeout-global` (added 2026-06-04 — `set_page_load_timeout` global mutation) |
+| KB-1.4.23 | `sel/magic/maximize-window-env-drift` | deprecated, alias for `sel/magic/maximize-window-env-drift` (added 2026-06-04 — `maximize_window` env-dependent viewport) |
+| KB-1.4.24 | `sel/assertion/url-parse-snapshot` | deprecated, alias for `sel/assertion/url-parse-snapshot` (added 2026-06-04 — `urlparse(driver.current_url)` skips poll) |
+| KB-1.4.25 | `sel/assertion/raw-attr-bypass-a11y` | deprecated, alias for `sel/assertion/raw-attr-bypass-a11y` (added 2026-06-04 — `get_attribute("aria-label")` skips a11y tree) |
+| KB-1.4.26 | `sel/fixture/chromedriver-autoinstaller` | deprecated, alias for `sel/fixture/chromedriver-autoinstaller` (added 2026-06-04 — per-run installer network flake) |
 
 ### 2.5 IDs that did NOT map cleanly to `framework/topic/name`
 

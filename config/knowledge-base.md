@@ -1924,6 +1924,187 @@ await page.getByRole('link', { name: 'Click here' }).click();
 
 Rationale: `By.linkText` requires the visible text to match exactly, including casing and whitespace. Designers update copy from "Click here" to "Click here →" (added arrow) → test breaks at the locator level, not at the assertion level. `getByRole('link', { name })` normalizes accessible names. Prevents `LinkTextExactCopyDrift` bug class.
 
+#### 1.3.20 `driver.manage().window().setSize(new Dimension(...))` per-test viewport
+
+```java
+// ANTI-PATTERN
+driver.manage().window().setSize(new Dimension(1366, 768));
+driver.get("/products");
+```
+
+```ts
+// CANONICAL — viewport at project level, never in test code
+// playwright.config.ts
+projects: [
+  { name: 'desktop', use: { viewport: { width: 1366, height: 768 } } },
+  { name: 'tablet', use: { ...devices['iPad Pro 11'] } },
+],
+```
+
+Rationale: per-test `setSize` couples the test to a hardcoded resolution. Adding a mobile breakpoint means editing every test; CI parallelism via different viewports becomes impossible. Playwright's project config separates dimension from behavior. Prevents `ViewportCodedInTest` bug class.
+
+#### 1.3.21 `ChromeOptions options = new ChromeOptions(); options.addArguments("--headless")` in test code
+
+```java
+// ANTI-PATTERN — browser config sprinkled across tests
+ChromeOptions options = new ChromeOptions();
+options.addArguments("--headless=new", "--no-sandbox", "--disable-gpu");
+WebDriver driver = new ChromeDriver(options);
+```
+
+```ts
+// CANONICAL — launchOptions in playwright.config.ts
+use: {
+  launchOptions: {
+    args: ['--disable-gpu'],
+  },
+  headless: process.env.CI ? true : false,
+},
+```
+
+Rationale: distributing browser flags across test code creates drift — half the suite runs with one set, half with another. Playwright config centralizes launchOptions. Prevents `BrowserFlagsDriftAcrossSuite` bug class.
+
+#### 1.3.22 `webElement.getCssValue("background-color")` style-coupled assertion
+
+```java
+// ANTI-PATTERN
+String bgColor = button.getCssValue("background-color");
+assertEquals("rgba(0, 128, 0, 1)", bgColor);
+```
+
+```ts
+// CANONICAL — assert via data-state attribute or visible behavior
+await expect(button).toHaveAttribute('data-variant', 'success');
+// OR if CSS truly is the assertion target:
+await expect(button).toHaveCSS('background-color', 'rgb(0, 128, 0)');
+```
+
+Rationale: CSS values vary by browser rendering (`rgba(...)` vs `rgb(...)`, alpha presence/absence) and by design-system updates. Asserting visible state through semantics (data attributes, accessible name) survives styling refactors. Prevents `CSSValueBrowserDrift` bug class.
+
+#### 1.3.23 `driver.manage().getCookies().stream().filter(...).findFirst()` cookie inspection in test
+
+```java
+// ANTI-PATTERN — test reads auth cookie to verify login worked
+Set<Cookie> cookies = driver.manage().getCookies();
+Cookie sessionCookie = cookies.stream()
+    .filter(c -> c.getName().equals("session"))
+    .findFirst().orElseThrow();
+assertNotNull(sessionCookie.getValue());
+```
+
+```ts
+// CANONICAL — assert visible authenticated state
+await expect(page.getByText(/welcome.*admin/i)).toBeVisible();
+// If cookies truly are the contract (rare — usually they're an impl detail):
+const cookies = await page.context().cookies();
+expect(cookies.some((c) => c.name === 'session')).toBe(true);
+```
+
+Rationale: reading auth cookies couples the test to the auth scheme (session vs JWT vs OAuth) — refactoring auth breaks the test even though the UX is identical. Assert on what the user sees. Prevents `AuthCookieSchemeCoupling` bug class.
+
+#### 1.3.24 `((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView();", el)` scroll-into-view
+
+```java
+// ANTI-PATTERN
+WebElement target = driver.findElement(By.id("footer-link"));
+((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView();", target);
+target.click();
+```
+
+```ts
+// CANONICAL — Playwright auto-scrolls on action
+await page.getByRole('link', { name: 'Privacy policy' }).click();
+// If explicit scroll is needed (e.g., to lazy-load content):
+await page.getByText('Privacy policy').scrollIntoViewIfNeeded();
+```
+
+Rationale: `scrollIntoView` via JS bypasses the actionability checks; if a sticky header is covering the element, the JS scroll moves it under the header and the click silently misses. Playwright's `.click()` auto-scrolls AND auto-checks visibility AND retries. Prevents `JsScrollMissedActionability` bug class.
+
+#### 1.4.22 `driver.set_page_load_timeout(N)` driver-level page-load timeout
+
+```python
+# ANTI-PATTERN
+driver = webdriver.Chrome()
+driver.set_page_load_timeout(60)
+driver.get("/slow-route")
+```
+
+```ts
+// CANONICAL — per-call timeout, discoverable at call site
+await page.goto('/slow-route', { timeout: 60000 });
+// OR project-wide:
+// playwright.config.ts: use: { navigationTimeout: 60000 }
+```
+
+Rationale: driver-level timeouts mutate global state — every subsequent `driver.get` inherits 60s even when the test author meant just one slow route. Per-call timeouts document intent at the call site. Prevents `GlobalTimeoutMutationLeak` bug class.
+
+#### 1.4.23 `driver.maximize_window()` viewport coupling
+
+```python
+# ANTI-PATTERN
+driver.maximize_window()
+driver.get("/dashboard")
+```
+
+```ts
+// CANONICAL — explicit, deterministic, in project config
+// playwright.config.ts
+use: { viewport: { width: 1920, height: 1080 } },
+```
+
+Rationale: `maximize_window` produces whatever the local display can offer — your laptop gets 1440×900, CI runner gets 1024×768, tester's external monitor gets 3840×2160. Tests pass on one resolution and fail on another for visibility-cutoff reasons that have nothing to do with the SUT. Prevents `MaximizeWindowEnvDrift` bug class.
+
+#### 1.4.24 `urllib.parse.urlparse(driver.current_url).path` URL string parsing
+
+```python
+# ANTI-PATTERN
+from urllib.parse import urlparse
+path = urlparse(driver.current_url).path
+assert path.startswith("/orders/")
+```
+
+```ts
+// CANONICAL — Playwright expect handles URL matching with regex
+await expect(page).toHaveURL(/\/orders\//);
+```
+
+Rationale: pulling the URL into Python's `urlparse` skips Playwright's polling — the assertion runs once on the current state instead of waiting for the navigation to settle. `expect(page).toHaveURL()` waits for the URL to match. Prevents `UrlParseSyncSnapshot` bug class.
+
+#### 1.4.25 `element.get_attribute("aria-label")` raw attribute extraction for assertion
+
+```python
+# ANTI-PATTERN
+button = driver.find_element(By.CSS_SELECTOR, "button.close")
+assert button.get_attribute("aria-label") == "Close dialog"
+```
+
+```ts
+// CANONICAL — accessibility-first assertion
+await expect(page.getByRole('button', { name: 'Close dialog' })).toBeVisible();
+// OR if asserting on attribute is truly the contract:
+await expect(page.getByRole('button', { name: 'Close dialog' }))
+  .toHaveAccessibleName('Close dialog');
+```
+
+Rationale: extracting `aria-label` to compare manually skips Playwright's accessibility-aware retry. `getByRole(role, { name })` resolves the same accessible name via the proper a11y tree (handles aria-label, aria-labelledby, textContent, alt — all the sources screen readers use). Prevents `RawAttributeBypassA11yTree` bug class.
+
+#### 1.4.26 `chromedriver_autoinstaller.install()` per-run installer
+
+```python
+# ANTI-PATTERN
+import chromedriver_autoinstaller
+chromedriver_autoinstaller.install()  # downloads on every test run
+driver = webdriver.Chrome()
+```
+
+```ts
+// CANONICAL — Playwright separates browser install (one-time) from test run
+// $ npx playwright install chromium  (once, before suite ever runs)
+// In tests, just import chromium and launch.
+```
+
+Rationale: `chromedriver_autoinstaller` makes test startup non-deterministic — network calls to fetch the matching chromedriver introduce a flake source unrelated to the SUT. Playwright fetches browsers up-front and pins them per `@playwright/test` version. Prevents `PerRunInstallerFlake` bug class.
+
 ---
 
 ## 2. Framework → Playwright TypeScript translation tables

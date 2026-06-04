@@ -19,11 +19,13 @@
 
 ## Pipeline impact
 
-- [ ] Affects Stage 1 (analyze.md, plan.yml, plan output)
-- [ ] Affects Stage 2 (generate.md, migrate.yml, code output, evaluate.ts)
-- [ ] Affects verify (verify.md, verify.yml, verdict ladder)
-- [ ] Affects validators (kb-validate, validate-examples, plan-envelope-validate, ast-diff-trivial-check, assemble-prompts)
-- [ ] Affects regression-test gates
+- [ ] Affects Stage 1 (analyze.md, plan.yml, plan output, envelope sidecar)
+- [ ] Affects Stage 2 (generate.md, migrate.yml, code output, evaluate.ts, plan-code-coverage)
+- [ ] Affects verify CANDOR (verify-sdet.md, verify-code-review.md, verify.yml tally job)
+- [ ] Affects DOM grounding (dom-ground.ts, migrate.yml dom-ground step, DOM_GROUND_STRICT)
+- [ ] Affects validators (kb-validate, validate-examples, plan-envelope-validate, ast-diff-trivial-check, plan-code-coverage, dom-ground, assemble-prompts)
+- [ ] Affects regression-test gates (CI matrix) or regression-semantic (pre-release sweep)
+- [ ] Affects metrics (metrics-report, metrics-export, dashboard, SQLite schema)
 - [ ] Documentation only
 
 ## Breaking changes

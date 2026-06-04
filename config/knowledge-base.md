@@ -320,6 +320,213 @@ test.describe('Acme Shop login', () => {
 
 Rationale: nested `describe` blocks justify themselves only when they have siblings (e.g., `describe('sso')` alongside `describe('credentials')`). A single-child describe doubles the indentation budget and adds noise to test runner output without grouping value. Max 2 levels — see `config/migration-rules.md` §2.
 
+#### 1.1.16 `waitForLoadState('networkidle')` as universal wait
+
+```ts
+// ANTI-PATTERN
+await page.goto('/dashboard');
+await page.waitForLoadState('networkidle');
+await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+```
+
+```ts
+// CANONICAL — wait on the actual user-visible state
+await page.goto('/dashboard');
+await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+```
+
+Rationale: `networkidle` waits for ZERO in-flight requests for 500ms — that includes ad pixels, analytics beacons, polling sockets, and Intercom-style chat widgets that NEVER go idle in production. The test then hangs or flakes on unrelated third-party network noise that has zero bearing on whether the user can see the dashboard. Playwright's own docs (since v1.30) explicitly discourage `networkidle` outside of unusual cases. Auto-waiting locators + web-first assertions already wait for the right thing. Prevents `NetworkNoiseFlake` bug class. See [playwright.dev/docs/api/class-page#page-wait-for-load-state](https://playwright.dev/docs/api/class-page#page-wait-for-load-state).
+
+#### 1.1.17 Raw XPath via `xpath=` selector engine
+
+```ts
+// ANTI-PATTERN — survived a Selenium-to-Playwright translator
+await page.locator('xpath=//div[@class="header"]/button[2]').click();
+await page.locator('xpath=//*[contains(text(),"Continue")]').click();
+```
+
+```ts
+// CANONICAL — role-based, accessible-name, getByText
+await page.getByRole('banner').getByRole('button', { name: 'Save' }).click();
+await page.getByRole('button', { name: 'Continue' }).click();
+```
+
+Rationale: raw XPath is a tell that this file came out of a Selenium translator without semantic rework. Playwright supports XPath for completeness but it loses every advantage of role-based locators — no a11y-tree grounding, brittle to DOM refactors, opaque at the call site. Positional XPath (`button[2]`) recreates the `nth()` anti-pattern (1.1.2) in a different syntax. Prevents `SeleniumTranslationLeak` bug class. See [playwright.dev/docs/locators#locate-by-css-or-xpath](https://playwright.dev/docs/locators#locate-by-css-or-xpath).
+
+#### 1.1.18 `.all()` then manual `for` loop with count assertions
+
+```ts
+// ANTI-PATTERN
+const items = await page.locator('[data-testid="row"]').all();
+expect(items.length).toBe(5);
+for (const item of items) {
+  expect(await item.textContent()).toContain('OK');
+}
+```
+
+```ts
+// CANONICAL — web-first count + iteration on a live locator
+const rows = page.getByTestId('row');
+await expect(rows).toHaveCount(5);
+await expect(rows).toContainText(['OK', 'OK', 'OK', 'OK', 'OK']);
+```
+
+Rationale: `.all()` snapshots the locator into a fixed array — auto-retry semantics die immediately. If the list is still rendering when `.all()` resolves, the count assertion fails for a UI bug that doesn't exist. `toHaveCount` and `toContainText(array)` poll until the expected count is reached. Same family as the Selenium `find-elements-snapshot` smell. Prevents `SnapshotIterationRace` bug class.
+
+#### 1.1.19 `innerText()` / `textContent()` string compare instead of `toHaveText`
+
+```ts
+// ANTI-PATTERN
+const heading = await page.getByRole('heading').innerText();
+expect(heading).toBe('Welcome back');
+```
+
+```ts
+// CANONICAL — web-first, polls until match
+await expect(page.getByRole('heading')).toHaveText('Welcome back');
+```
+
+Rationale: `innerText()` is a one-shot snapshot — same flake mode as `isVisible()` (1.1.5) but for text content. If the heading renders one tick after the snapshot, the assertion fails on a non-existent bug. `toHaveText` polls and also normalizes whitespace by default (a common source of `have.text` flakes — see Cypress 1.2.35 sibling). Prevents `TextSnapshotRace` bug class. See [`eslint-plugin-playwright/prefer-to-have-text`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/prefer-to-have-text.md).
+
+#### 1.1.20 `expect(await locator.isChecked()).toBe(true)` — sync probe on stateful methods
+
+```ts
+// ANTI-PATTERN — variant of 1.1.5 on isChecked/isEnabled/isEditable
+expect(await page.getByLabel('Remember me').isChecked()).toBe(true);
+expect(await page.getByRole('button', { name: 'Submit' }).isEnabled()).toBe(true);
+expect(await page.getByLabel('Comment').isEditable()).toBe(true);
+```
+
+```ts
+// CANONICAL — web-first state assertions
+await expect(page.getByLabel('Remember me')).toBeChecked();
+await expect(page.getByRole('button', { name: 'Submit' })).toBeEnabled();
+await expect(page.getByLabel('Comment')).toBeEditable();
+```
+
+Rationale: same family as 1.1.5 but applied to the other sync probes — `isChecked`, `isEnabled`, `isEditable`, `isDisabled`, `isHidden`. Each returns a one-shot boolean with no auto-retry. The web-first counterparts (`toBeChecked`, `toBeEnabled`, `toBeEditable`, `toBeDisabled`, `toBeHidden`) poll until the assertion timeout. The lint rule covers all of them. Prevents `StateProbeRace` bug class. See [`eslint-plugin-playwright/prefer-web-first-assertions`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/prefer-web-first-assertions.md).
+
+#### 1.1.21 Manual `clearCookies` / `clearPermissions` in `beforeEach`
+
+```ts
+// ANTI-PATTERN — ceremonial isolation
+test.beforeEach(async ({ context }) => {
+  await context.clearCookies();
+  await context.clearPermissions();
+  await context.storageState({ path: undefined });
+});
+```
+
+```ts
+// CANONICAL — Playwright creates a fresh BrowserContext per test by default
+test('logged-out user sees marketing page', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+});
+```
+
+Rationale: Playwright's default test fixture creates a NEW `BrowserContext` per test — cookies, localStorage, sessionStorage, IndexedDB, and granted permissions all reset for free. Manual `clearCookies` in `beforeEach` is leftover Selenium-era muscle memory and clutters every spec. The only legitimate use is when explicitly opting into a shared context (e.g., `storageState` auth reuse) AND wanting to invalidate it mid-suite — both rare. Prevents `IsolationCeremonyClutter` bug class. See [playwright.dev/docs/browser-contexts#why-browser-contexts](https://playwright.dev/docs/browser-contexts#why-browser-contexts).
+
+#### 1.1.22 `test.describe.configure({ mode: 'serial' })` as state-bug workaround
+
+```ts
+// ANTI-PATTERN — serial mode hides shared-state coupling
+test.describe.configure({ mode: 'serial' });
+
+test.describe('user CRUD', () => {
+  test('creates user', async ({ page }) => { /* writes to module-scope createdUserId */ });
+  test('edits that user', async ({ page }) => { /* reads createdUserId */ });
+  test('deletes that user', async ({ page }) => { /* reads createdUserId */ });
+});
+```
+
+```ts
+// CANONICAL — hermetic tests with per-test setup
+test('creates a user', async ({ page, freshUser }) => {
+  await createUser(page, freshUser);
+  await expect(page.getByText(freshUser.email)).toBeVisible();
+});
+
+test('edits an existing user', async ({ page, seededUser }) => {
+  await editUser(page, seededUser, { name: 'New Name' });
+  await expect(page.getByText('New Name')).toBeVisible();
+});
+```
+
+Rationale: `mode: 'serial'` forces tests to run in declaration order on one worker AND aborts the suite at the first failure. It's almost always a workaround for shared-state bugs (e.g., test 2 depends on side effects of test 1). The fix is to make each test hermetic via fixtures (`freshUser`, `seededUser`) — not to constrain the runner. Serial mode also disables sharding speedups. Legitimate uses (e.g., one-shot DB migration in setup project) are rare and belong in a `setup` project, not in feature specs. Prevents `SerialModeStateLeak` bug class. See [playwright.dev/docs/test-parallel#serial-mode](https://playwright.dev/docs/test-parallel#serial-mode).
+
+#### 1.1.23 `page.on('console', ...)` listener left in committed tests
+
+```ts
+// ANTI-PATTERN — debug observability leaked into CI
+test('checkout flow', async ({ page }) => {
+  page.on('console', msg => console.log('BROWSER:', msg.text()));
+  page.on('pageerror', err => console.log('PAGE ERROR:', err));
+  await page.goto('/checkout');
+  // ... rest of test
+});
+```
+
+```ts
+// CANONICAL — either delete OR convert to an assertion on quality bar
+test('checkout flow produces no console errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText('Thank you')).toBeVisible();
+  expect(errors, 'no console errors during checkout').toEqual([]);
+});
+```
+
+Rationale: a `console.log` listener with no assertion bloats CI logs (every browser-side log line spams the runner output) without ever failing the test. Either the listener should drive an assertion (the canonical form turns "no console errors" into a real quality gate) OR it should be deleted. Leftover debug listeners are the test-code equivalent of `console.log('here')` shipping to production. Prevents `DebugListenerLeak` bug class.
+
+#### 1.1.24 `page.screenshot({ path: 'debug.png' })` left in committed tests
+
+```ts
+// ANTI-PATTERN — debug artifact leaked into repo
+test('payment form', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.screenshot({ path: 'debug.png' });
+  await page.screenshot({ path: 'after-fill.png' });
+  await page.getByRole('button', { name: 'Pay' }).click();
+});
+```
+
+```ts
+// CANONICAL — let Playwright handle on-failure artifacts via config
+// playwright.config.ts:
+//   use: { screenshot: 'only-on-failure', trace: 'retain-on-failure' }
+test('payment form', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText('Payment received')).toBeVisible();
+});
+```
+
+Rationale: manual `page.screenshot({ path })` writes a PNG to the working directory on every run — on CI that means orphan artifacts, in dev that means a polluted git status. Playwright's config-level `screenshot: 'only-on-failure'` plus `trace: 'retain-on-failure'` produces richer failure artifacts (full DOM snapshot, network, console) and only when something actually broke. Manual screenshots also leak sensitive data (the card number above lands on disk). Visual regression is a separate concern handled via `toHaveScreenshot()`, not ad-hoc PNG dumps. Prevents `DebugArtifactLeak` bug class. See [playwright.dev/docs/test-use-options#recording-options](https://playwright.dev/docs/test-use-options#recording-options).
+
+#### 1.1.25 Short `waitForTimeout(100)` masquerading as a non-hard-wait
+
+```ts
+// ANTI-PATTERN — "tiny" timeout, same anti-pattern as 1.1.1
+await page.getByRole('button', { name: 'Save' }).click();
+await page.waitForTimeout(100);  // "let React rerender"
+await page.waitForTimeout(50);   // "small debounce"
+await page.waitForTimeout(300);  // "animation"
+await expect(page.getByText('Saved')).toBeVisible();
+```
+
+```ts
+// CANONICAL — wait on the visible state, not on a guess
+await page.getByRole('button', { name: 'Save' }).click();
+await expect(page.getByText('Saved')).toBeVisible();
+```
+
+Rationale: developers normalize the `waitForTimeout` smell by using "small" values (50ms, 100ms, 300ms) and rationalizing them as "just letting React rerender" or "small debounce". The anti-pattern is identical to 1.1.1 — a sleep with no relation to the actual UI state, just a guess that happens to work on one machine. On loaded CI runners those 100ms become 800ms and the test still races. The lint rule `no-wait-for-timeout` fires regardless of N — it's the call that's wrong, not the size. Prevents `ShortHardWaitRationalization` bug class. See [`eslint-plugin-playwright/no-wait-for-timeout`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/no-wait-for-timeout.md).
+
 ---
 
 ### 1.2 Cypress anti-patterns
@@ -1801,6 +2008,309 @@ await expect(page.getByRole('dialog')).toBeHidden();
 ```
 
 Rationale: Python's mirror of Java's KB-1.3.7. `find_elements(...)` returns a snapshot LIST at call time. Indexing `[0]` or counting via `len()` races against ANY UI change between the call and the read. Playwright `Locator` objects are LAZY and auto-retrying — `expect(locator).toHaveCount(N)` polls until match, and `getByRole(...)` with an accessible name eliminates the need to pick by position. If position is genuinely the only differentiator, `locator.nth(i)` exists but should be flagged as LOW confidence and reviewed.
+
+#### 1.4.18 `driver.execute_script("return document.querySelector(...)")` JS-bridge state probe
+
+```python
+# ANTI-PATTERN
+is_loaded = driver.execute_script("return window.app && window.app.loaded === true;")
+assert is_loaded
+```
+
+```ts
+// CANONICAL — wait for the user-visible signal that proves load
+await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
+```
+
+Rationale: `execute_script` reaches past WebDriver's API and probes the page's JS runtime directly. Tests pass when `window.app.loaded` is true but the visible UI hasn't actually rendered (asynchronous flush gap). Worse: the probe is invisible at code-review time — readers see `assert is_loaded` and don't know it's a JS-runtime read. Playwright's web-first assertions wait for what the user sees. Prevents `JsRuntimeProbeRaceUI` bug class.
+
+#### 1.4.19 `@pytest.fixture(scope="session")` for the WebDriver
+
+```python
+# ANTI-PATTERN
+@pytest.fixture(scope="session")
+def driver():
+    drv = webdriver.Chrome()
+    yield drv
+    drv.quit()
+```
+
+```ts
+// CANONICAL — Playwright defaults to fresh BrowserContext per test
+// playwright.config.ts: nothing special needed.
+test('isolated by default', async ({ page }) => { /* fresh */ });
+```
+
+Rationale: `scope="session"` allocates one driver for the whole pytest session — every test shares cookies, localStorage, and (often) URL state. Parallel `pytest-xdist` workers each get their own session, but inside a worker tests still pollute each other. Playwright's per-test `page` fixture is the right default. Translation: change `scope="session"` to `scope="function"` (or drop the fixture entirely and use Playwright's built-in). Prevents `SessionScopedDriverPollution` bug class.
+
+#### 1.4.20 `webdriver-manager` auto-installer in test code
+
+```python
+# ANTI-PATTERN
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+```
+
+```ts
+// CANONICAL — Playwright bundles its own browser binary management
+// $ npx playwright install chromium  (one-time, before CI runs)
+// In tests: just `await chromium.launch()` — no installer code.
+```
+
+Rationale: `webdriver-manager` reaches out to chromedriver.storage.googleapis.com on every test run. Network blip → flaky test that fails with a misleading "WebDriver init error" instead of "test assertion failed". Playwright separates browser provisioning (`npx playwright install`) from test execution. Prevents `WebDriverInstallerNetworkFlake` bug class.
+
+#### 1.4.21 `driver.window_handles[-1]` for new-tab switching
+
+```python
+# ANTI-PATTERN
+driver.find_element(By.LINK_TEXT, "Open in new tab").click()
+driver.switch_to.window(driver.window_handles[-1])
+assert "details" in driver.current_url
+```
+
+```ts
+// CANONICAL — explicit Playwright pattern with waitForEvent
+const newPagePromise = page.context().waitForEvent('page');
+await page.getByRole('link', { name: /open in new tab/i }).click();
+const newPage = await newPagePromise;
+await newPage.waitForLoadState();
+await expect(newPage).toHaveURL(/\/details/);
+```
+
+Rationale: `window_handles[-1]` assumes the new tab opened last in the list — true in single-action tests but unreliable when the SUT opens auxiliary popups (analytics, chat widget). Playwright `context.waitForEvent('page')` synchronizes on the exact new page event. Prevents `TabHandleArrayRace` bug class.
+
+#### 1.3.17 `driver.switchTo().frame(0)` index-based frame selection
+
+```java
+// ANTI-PATTERN
+driver.switchTo().frame(0);
+driver.findElement(By.id("widget-input")).sendKeys("hello");
+driver.switchTo().defaultContent();
+```
+
+```ts
+// CANONICAL — frame by name attribute, no manual context switching
+const widgetFrame = page.frameLocator('iframe[name="widget"]');
+await widgetFrame.getByLabel('Widget input').fill('hello');
+```
+
+Rationale: `frame(0)` picks the first iframe in document order — adds a hidden tracking iframe ahead of the real one and the test silently targets the tracker. Playwright `frameLocator` requires an explicit selector and supports auto-waiting/retry inside the frame just like top-level locators. Prevents `IndexedFrameDriftPicker` bug class.
+
+#### 1.3.18 `driver.switchTo().alert().accept()` without race protection
+
+```java
+// ANTI-PATTERN
+driver.findElement(By.id("delete")).click();
+driver.switchTo().alert().accept();   // throws NoAlertPresentException if alert hasn't fired yet
+```
+
+```ts
+// CANONICAL — register the dialog handler BEFORE the action
+page.once('dialog', async (dialog) => {
+  expect(dialog.message()).toMatch(/are you sure/i);
+  await dialog.accept();
+});
+await page.getByRole('button', { name: 'Delete' }).click();
+```
+
+Rationale: `switchTo().alert()` is synchronous — if the alert hasn't fired by the time it runs (race with click handler), Selenium throws and the test fails with no useful info. Playwright's `page.on('dialog')` is a registered handler that fires whenever a dialog appears, so the listener is in place before the click can trigger it. Prevents `AlertRaceFlake` bug class.
+
+#### 1.3.19 `By.linkText("Click here")` exact-match link locator
+
+```java
+// ANTI-PATTERN
+driver.findElement(By.linkText("Click here")).click();
+```
+
+```ts
+// CANONICAL
+await page.getByRole('link', { name: 'Click here' }).click();
+```
+
+Rationale: `By.linkText` requires the visible text to match exactly, including casing and whitespace. Designers update copy from "Click here" to "Click here →" (added arrow) → test breaks at the locator level, not at the assertion level. `getByRole('link', { name })` normalizes accessible names. Prevents `LinkTextExactCopyDrift` bug class.
+
+#### 1.3.20 `driver.manage().window().setSize(new Dimension(...))` per-test viewport
+
+```java
+// ANTI-PATTERN
+driver.manage().window().setSize(new Dimension(1366, 768));
+driver.get("/products");
+```
+
+```ts
+// CANONICAL — viewport at project level, never in test code
+// playwright.config.ts
+projects: [
+  { name: 'desktop', use: { viewport: { width: 1366, height: 768 } } },
+  { name: 'tablet', use: { ...devices['iPad Pro 11'] } },
+],
+```
+
+Rationale: per-test `setSize` couples the test to a hardcoded resolution. Adding a mobile breakpoint means editing every test; CI parallelism via different viewports becomes impossible. Playwright's project config separates dimension from behavior. Prevents `ViewportCodedInTest` bug class.
+
+#### 1.3.21 `ChromeOptions options = new ChromeOptions(); options.addArguments("--headless")` in test code
+
+```java
+// ANTI-PATTERN — browser config sprinkled across tests
+ChromeOptions options = new ChromeOptions();
+options.addArguments("--headless=new", "--no-sandbox", "--disable-gpu");
+WebDriver driver = new ChromeDriver(options);
+```
+
+```ts
+// CANONICAL — launchOptions in playwright.config.ts
+use: {
+  launchOptions: {
+    args: ['--disable-gpu'],
+  },
+  headless: process.env.CI ? true : false,
+},
+```
+
+Rationale: distributing browser flags across test code creates drift — half the suite runs with one set, half with another. Playwright config centralizes launchOptions. Prevents `BrowserFlagsDriftAcrossSuite` bug class.
+
+#### 1.3.22 `webElement.getCssValue("background-color")` style-coupled assertion
+
+```java
+// ANTI-PATTERN
+String bgColor = button.getCssValue("background-color");
+assertEquals("rgba(0, 128, 0, 1)", bgColor);
+```
+
+```ts
+// CANONICAL — assert via data-state attribute or visible behavior
+await expect(button).toHaveAttribute('data-variant', 'success');
+// OR if CSS truly is the assertion target:
+await expect(button).toHaveCSS('background-color', 'rgb(0, 128, 0)');
+```
+
+Rationale: CSS values vary by browser rendering (`rgba(...)` vs `rgb(...)`, alpha presence/absence) and by design-system updates. Asserting visible state through semantics (data attributes, accessible name) survives styling refactors. Prevents `CSSValueBrowserDrift` bug class.
+
+#### 1.3.23 `driver.manage().getCookies().stream().filter(...).findFirst()` cookie inspection in test
+
+```java
+// ANTI-PATTERN — test reads auth cookie to verify login worked
+Set<Cookie> cookies = driver.manage().getCookies();
+Cookie sessionCookie = cookies.stream()
+    .filter(c -> c.getName().equals("session"))
+    .findFirst().orElseThrow();
+assertNotNull(sessionCookie.getValue());
+```
+
+```ts
+// CANONICAL — assert visible authenticated state
+await expect(page.getByText(/welcome.*admin/i)).toBeVisible();
+// If cookies truly are the contract (rare — usually they're an impl detail):
+const cookies = await page.context().cookies();
+expect(cookies.some((c) => c.name === 'session')).toBe(true);
+```
+
+Rationale: reading auth cookies couples the test to the auth scheme (session vs JWT vs OAuth) — refactoring auth breaks the test even though the UX is identical. Assert on what the user sees. Prevents `AuthCookieSchemeCoupling` bug class.
+
+#### 1.3.24 `((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView();", el)` scroll-into-view
+
+```java
+// ANTI-PATTERN
+WebElement target = driver.findElement(By.id("footer-link"));
+((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView();", target);
+target.click();
+```
+
+```ts
+// CANONICAL — Playwright auto-scrolls on action
+await page.getByRole('link', { name: 'Privacy policy' }).click();
+// If explicit scroll is needed (e.g., to lazy-load content):
+await page.getByText('Privacy policy').scrollIntoViewIfNeeded();
+```
+
+Rationale: `scrollIntoView` via JS bypasses the actionability checks; if a sticky header is covering the element, the JS scroll moves it under the header and the click silently misses. Playwright's `.click()` auto-scrolls AND auto-checks visibility AND retries. Prevents `JsScrollMissedActionability` bug class.
+
+#### 1.4.22 `driver.set_page_load_timeout(N)` driver-level page-load timeout
+
+```python
+# ANTI-PATTERN
+driver = webdriver.Chrome()
+driver.set_page_load_timeout(60)
+driver.get("/slow-route")
+```
+
+```ts
+// CANONICAL — per-call timeout, discoverable at call site
+await page.goto('/slow-route', { timeout: 60000 });
+// OR project-wide:
+// playwright.config.ts: use: { navigationTimeout: 60000 }
+```
+
+Rationale: driver-level timeouts mutate global state — every subsequent `driver.get` inherits 60s even when the test author meant just one slow route. Per-call timeouts document intent at the call site. Prevents `GlobalTimeoutMutationLeak` bug class.
+
+#### 1.4.23 `driver.maximize_window()` viewport coupling
+
+```python
+# ANTI-PATTERN
+driver.maximize_window()
+driver.get("/dashboard")
+```
+
+```ts
+// CANONICAL — explicit, deterministic, in project config
+// playwright.config.ts
+use: { viewport: { width: 1920, height: 1080 } },
+```
+
+Rationale: `maximize_window` produces whatever the local display can offer — your laptop gets 1440×900, CI runner gets 1024×768, tester's external monitor gets 3840×2160. Tests pass on one resolution and fail on another for visibility-cutoff reasons that have nothing to do with the SUT. Prevents `MaximizeWindowEnvDrift` bug class.
+
+#### 1.4.24 `urllib.parse.urlparse(driver.current_url).path` URL string parsing
+
+```python
+# ANTI-PATTERN
+from urllib.parse import urlparse
+path = urlparse(driver.current_url).path
+assert path.startswith("/orders/")
+```
+
+```ts
+// CANONICAL — Playwright expect handles URL matching with regex
+await expect(page).toHaveURL(/\/orders\//);
+```
+
+Rationale: pulling the URL into Python's `urlparse` skips Playwright's polling — the assertion runs once on the current state instead of waiting for the navigation to settle. `expect(page).toHaveURL()` waits for the URL to match. Prevents `UrlParseSyncSnapshot` bug class.
+
+#### 1.4.25 `element.get_attribute("aria-label")` raw attribute extraction for assertion
+
+```python
+# ANTI-PATTERN
+button = driver.find_element(By.CSS_SELECTOR, "button.close")
+assert button.get_attribute("aria-label") == "Close dialog"
+```
+
+```ts
+// CANONICAL — accessibility-first assertion
+await expect(page.getByRole('button', { name: 'Close dialog' })).toBeVisible();
+// OR if asserting on attribute is truly the contract:
+await expect(page.getByRole('button', { name: 'Close dialog' }))
+  .toHaveAccessibleName('Close dialog');
+```
+
+Rationale: extracting `aria-label` to compare manually skips Playwright's accessibility-aware retry. `getByRole(role, { name })` resolves the same accessible name via the proper a11y tree (handles aria-label, aria-labelledby, textContent, alt — all the sources screen readers use). Prevents `RawAttributeBypassA11yTree` bug class.
+
+#### 1.4.26 `chromedriver_autoinstaller.install()` per-run installer
+
+```python
+# ANTI-PATTERN
+import chromedriver_autoinstaller
+chromedriver_autoinstaller.install()  # downloads on every test run
+driver = webdriver.Chrome()
+```
+
+```ts
+// CANONICAL — Playwright separates browser install (one-time) from test run
+// $ npx playwright install chromium  (once, before suite ever runs)
+// In tests, just import chromium and launch.
+```
+
+Rationale: `chromedriver_autoinstaller` makes test startup non-deterministic — network calls to fetch the matching chromedriver introduce a flake source unrelated to the SUT. Playwright fetches browsers up-front and pins them per `@playwright/test` version. Prevents `PerRunInstallerFlake` bug class.
 
 ---
 

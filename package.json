@@ -22,8 +22,10 @@
     "metrics:export": "tsx scripts/metrics-export.ts",
     "dashboard": "tsx scripts/dashboard.ts",
     "stress:test-stage0": "tsx scripts/test-stage0.ts",
+    "stage1:replay": "tsx scripts/stage1-replay.ts",
     "ast-diff:sweep": "tsx scripts/ast-diff-threshold-sweep.ts",
     "check:dom-ground": "tsx scripts/dom-ground.ts --url mock://always-resolve --probe examples/bad-playwright-01-flaky-waits/expected-output.spec.ts --report /tmp/dom-probe-smoke.json",
+    "check:dom-ground:live": "tsx scripts/dom-ground-live-calibrate.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",
@@ -32,10 +34,12 @@
     "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
     "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:envelope:code && npm run check:derive && npm run check:coverage && npm run calibrate",
     "smoke": "npm run typecheck:all && npm run validate:all && npm run lint",
-    "quickstart": "tsx scripts/quickstart-check.ts"
+    "quickstart": "tsx scripts/quickstart-check.ts",
+    "dom:snapshot": "tsx scripts/dom-snapshot.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@playwright/mcp": "^0.0.75",
     "@playwright/test": "^1.56.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",
@@ -43,6 +47,7 @@
     "@typescript-eslint/parser": "^8.18.0",
     "ajv": "^8.20.0",
     "better-sqlite3": "^11.7.0",
+    "danger": "^13.0.7",
     "eslint": "^9.16.0",
     "eslint-plugin-playwright": "^2.10.4",
     "prettier": "^3.4.2",

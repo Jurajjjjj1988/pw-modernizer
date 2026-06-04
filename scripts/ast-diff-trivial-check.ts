@@ -34,7 +34,7 @@
 
 import { readFileSync, statSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join, extname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { Project, Node, SyntaxKind, ts } from "ts-morph";
 
@@ -79,6 +79,28 @@ function resolveSourceFile(p: string, preferSpec: boolean): string {
   try {
     st = statSync(p);
   } catch {
+    // Path doesn't exist. If it looks like a file (has extension), try a
+    // stem-match search in the parent directory — covers cross-language
+    // migrations where input `Foo.java` translates to output `Foo.spec.ts`
+    // and migrate.yml passes the literal source basename as --output.
+    const parent = dirname(p);
+    const stem = basename(p).replace(/\.[^.]+$/, "");
+    try {
+      const siblings = readdirSync(parent, { withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => e.name);
+      // Prefer .spec.ts/.spec.tsx (Stage 2 output convention) then any file
+      // sharing the stem.
+      if (preferSpec) {
+        const spec = siblings.find((n) => n === `${stem}.spec.ts` || n === `${stem}.spec.tsx`);
+        if (spec) return join(parent, spec);
+      }
+      const stemHit = siblings.find((n) => n.startsWith(`${stem}.`));
+      if (stemHit) return join(parent, stemHit);
+    } catch {
+      // Parent doesn't exist either — fall through to return original path
+      // so downstream readFileSync emits a clear ENOENT.
+    }
     return p;
   }
   if (!st.isDirectory()) return p;

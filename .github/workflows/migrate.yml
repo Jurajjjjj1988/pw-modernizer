@@ -449,9 +449,11 @@ jobs:
           # carries identical checks plus orphan/duplicate-pin annotations on
           # each violating line. Kept to preserve commit a3a6cc5+1d775c3+31a2bfa
           # gate posture; both must pass.
+          # Sibling validator — same dir-mode rationale as AST-diff above.
+          # Sonnet may rename input basename on cross-language migrations.
           npx tsx scripts/plan-code-coverage.ts \
             --envelope "$ENV" \
-            --output "outputs/tests/${BASE}"
+            --output "outputs/tests"
 
       - name: Output secret scan (mirror Stage 0)
         shell: bash

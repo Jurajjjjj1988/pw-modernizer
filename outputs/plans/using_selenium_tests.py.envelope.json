@@ -1,0 +1,62 @@
+{
+  "inputBasename": "using_selenium_tests.py",
+  "sourceFramework": "selenium-python",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "submits web form text input and receives confirmation @positive",
+      "userAction": "Navigate to the web form page, fill the text input with 'Selenium', click the submit button, and verify the confirmation message appears.",
+      "expectedAssertions": [
+        "page title equals 'Web form' after navigation",
+        "element #message displays text 'Received!' after form submission"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.find_element(by=By.NAME, value=\"my-text\")",
+      "target": "page.getByLabel(/text input/i)",
+      "confidence": "med",
+      "notes": "name='my-text' implies a labeled text field; label text assumed from web-form conventions — DOM verification required. Fallback: page.locator('[name=\"my-text\"]'). See pin 1."
+    },
+    {
+      "original": "driver.find_element(by=By.CSS_SELECTOR, value=\"button\")",
+      "target": "page.getByRole('button', { name: /submit/i })",
+      "confidence": "low",
+      "notes": "Generic tag selector gives no accessible-name evidence; 'Submit' assumed from form semantics only. See pin 2."
+    },
+    {
+      "original": "driver.find_element(by=By.ID, value=\"message\")",
+      "target": "page.locator('#message')",
+      "confidence": "high",
+      "notes": "Direct ID mapping. If element carries role='status' or role='alert', upgrade to getByRole for quality score improvement (Q3)."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Text input field (name='my-text')",
+      "assumedLocator": "page.getByLabel(/text input/i)",
+      "sourceLocator": "driver.find_element(by=By.NAME, value=\"my-text\")",
+      "whyComment": "Q1 unresolved: label text not confirmed for name='my-text' — assumed 'Text input' from web-form convention.",
+      "reviewerFallback": "Inspect web-form.html source for the visible label text above the text input and supply exact regex; or request data-testid='text-input' be added to the element."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Submit button",
+      "assumedLocator": "page.getByRole('button', { name: /submit/i })",
+      "sourceLocator": "driver.find_element(by=By.CSS_SELECTOR, value=\"button\")",
+      "whyComment": "Q2 unresolved: submit button accessible name not confirmed — 'Submit' assumed from form semantics.",
+      "reviewerFallback": "Inspect the <button> element in web-form.html for its visible text content and replace /submit/i with the correct regex; or use page.locator('button[type=\"submit\"]') as a structural fallback."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.67,
+    "smellCountDelta": -8,
+    "locDelta": -9,
+    "antiPatternCoverage": "8/8"
+  }
+}

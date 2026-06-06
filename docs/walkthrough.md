@@ -1,6 +1,11 @@
 # End-to-end walkthrough
 
-> A real migration, narrated. Uses [PR #3](https://github.com/Jurajjjjj1988/PWmodernizer/pull/3) — the first multi-file Selenium-Java input that flowed through Stage 1 end-to-end — as the canonical example. Run [#26951988169](https://github.com/Jurajjjjj1988/PWmodernizer/actions/runs/26951988169) produced the artefacts you'll see below.
+> A real migration, narrated. Uses [PR #6](https://github.com/Jurajjjjj1988/PWmodernizer/pull/6) (plan) → [PR #13](https://github.com/Jurajjjjj1988/PWmodernizer/pull/13) (code) — a real Apache-2.0 test from [bonigarcia/selenium-webdriver-java](https://github.com/bonigarcia/selenium-webdriver-java) (PromptJupiterTest.java, browser-prompt dialog scenario) that flowed end-to-end Stage 1 → Stage 2 → confidence:high → real cross-language migration. The originally documented PR #3 / EmployeesTest example was a synthetic input from the build-out phase — the bonigarcia example shows the same pipeline on truly random GitHub code.
+>
+> **Result you can inspect today (2026-06-06):**
+> - PR #6 Stage 1 plan: 9 anti-patterns detected, real KB-IDs cited, zero hallucinations
+> - PR #13 Stage 2 output: 96 LOC clean Playwright TS with `// plan:scenario=` pins, hallucination-defense WHY-comments, TODO references to plan questions
+> - Verify CANDOR (FluentWait analog): SDET=SHIP IT, Code Review=FIX FIRST → reviewer-required (not blocked)
 
 ## What we'll walk through
 

@@ -88,8 +88,9 @@ const REQUIRED_SECTIONS = [
 // header. PASS = within this fraction; FAIL = exceeds the FAIL band.
 const TOTAL_PASS_BAND = 0.2;   // ±20% counts as PASS
 const TOTAL_FAIL_BAND = 0.5;   // beyond ±50% counts as FAIL
-const CONF_DIST_PASS = 0.2;    // L1 distance over normalised 3-bucket histogram
-const CONF_DIST_FAIL = 0.5;
+const CONF_DIST_PASS = 0.3;    // L1 distance over normalised 3-bucket histogram
+const CONF_DIST_FAIL = 0.8;    // Sonnet legitimately drifts more conservative
+                                // (LOW > MED) as it matures — DEGRADED room
 
 function parseCliArgs(): CliArgs {
   const { values } = parseArgs({

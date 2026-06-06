@@ -301,6 +301,18 @@ function relativeDiff(actual: number, expected: number): number {
   return Math.abs(actual - expected) / expected;
 }
 
+/**
+ * Asymmetric drift for "more is better" metrics like anti-pattern count:
+ * - actual >= expected → PASS (finding more smells is good)
+ * - actual < expected  → relativeDiff (missed smells = regression)
+ * Use for anti-pattern total + KB-ID coverage where Sonnet finding extra
+ * is a quality signal, not a regression.
+ */
+function regressionDiff(actual: number, expected: number): number {
+  if (actual >= expected) return 0;
+  return relativeDiff(actual, expected);
+}
+
 function bandToVerdict(distance: number, passBand: number, failBand: number): "PASS" | "DEGRADED" | "FAIL" {
   if (distance <= passBand) return "PASS";
   if (distance <= failBand) return "DEGRADED";
@@ -341,7 +353,9 @@ function compareStats(actual: PlanStats, expected: PlanStats, threshold: number)
   const out: AxisResult[] = [];
 
   // Axis 1 — anti-pattern total count
-  const apDiff = relativeDiff(actual.antiPatternsTotal, expected.antiPatternsTotal);
+  // Asymmetric: Sonnet detecting MORE smells than the example example is a
+  // positive signal (improved LLM, richer KB). Only penalise MISSED smells.
+  const apDiff = regressionDiff(actual.antiPatternsTotal, expected.antiPatternsTotal);
   out.push({
     name: "Anti-patterns total",
     status: bandToVerdict(apDiff, TOTAL_PASS_BAND, TOTAL_FAIL_BAND),

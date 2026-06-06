@@ -20,6 +20,7 @@
 name: Regression — structural contracts
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'prompts/**'

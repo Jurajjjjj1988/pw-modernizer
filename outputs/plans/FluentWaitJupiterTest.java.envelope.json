@@ -1,0 +1,42 @@
+{
+  "inputBasename": "FluentWaitJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "waits for landscape image to load and verifies its source attribute",
+      "userAction": "Navigate to the loading-images demo page and wait for the landscape image element to appear in the DOM with a src attribute containing 'landscape'.",
+      "expectedAssertions": [
+        "After page load: element #landscape is present in the DOM",
+        "After page load: #landscape src attribute contains the substring 'landscape' (case-insensitive)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.id(\"landscape\")",
+      "target": "page.getByAltText(/landscape/i)",
+      "confidence": "med",
+      "notes": "Element id and page context (loading-images educational demo, bonigarcia author) strongly suggest <img alt='landscape'>. Fallback if alt text absent or differs: page.locator('#landscape') at HIGH confidence (mechanical By.id -> CSS-id per KB hallucination rule 1). Reviewer must resolve Q3 before Stage 2 runs."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "landscape image element",
+      "assumedLocator": "page.getByAltText(/landscape/i)",
+      "sourceLocator": "By.id(\"landscape\")",
+      "whyComment": "Q3 unresolved — alt text inferred from element id and bonigarcia demo conventions; not confirmed by DOM inspection",
+      "reviewerFallback": "Inspect https://bonigarcia.dev/selenium-webdriver-java/loading-images.html source. If <img id='landscape' alt='landscape'> confirmed, keep getByAltText. If alt is absent or differs, switch to page.locator('#landscape') and add inline WHY-comment explaining why role/label/altText hierarchy is unavailable."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -7,
+    "locDelta": -50,
+    "antiPatternCoverage": "7/7"
+  }
+}

@@ -380,7 +380,9 @@ function compareStats(actual: PlanStats, expected: PlanStats, threshold: number)
   });
 
   // Axis 3 — locator total
-  const locDiff = relativeDiff(actual.locatorTotal, expected.locatorTotal);
+  // Asymmetric: Sonnet emitting MORE locators (e.g. expanding compound queries
+  // into role-based pairs) is positive; only penalise emitting FEWER.
+  const locDiff = regressionDiff(actual.locatorTotal, expected.locatorTotal);
   out.push({
     name: "Locator total",
     status: bandToVerdict(locDiff, TOTAL_PASS_BAND, TOTAL_FAIL_BAND),

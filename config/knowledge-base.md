@@ -2227,6 +2227,23 @@ await page.getByText('Privacy policy').scrollIntoViewIfNeeded();
 
 Rationale: `scrollIntoView` via JS bypasses the actionability checks; if a sticky header is covering the element, the JS scroll moves it under the header and the click silently misses. Playwright's `.click()` auto-scrolls AND auto-checks visibility AND retries. Prevents `JsScrollMissedActionability` bug class.
 
+#### 1.3.25 `WebDriverManager.chromedriver().setup()` browser-binary auto-installer
+
+```java
+// ANTI-PATTERN
+WebDriverManager.chromedriver().setup();
+WebDriver driver = new ChromeDriver();
+```
+
+```ts
+// CANONICAL — Playwright separates provisioning from execution
+// $ npx playwright install chromium  (once, before suite ever runs)
+// In tests: chromium is bundled; no installer call needed.
+import { test } from '@playwright/test';
+```
+
+Rationale: `WebDriverManager` reaches out to a binary registry on every test run to download/verify the matching ChromeDriver. Network blip → flaky test that fails with a misleading "WebDriver init error" instead of "test assertion failed". Java counterpart of KB-1.4.20 (Python `webdriver-manager`); both collapse to `sel/fixture/binary-installer-in-test` under the new namespace scheme. Playwright fetches browsers up-front and pins them per `@playwright/test` version. Prevents `WebDriverInstallerNetworkFlake` bug class.
+
 #### 1.4.22 `driver.set_page_load_timeout(N)` driver-level page-load timeout
 
 ```python

@@ -47,6 +47,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # dangerfile.ts uses `import { … } from "./scripts/lib/danger-rules.js"`
+      # (NodeNext ESM convention — TS source is .ts, import specifier is .js).
+      # The Danger CLI loads dangerfile via `require-from-string` (CJS), which
+      # does NOT resolve `.js → .ts`. Without a precompiled .js sidecar, every
+      # PR-trigger run fails with `Cannot find module './scripts/lib/danger-rules.js'`.
+      # Fix: emit danger-rules.js alongside .ts before Danger runs. Module=CommonJS
+      # so the resolved .js works with the project's strict ESM tsconfig.
+      # Verified locally with `npx danger pr <url>`.
+      - name: Pre-compile Danger rules to JS
+        run: |
+          npx tsc \
+            --module CommonJS \
+            --target ES2022 \
+            --noEmit false \
+            --skipLibCheck \
+            --outDir scripts/lib \
+            scripts/lib/danger-rules.ts
+
       - name: Run Danger
         run: npx danger ci
         env:

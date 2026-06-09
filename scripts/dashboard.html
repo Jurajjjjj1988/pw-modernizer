@@ -57,6 +57,52 @@
     </table>
   </section>
   <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Cost &amp; tokens — summary</h2>
+    <p class="text-xs text-slate-500 mb-2">USD totals per Anthropic 2026 list pricing. Rows without <code>--output-format json</code> capture surface as "untracked" — never silently treated as $0.</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      <div><div class="text-xs text-slate-500">Total spend</div><div id="costTotal" class="text-2xl font-semibold">$0.00</div></div>
+      <div><div class="text-xs text-slate-500">Tracked runs</div><div id="costTrackedRuns" class="text-2xl font-semibold">0</div></div>
+      <div><div class="text-xs text-slate-500">Untracked runs</div><div id="costUntrackedRuns" class="text-2xl font-semibold text-slate-400">0</div></div>
+      <div><div class="text-xs text-slate-500">Models seen</div><div id="costModelCount" class="text-2xl font-semibold">0</div></div>
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-1">Model</th>
+          <th class="py-1 text-right">Runs</th>
+          <th class="py-1 text-right">Cost (USD)</th>
+          <th class="py-1 text-right">Tokens in</th>
+          <th class="py-1 text-right">Tokens out</th>
+        </tr>
+      </thead>
+      <tbody id="costByModelTable"></tbody>
+    </table>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Daily burn rate (last 30 days)</h2>
+    <p class="text-xs text-slate-500 mb-2">USD per UTC calendar day across plan / migrate / verify. Untracked-cost rows excluded.</p>
+    <canvas id="dailyBurnChart" height="120"></canvas>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Per-run cost (last 50)</h2>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-1">When (UTC)</th>
+          <th class="py-1">Stage</th>
+          <th class="py-1">Input</th>
+          <th class="py-1">Model</th>
+          <th class="py-1 text-right">In</th>
+          <th class="py-1 text-right">Cache R</th>
+          <th class="py-1 text-right">Cache W</th>
+          <th class="py-1 text-right">Out</th>
+          <th class="py-1 text-right">Cost</th>
+        </tr>
+      </thead>
+      <tbody id="costPerRunTable"></tbody>
+    </table>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
     <h2 class="text-lg font-semibold mb-2">Top 10 KB-IDs cited</h2>
     <table class="w-full text-sm">
       <thead><tr class="text-left border-b"><th class="py-1">KB-ID</th><th class="py-1">Citations</th></tr></thead>
@@ -189,6 +235,68 @@
   } else {
     tbody.innerHTML = data.topKbIds
       .map((kb) => '<tr class="border-b"><td class="py-1 font-mono">' + kb.kbId + '</td><td class="py-1">' + kb.count + '</td></tr>')
+      .join('');
+  }
+
+  // ---- Cost & tokens — summary cards.
+  const cs = data.costSummary || { trackedRuns: 0, untrackedRuns: 0, totalCostUsd: 0, byModel: [] };
+  const fmtUsd = (v) => '$' + v.toFixed(4);
+  const fmtInt = (v) => (v == null ? '—' : v.toLocaleString('en-US'));
+  document.getElementById('costTotal').textContent = fmtUsd(cs.totalCostUsd);
+  document.getElementById('costTrackedRuns').textContent = cs.trackedRuns;
+  document.getElementById('costUntrackedRuns').textContent = cs.untrackedRuns;
+  document.getElementById('costModelCount').textContent = cs.byModel.length;
+  const byModelBody = document.getElementById('costByModelTable');
+  if (cs.byModel.length === 0) {
+    byModelBody.innerHTML = '<tr><td colspan="5" class="py-2 text-slate-500">No tracked runs yet. Wire the workflows with <code>--output-format json</code> + <code>extract-claude-usage.ts</code> to start recording.</td></tr>';
+  } else {
+    byModelBody.innerHTML = cs.byModel
+      .map((m) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + m.model + '</td>' +
+        '<td class="py-1 text-right">' + m.runs + '</td>' +
+        '<td class="py-1 text-right">' + fmtUsd(m.costUsd) + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(m.tokensIn) + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(m.tokensOut) + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
+
+  // ---- Daily burn rate chart.
+  const burn = data.dailyBurn || [];
+  new Chart(document.getElementById('dailyBurnChart'), {
+    type: 'bar',
+    data: {
+      labels: burn.map((b) => b.date),
+      datasets: [{ label: 'USD/day', data: burn.map((b) => b.costUsd), backgroundColor: '#6366f1' }],
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'USD' } } },
+    },
+  });
+
+  // ---- Per-run cost table.
+  const perRun = data.costPerRun || [];
+  const perRunBody = document.getElementById('costPerRunTable');
+  if (perRun.length === 0) {
+    perRunBody.innerHTML = '<tr><td colspan="9" class="py-2 text-slate-500">No runs yet.</td></tr>';
+  } else {
+    perRunBody.innerHTML = perRun
+      .map((r) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + fmtTs(r.createdAtUnix) + '</td>' +
+        '<td class="py-1">' + r.stage + '</td>' +
+        '<td class="py-1 font-mono text-xs">' + r.inputBasename + '</td>' +
+        '<td class="py-1 font-mono text-xs">' + (r.model ?? '<span class="text-slate-400">untracked</span>') + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(r.inputTokens) + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(r.cacheReadTokens) + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(r.cacheCreationTokens) + '</td>' +
+        '<td class="py-1 text-right">' + fmtInt(r.outputTokens) + '</td>' +
+        '<td class="py-1 text-right">' + (r.costUsd == null ? '<span class="text-slate-400">—</span>' : fmtUsd(r.costUsd)) + '</td>' +
+        '</tr>'
+      )
       .join('');
   }
 })();

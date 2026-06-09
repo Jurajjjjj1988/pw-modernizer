@@ -84,6 +84,34 @@ interface FrameworkQualityRow {
   startOverRate: number;
 }
 
+/** One row of the per-PR cost table. Untracked rows have cost_usd null. */
+interface CostPerRunRow {
+  createdAtUnix: number;
+  stage: "plan" | "migration" | "verification";
+  inputBasename: string;
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  costUsd: number | null;
+}
+
+/** One bar of the daily-burn-rate chart. */
+interface DailyBurnRow {
+  date: string;            // YYYY-MM-DD (UTC)
+  costUsd: number;         // sum across all stages for that day
+  trackedRunCount: number; // number of rows with cost_usd NOT NULL
+}
+
+/** Top-level cost rollup shown above the per-run table. */
+interface CostSummary {
+  trackedRuns: number;
+  untrackedRuns: number;
+  totalCostUsd: number;
+  byModel: Array<{ model: string; runs: number; costUsd: number; tokensIn: number; tokensOut: number }>;
+}
+
 interface DashboardData {
   generatedAtUnix: number;
   summary: {
@@ -103,6 +131,12 @@ interface DashboardData {
   confidenceTrendByFramework: FrameworkTrendSeries[];
   /** Sorted DESC by medianConfidence — answers "best/worst framework". */
   frameworkQuality: FrameworkQualityRow[];
+  /** Top-line cost rollup — total spend, runs tracked vs untracked, per-model split. */
+  costSummary: CostSummary;
+  /** Last 50 runs across all stages, newest first. Untracked runs surface as cost_usd=null. */
+  costPerRun: CostPerRunRow[];
+  /** Daily aggregated cost for the last 30 calendar days (UTC). */
+  dailyBurn: DailyBurnRow[];
 }
 
 function parseCliArgs(): CliArgs {
@@ -278,6 +312,120 @@ function buildFrameworkQuality(db: MetricsDB): FrameworkQualityRow[] {
   return rows.sort((a, b) => b.medianConfidence - a.medianConfidence);
 }
 
+/**
+ * Cost rollups. SELECT from migrations + plans + verifications via UNION
+ * because token columns are mirrored across the 3 stage tables. Untracked
+ * rows (cost_usd IS NULL) are surfaced separately so dashboard can show
+ * "X runs, Y tracked, Z untracked" honestly — never silently treat NULL as 0.
+ */
+function buildCostSummary(db: MetricsDB): CostSummary {
+  const totals = db.query(
+    `SELECT
+       SUM(CASE WHEN cost_usd IS NULL THEN 0 ELSE 1 END) AS tracked,
+       SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS untracked,
+       COALESCE(SUM(cost_usd), 0) AS total_cost
+     FROM (
+       SELECT cost_usd FROM migrations
+       UNION ALL SELECT cost_usd FROM plans
+       UNION ALL SELECT cost_usd FROM verifications
+     )`,
+  )[0] ?? {};
+
+  const byModelRows = db.query(
+    `SELECT model,
+            COUNT(*) AS runs,
+            COALESCE(SUM(cost_usd), 0) AS cost_usd,
+            COALESCE(SUM(input_tokens), 0) AS tokens_in,
+            COALESCE(SUM(output_tokens), 0) AS tokens_out
+     FROM (
+       SELECT model, cost_usd, input_tokens, output_tokens FROM migrations WHERE model IS NOT NULL
+       UNION ALL SELECT model, cost_usd, input_tokens, output_tokens FROM plans WHERE model IS NOT NULL
+       UNION ALL SELECT model, cost_usd, input_tokens, output_tokens FROM verifications WHERE model IS NOT NULL
+     )
+     GROUP BY model
+     ORDER BY cost_usd DESC`,
+  );
+
+  return {
+    trackedRuns: num(totals, "tracked"),
+    untrackedRuns: num(totals, "untracked"),
+    totalCostUsd: num(totals, "total_cost"),
+    byModel: byModelRows.map((r) => ({
+      model: str(r, "model"),
+      runs: num(r, "runs"),
+      costUsd: num(r, "cost_usd"),
+      tokensIn: num(r, "tokens_in"),
+      tokensOut: num(r, "tokens_out"),
+    })),
+  };
+}
+
+function buildCostPerRun(db: MetricsDB): CostPerRunRow[] {
+  const rows = db.query(
+    `SELECT created_at, stage, input_basename, model,
+            input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+     FROM (
+       SELECT created_at, 'migration' AS stage, input_basename, model,
+              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+         FROM migrations
+       UNION ALL
+       SELECT created_at, 'plan' AS stage, input_basename, model,
+              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+         FROM plans
+       UNION ALL
+       SELECT created_at, 'verification' AS stage, input_basename, model,
+              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+         FROM verifications
+     )
+     ORDER BY created_at DESC
+     LIMIT 50`,
+  );
+  return rows.map((r) => {
+    const stageRaw = str(r, "stage");
+    const stage: CostPerRunRow["stage"] =
+      stageRaw === "plan" || stageRaw === "migration" || stageRaw === "verification" ? stageRaw : "migration";
+    return {
+      createdAtUnix: num(r, "created_at"),
+      stage,
+      inputBasename: str(r, "input_basename"),
+      model: r["model"] === null ? null : str(r, "model"),
+      inputTokens: r["input_tokens"] === null ? null : num(r, "input_tokens"),
+      outputTokens: r["output_tokens"] === null ? null : num(r, "output_tokens"),
+      cacheReadTokens: r["cache_read_tokens"] === null ? null : num(r, "cache_read_tokens"),
+      cacheCreationTokens: r["cache_creation_tokens"] === null ? null : num(r, "cache_creation_tokens"),
+      costUsd: r["cost_usd"] === null ? null : num(r, "cost_usd"),
+    };
+  });
+}
+
+function buildDailyBurn(db: MetricsDB): DailyBurnRow[] {
+  // SQLite stores created_at as Unix seconds. strftime('%Y-%m-%d', created_at, 'unixepoch')
+  // bins to UTC day. We cap at 30 most recent calendar days.
+  const rows = db.query(
+    `SELECT date,
+            COALESCE(SUM(cost_usd), 0) AS cost_usd,
+            SUM(CASE WHEN cost_usd IS NULL THEN 0 ELSE 1 END) AS tracked_runs
+     FROM (
+       SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') AS date, cost_usd FROM migrations
+       UNION ALL
+       SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') AS date, cost_usd FROM plans
+       UNION ALL
+       SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') AS date, cost_usd FROM verifications
+     )
+     GROUP BY date
+     ORDER BY date DESC
+     LIMIT 30`,
+  );
+  // Reverse so charts display oldest→newest left-to-right.
+  return rows
+    .map((r) => ({
+      date: str(r, "date"),
+      costUsd: num(r, "cost_usd"),
+      trackedRunCount: num(r, "tracked_runs"),
+    }))
+    .reverse();
+}
+
 function buildData(db: MetricsDB): DashboardData {
   const summaryRow = db.query(
     `SELECT
@@ -362,6 +510,9 @@ function buildData(db: MetricsDB): DashboardData {
     verdictByFramework: buildVerdictByFramework(db),
     confidenceTrendByFramework: buildConfidenceTrendByFramework(db),
     frameworkQuality: buildFrameworkQuality(db),
+    costSummary: buildCostSummary(db),
+    costPerRun: buildCostPerRun(db),
+    dailyBurn: buildDailyBurn(db),
   };
 }
 

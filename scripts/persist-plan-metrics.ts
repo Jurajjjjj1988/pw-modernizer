@@ -27,13 +27,15 @@
  * Strict TS, no any.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
-import { MetricsDB } from "./metrics.js";
+import { MetricsDB, type UsageStats } from "./metrics.js";
 
 interface CliArgs {
   envelope: string;
+  /** Optional path to a UsageStats JSON file (output of extract-claude-usage.ts). */
+  usage: string | null;
 }
 
 interface LocatorRow {
@@ -67,12 +69,37 @@ function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
     options: {
       envelope: { type: "string" },
+      usage: { type: "string" },
     },
   });
   if (typeof values.envelope !== "string" || values.envelope.length === 0) {
     throw new Error("--envelope is required");
   }
-  return { envelope: values.envelope };
+  return {
+    envelope: values.envelope,
+    usage: typeof values.usage === "string" && values.usage.length > 0 ? values.usage : null,
+  };
+}
+
+/**
+ * Load a UsageStats JSON file produced by extract-claude-usage.ts. Missing
+ * file (e.g. workflow didn't capture --output-format json) → return null;
+ * downstream persists the row without cost columns, dashboard shows it as
+ * "untracked".
+ */
+function loadUsage(path: string | null): UsageStats | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof raw !== "object" || raw === null) return null;
+    const obj = raw as Partial<UsageStats>;
+    if (typeof obj.model !== "string" || typeof obj.input_tokens !== "number" || typeof obj.output_tokens !== "number") {
+      return null;
+    }
+    return obj as UsageStats;
+  } catch {
+    return null;
+  }
 }
 
 function extractKbIdsFromNotes(notes: string): string[] {
@@ -112,6 +139,8 @@ function main(): void {
   const dbPath = process.env["METRICS_DB"] ?? "outputs/.metrics.db";
   const commitSha = process.env["GITHUB_SHA"] ?? "local";
 
+  const usage = loadUsage(args.usage);
+
   const db = new MetricsDB(dbPath);
   try {
     db.recordPlan({
@@ -123,15 +152,17 @@ function main(): void {
       scenario_count: envelope.scenarios.length,
       kb_ids_cited: collectCitedKbIds(envelope),
       commit_sha: commitSha,
+      usage,
     });
   } finally {
     db.close();
   }
+  const usageNote = usage ? ` [model=${usage.model}, in=${usage.input_tokens}, out=${usage.output_tokens}]` : " [usage:untracked]";
   process.stdout.write(
     `persist-plan-metrics: recorded ${envelope.inputBasename} (` +
       `${envelope.scenarios.length} scenario(s), ` +
       `${envelope.locatorTable.length} locator(s), ` +
-      `${envelope.hallucinationDefensePins.length} pin(s))\n`,
+      `${envelope.hallucinationDefensePins.length} pin(s))${usageNote}\n`,
   );
 }
 

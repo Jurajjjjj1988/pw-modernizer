@@ -28,13 +28,33 @@
  * Strict TS, no any.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
-import { MetricsDB, type Verdict } from "./metrics.js";
+import { MetricsDB, type Verdict, type UsageStats } from "./metrics.js";
 
 interface CliArgs {
   report: string;
+  usage: string | null;
+}
+
+/**
+ * Load a UsageStats JSON produced by extract-claude-usage.ts. Missing/malformed
+ * file → null (row persists as "untracked"). Same shape as persist-plan-metrics.
+ */
+function loadUsage(path: string | null): UsageStats | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof raw !== "object" || raw === null) return null;
+    const obj = raw as Partial<UsageStats>;
+    if (typeof obj.model !== "string" || typeof obj.input_tokens !== "number" || typeof obj.output_tokens !== "number") {
+      return null;
+    }
+    return obj as UsageStats;
+  } catch {
+    return null;
+  }
 }
 
 const VERDICT_RE = /^- Verdict:\s+(SHIP IT|FIX FIRST|START OVER)\s*$/m;
@@ -48,12 +68,16 @@ function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
     options: {
       report: { type: "string" },
+      usage: { type: "string" },
     },
   });
   if (typeof values.report !== "string" || values.report.length === 0) {
     throw new Error("--report is required");
   }
-  return { report: values.report };
+  return {
+    report: values.report,
+    usage: typeof values.usage === "string" && values.usage.length > 0 ? values.usage : null,
+  };
 }
 
 function extractVerdict(report: string): Verdict {
@@ -97,6 +121,8 @@ function main(): void {
   const dbPath = process.env["METRICS_DB"] ?? "outputs/.metrics.db";
   const commitSha = process.env["GITHUB_SHA"] ?? "local";
 
+  const usage = loadUsage(args.usage);
+
   const db = new MetricsDB(dbPath);
   try {
     db.recordVerification({
@@ -104,12 +130,14 @@ function main(): void {
       verdict,
       disagreement_count: disagreementCount,
       commit_sha: commitSha,
+      usage,
     });
   } finally {
     db.close();
   }
+  const usageNote = usage ? ` [model=${usage.model}, in=${usage.input_tokens}, out=${usage.output_tokens}]` : " [usage:untracked]";
   process.stdout.write(
-    `persist-verify-metrics: recorded ${inputBasename} — ${verdict} (${disagreementCount} disagreement(s))\n`,
+    `persist-verify-metrics: recorded ${inputBasename} — ${verdict} (${disagreementCount} disagreement(s))${usageNote}\n`,
   );
 }
 

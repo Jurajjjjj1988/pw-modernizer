@@ -148,12 +148,44 @@ jobs:
           # 25 turns: SDET + Code Review each need to Read 3-5 files
           # (plan, generated spec, POMs, report) + Write 1 verdict.md.
           # 12 was too tight — real-world Java migrations hit limit consistently.
+          # See plan.yml for stream-json + tee + extract-claude-usage flow.
+          # Verify runs Opus 4.7 which is ~5× sonnet cost — cost tracking
+          # especially matters here. Each lens (sdet, code-review) writes
+          # its own usage file.
+          mkdir -p outputs/.usage
           claude \
             --model claude-opus-4-7 \
             --max-turns 25 \
             --print \
+            --output-format stream-json \
+            --verbose \
             --permission-mode acceptEdits \
-            "$PROMPT"
+            "$PROMPT" \
+            | tee "/tmp/claude-verify-${{ matrix.lens }}-events.ndjson"
+
+      - name: Capture Claude usage stats (cost tracking)
+        continue-on-error: true
+        env:
+          LENS: ${{ matrix.lens }}
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EVENTS="/tmp/claude-verify-${LENS}-events.ndjson"
+          if [ ! -s "$EVENTS" ]; then
+            echo "::warning::No claude events captured for lens ${LENS}"
+            exit 0
+          fi
+          FINAL=$(grep -E '"usage"' "$EVENTS" | tail -1 || true)
+          if [ -z "$FINAL" ]; then
+            echo "::warning::No event with usage object for lens ${LENS}"
+            exit 0
+          fi
+          echo "$FINAL" > "/tmp/claude-verify-${LENS}-result.json"
+          npx tsx scripts/extract-claude-usage.ts \
+            --from "/tmp/claude-verify-${LENS}-result.json" \
+            --out "outputs/.usage/${INPUT_BASENAME}-verify-${LENS}.json" \
+            --tolerant
 
       - name: Sub-agent report secret scan (mirror Stage 0)
         env:
@@ -192,6 +224,15 @@ jobs:
           name: verify-report-${{ matrix.lens }}
           path: outputs/reports/${{ inputs.input_basename }}-verify-${{ matrix.lens }}.md
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload sub-agent usage stats (cost tracking)
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: verify-usage-${{ matrix.lens }}
+          path: outputs/.usage/${{ inputs.input_basename }}-verify-${{ matrix.lens }}.json
+          if-no-files-found: ignore
           retention-days: 30
 
   # ---------------------------------------------------------------------------
@@ -236,6 +277,56 @@ jobs:
         with:
           name: verify-report-code-review
           path: outputs/reports/
+
+      - name: Download sub-agent usage artifacts (cost tracking)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        continue-on-error: true
+        with:
+          name: verify-usage-sdet
+          path: outputs/.usage/
+
+      - name: Download Code Review usage artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        continue-on-error: true
+        with:
+          name: verify-usage-code-review
+          path: outputs/.usage/
+
+      - name: Combine sub-agent usage stats (sum across lenses)
+        if: always()
+        continue-on-error: true
+        env:
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Both lenses use the same model (Opus 4.7), so we sum input/output
+          # tokens across the two and write a single combined usage file.
+          # persist-verify-metrics writes ONE row per input_basename — the
+          # combined cost is what matters for the verifications table.
+          SDET="outputs/.usage/${INPUT_BASENAME}-verify-sdet.json"
+          CR="outputs/.usage/${INPUT_BASENAME}-verify-code-review.json"
+          if [ ! -f "$SDET" ] && [ ! -f "$CR" ]; then
+            echo "No verify usage files captured — skipping combine"
+            exit 0
+          fi
+          node -e "
+            const fs = require('fs');
+            const load = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+            const s = load('$SDET');
+            const c = load('$CR');
+            const any = s ?? c;
+            if (!any) process.exit(0);
+            const combined = {
+              model: any.model,
+              input_tokens: (s?.input_tokens ?? 0) + (c?.input_tokens ?? 0),
+              output_tokens: (s?.output_tokens ?? 0) + (c?.output_tokens ?? 0),
+              cache_read_tokens: (s?.cache_read_tokens ?? 0) + (c?.cache_read_tokens ?? 0),
+              cache_creation_tokens: (s?.cache_creation_tokens ?? 0) + (c?.cache_creation_tokens ?? 0),
+            };
+            fs.writeFileSync('outputs/.usage/${INPUT_BASENAME}-verify.json', JSON.stringify(combined, null, 2));
+            console.log('Combined verify usage: model=' + combined.model + ', in=' + combined.input_tokens + ', out=' + combined.output_tokens);
+          "
 
       - name: Tally verdicts & write combined report
         id: tally
@@ -428,7 +519,11 @@ jobs:
             echo "::warning::persist-verify-metrics: report $REPORT missing — skipping metrics write"
             exit 0
           fi
-          npx tsx scripts/persist-verify-metrics.ts --report "$REPORT" || \
+          USAGE_FILE="outputs/.usage/${INPUT_BASENAME}-verify.json"
+          USAGE_ARG=""
+          [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"
+          # shellcheck disable=SC2086 # USAGE_ARG intentionally word-split
+          npx tsx scripts/persist-verify-metrics.ts --report "$REPORT" $USAGE_ARG || \
             echo "::warning::persist-verify-metrics failed (non-fatal)"
 
       - name: Comment verify findings on code PR

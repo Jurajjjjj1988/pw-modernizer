@@ -264,12 +264,39 @@ jobs:
             silently fix it.
           EOF
           )
+          # See plan.yml for the stream-json + tee + extract-claude-usage
+          # rationale. usage.json is consumed by evaluate.ts later.
+          mkdir -p outputs/.usage
           claude \
             --model claude-sonnet-4-6 \
             --max-turns 20 \
             --print \
+            --output-format stream-json \
+            --verbose \
             --permission-mode acceptEdits \
-            "$PROMPT"
+            "$PROMPT" \
+            | tee /tmp/claude-migrate-events.ndjson
+
+      - name: Capture Claude usage stats (cost tracking)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          if [ ! -s /tmp/claude-migrate-events.ndjson ]; then
+            echo "::warning::No claude events captured — skipping usage extract"
+            exit 0
+          fi
+          FINAL=$(grep -E '"usage"' /tmp/claude-migrate-events.ndjson | tail -1 || true)
+          if [ -z "$FINAL" ]; then
+            echo "::warning::No event with usage object — skipping"
+            exit 0
+          fi
+          echo "$FINAL" > /tmp/claude-migrate-result.json
+          npx tsx scripts/extract-claude-usage.ts \
+            --from /tmp/claude-migrate-result.json \
+            --out "outputs/.usage/${BASE}-migration.json" \
+            --tolerant
 
       # ---------------------------------------------------------------------
       # Aider lint-and-test feedback loop: collect ALL validation failures
@@ -548,11 +575,16 @@ jobs:
           # Sonnet may rename input basename on cross-language (Java→TS).
           # Locate the actual generated spec inside outputs/tests/.
           OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' | head -1)
+          USAGE_FILE="outputs/.usage/${{ needs.guard.outputs.input_basename }}-migration.json"
+          USAGE_ARG=""
+          [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"
+          # shellcheck disable=SC2086 # USAGE_ARG intentionally word-split
           CONFIDENCE=$(npx tsx scripts/evaluate.ts \
             --input "${{ needs.guard.outputs.input_path }}" \
             --plan "${{ needs.guard.outputs.plan_path }}" \
             --output "$OUT_SPEC" \
-            --report-out "outputs/reports/${{ needs.guard.outputs.input_basename }}.md")
+            --report-out "outputs/reports/${{ needs.guard.outputs.input_basename }}.md" \
+            $USAGE_ARG)
           echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
           echo "Migration confidence: $CONFIDENCE"
 

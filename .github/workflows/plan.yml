@@ -384,12 +384,46 @@ jobs:
           confidence per prompts/_assembled/analyze.md hallucination-defense rules.
           EOF
           )
+          # stream-json output: each turn emits one NDJSON event; the final
+          # event carries `usage` + `model`. We pipe through `tee` so the
+          # human-readable stdout is still visible in CI logs while the
+          # complete event stream lands in /tmp/claude-events.ndjson for the
+          # cost-tracking step that follows. tail -1 + jq extracts the final
+          # event; persist-plan-metrics.ts ingests its usage.
+          mkdir -p outputs/.usage
           claude \
             --model claude-sonnet-4-6 \
             --max-turns 12 \
             --print \
+            --output-format stream-json \
+            --verbose \
             --permission-mode acceptEdits \
-            "$PROMPT"
+            "$PROMPT" \
+            | tee /tmp/claude-events.ndjson
+
+      - name: Capture Claude usage stats (cost tracking)
+        if: steps.dedup.outputs.skip == 'false'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ steps.idempotency.outputs.input_basename }}"
+          if [ ! -s /tmp/claude-events.ndjson ]; then
+            echo "::warning::No claude events captured — skipping usage extract"
+            exit 0
+          fi
+          # Find the last NDJSON line that carries a `usage` object. The CLI
+          # emits status events first; the result event (last) has usage+model.
+          FINAL=$(grep -E '"usage"' /tmp/claude-events.ndjson | tail -1 || true)
+          if [ -z "$FINAL" ]; then
+            echo "::warning::No event with usage object — skipping"
+            exit 0
+          fi
+          echo "$FINAL" > /tmp/claude-result.json
+          npx tsx scripts/extract-claude-usage.ts \
+            --from /tmp/claude-result.json \
+            --out "outputs/.usage/${BASE}.json" \
+            --tolerant
 
       - name: Validate plan structure
         if: steps.dedup.outputs.skip == 'false'
@@ -487,7 +521,11 @@ jobs:
             echo "::warning::persist-plan-metrics: envelope $ENV missing — skipping metrics write"
             exit 0
           fi
-          npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" || \
+          USAGE_FILE="outputs/.usage/${BASE}.json"
+          USAGE_ARG=""
+          [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"
+          # shellcheck disable=SC2086 # USAGE_ARG intentionally word-split
+          npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" $USAGE_ARG || \
             echo "::warning::persist-plan-metrics failed (non-fatal)"
 
       - name: Open plan PR

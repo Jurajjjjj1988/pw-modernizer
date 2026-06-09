@@ -23,16 +23,38 @@
  *     --report-out outputs/reports/foo.spec.ts.md
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { MetricsDB } from "./metrics.js";
+import { MetricsDB, type UsageStats } from "./metrics.js";
+
+/**
+ * Load a UsageStats JSON file emitted by extract-claude-usage.ts. Missing or
+ * malformed → returns null (row persists as "untracked" — dashboard treats
+ * cost_usd IS NULL as "no data", not zero).
+ */
+function loadUsageStats(path: string | undefined): UsageStats | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof raw !== "object" || raw === null) return null;
+    const obj = raw as Partial<UsageStats>;
+    if (typeof obj.model !== "string" || typeof obj.input_tokens !== "number" || typeof obj.output_tokens !== "number") {
+      return null;
+    }
+    return obj as UsageStats;
+  } catch {
+    return null;
+  }
+}
 
 interface Args {
   input: string;
   plan: string;
   output: string;
   "report-out": string;
+  /** Optional path to UsageStats JSON from extract-claude-usage.ts. */
+  usage?: string;
 }
 
 function parseCliArgs(): Args {
@@ -42,6 +64,7 @@ function parseCliArgs(): Args {
       plan: { type: "string" },
       output: { type: "string" },
       "report-out": { type: "string" },
+      usage: { type: "string" },
     },
   });
   for (const k of ["input", "plan", "output", "report-out"] as const) {
@@ -440,6 +463,7 @@ function main(): void {
     const forbiddenAbsence = report.forbidden.length === 0 ? 1 : 0;
     const dbPath = process.env["METRICS_DB"] ?? "outputs/.metrics.db";
     const commitSha = process.env["GITHUB_SHA"] ?? "local";
+    const usage = loadUsageStats(args.usage);
     const metricsDB = new MetricsDB(dbPath);
     try {
       metricsDB.recordMigration({
@@ -453,6 +477,7 @@ function main(): void {
         smell_removal_rate: smellRemovalRate,
         forbidden_absence: forbiddenAbsence,
         commit_sha: commitSha,
+        usage,
       });
     } finally {
       metricsDB.close();

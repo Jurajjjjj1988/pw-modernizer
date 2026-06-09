@@ -48,6 +48,87 @@ export type SourceFramework =
   | "selenium-python"
   | "unknown";
 
+/**
+ * Claude usage stats for a single pipeline step. Captured from the CLI's
+ * `--output-format json` response (top-level `usage` + `model` fields).
+ * All fields nullable so legacy rows + steps that don't capture usage still
+ * persist cleanly; cost reporting skips rows with `cost_usd IS NULL`.
+ */
+export interface UsageStats {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+}
+
+/**
+ * Pricing (USD per million tokens) per Anthropic 2026 published rates.
+ * Cache-read tokens cost ~10% of normal input; cache-creation costs 25%
+ * extra to write (`base * 1.25`). Update when Anthropic re-prices.
+ *
+ * NB: model IDs are matched LOOSELY (startsWith) — `claude-sonnet-4-6`
+ * and `claude-sonnet-4-6@20260301` both bucket to the sonnet price.
+ */
+interface ModelPricing {
+  input_per_million: number;
+  output_per_million: number;
+  cache_read_per_million: number;
+  cache_creation_per_million: number;
+}
+
+const PRICING: Array<{ matcher: RegExp; price: ModelPricing }> = [
+  {
+    matcher: /^claude-opus-4/i,
+    price: {
+      input_per_million: 15,
+      output_per_million: 75,
+      cache_read_per_million: 1.5,
+      cache_creation_per_million: 18.75,
+    },
+  },
+  {
+    matcher: /^claude-sonnet-4/i,
+    price: {
+      input_per_million: 3,
+      output_per_million: 15,
+      cache_read_per_million: 0.3,
+      cache_creation_per_million: 3.75,
+    },
+  },
+  {
+    matcher: /^claude-haiku-4/i,
+    price: {
+      input_per_million: 1,
+      output_per_million: 5,
+      cache_read_per_million: 0.1,
+      cache_creation_per_million: 1.25,
+    },
+  },
+];
+
+/**
+ * Compute USD cost for a Claude usage object. Returns `null` if the model
+ * isn't in the pricing table — better to surface a "?" in the dashboard
+ * than to mis-price a row.
+ */
+export function computeCostUsd(usage: UsageStats): number | null {
+  const entry = PRICING.find((p) => p.matcher.test(usage.model));
+  if (!entry) return null;
+  const { price } = entry;
+  const cacheRead = usage.cache_read_tokens ?? 0;
+  const cacheCreation = usage.cache_creation_tokens ?? 0;
+  // CLI reports `input_tokens` as the NEW input tokens (cache write/read are
+  // separate buckets). Cost = newInput * input + cacheRead * cacheRead + cacheCreation * cacheCreation + output * output.
+  return (
+    (usage.input_tokens * price.input_per_million +
+      cacheRead * price.cache_read_per_million +
+      cacheCreation * price.cache_creation_per_million +
+      usage.output_tokens * price.output_per_million) /
+    1_000_000
+  );
+}
+
 const ALL_FRAMEWORKS: readonly SourceFramework[] = [
   "bad-playwright",
   "cypress",
@@ -125,6 +206,8 @@ export interface MigrationRow {
   smell_removal_rate: number;
   forbidden_absence: number;
   commit_sha: string;
+  /** Claude usage captured from `--output-format json`; optional for back-compat. */
+  usage?: UsageStats | null;
 }
 
 export interface PlanRow {
@@ -136,6 +219,8 @@ export interface PlanRow {
   scenario_count: number;
   kb_ids_cited: string[];
   commit_sha: string;
+  /** Claude usage captured from `--output-format json`; optional for back-compat. */
+  usage?: UsageStats | null;
 }
 
 export interface VerificationRow {
@@ -143,6 +228,8 @@ export interface VerificationRow {
   verdict: Verdict;
   disagreement_count: number;
   commit_sha: string;
+  /** Claude usage captured from `--output-format json`; optional for back-compat. */
+  usage?: UsageStats | null;
 }
 
 export interface QueryRow {
@@ -227,6 +314,9 @@ export class MetricsDB {
   private applyMigrations(): void {
     this.ensureSourceFrameworkColumn("migrations");
     this.ensureSourceFrameworkColumn("plans");
+    for (const table of ["migrations", "plans", "verifications"] as const) {
+      this.ensureUsageColumns(table);
+    }
   }
 
   private ensureSourceFrameworkColumn(table: "migrations" | "plans"): void {
@@ -241,15 +331,40 @@ export class MetricsDB {
     );
   }
 
+  /**
+   * Cost-monitoring columns (added 2026-06): model + token buckets + computed
+   * USD cost. All NULLABLE — legacy rows + steps that skip usage capture stay
+   * valid. Dashboard treats `cost_usd IS NULL` as "untracked", not "free".
+   */
+  private ensureUsageColumns(table: "migrations" | "plans" | "verifications"): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    const names = new Set(cols.map((c) => c.name));
+    const additions: Array<[string, string]> = [
+      ["model", "TEXT"],
+      ["input_tokens", "INTEGER"],
+      ["output_tokens", "INTEGER"],
+      ["cache_read_tokens", "INTEGER"],
+      ["cache_creation_tokens", "INTEGER"],
+      ["cost_usd", "REAL"],
+    ];
+    for (const [name, type] of additions) {
+      if (!names.has(name)) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+      }
+    }
+  }
+
   recordMigration(row: MigrationRow): void {
     const stmt = this.db.prepare(
       `INSERT INTO migrations (
         created_at, input_basename, source_framework, subtractive,
         aggregate_confidence, selector_quality_score, web_first_rate,
         plan_confidence_aggregate, smell_removal_rate, forbidden_absence,
-        commit_sha
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        commit_sha,
+        model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
+    const u = projectUsage(row.usage);
     stmt.run(
       nowUnix(),
       row.input_basename,
@@ -261,7 +376,8 @@ export class MetricsDB {
       row.plan_confidence_aggregate,
       row.smell_removal_rate,
       row.forbidden_absence,
-      row.commit_sha
+      row.commit_sha,
+      u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_creation_tokens, u.cost_usd,
     );
   }
 
@@ -269,9 +385,11 @@ export class MetricsDB {
     const stmt = this.db.prepare(
       `INSERT INTO plans (
         created_at, input_basename, source_framework, subtractive,
-        locator_count, pin_count, scenario_count, kb_ids_cited, commit_sha
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        locator_count, pin_count, scenario_count, kb_ids_cited, commit_sha,
+        model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
+    const u = projectUsage(row.usage);
     stmt.run(
       nowUnix(),
       row.input_basename,
@@ -281,22 +399,26 @@ export class MetricsDB {
       row.pin_count,
       row.scenario_count,
       JSON.stringify(row.kb_ids_cited),
-      row.commit_sha
+      row.commit_sha,
+      u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_creation_tokens, u.cost_usd,
     );
   }
 
   recordVerification(row: VerificationRow): void {
     const stmt = this.db.prepare(
       `INSERT INTO verifications (
-        created_at, input_basename, verdict, disagreement_count, commit_sha
-      ) VALUES (?, ?, ?, ?, ?)`
+        created_at, input_basename, verdict, disagreement_count, commit_sha,
+        model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
+    const u = projectUsage(row.usage);
     stmt.run(
       nowUnix(),
       row.input_basename,
       row.verdict,
       row.disagreement_count,
-      row.commit_sha
+      row.commit_sha,
+      u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_creation_tokens, u.cost_usd,
     );
   }
 
@@ -319,4 +441,39 @@ export class MetricsDB {
 
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+interface UsageColumns {
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
+  cost_usd: number | null;
+}
+
+/**
+ * Project a UsageStats into the 6 nullable DB columns. Missing/undefined
+ * usage → all-null columns (the row is "untracked"). The dashboard reads
+ * `cost_usd IS NULL` as "untracked", not zero.
+ */
+function projectUsage(usage: UsageStats | null | undefined): UsageColumns {
+  if (!usage) {
+    return {
+      model: null,
+      input_tokens: null,
+      output_tokens: null,
+      cache_read_tokens: null,
+      cache_creation_tokens: null,
+      cost_usd: null,
+    };
+  }
+  return {
+    model: usage.model,
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    cache_read_tokens: usage.cache_read_tokens ?? null,
+    cache_creation_tokens: usage.cache_creation_tokens ?? null,
+    cost_usd: computeCostUsd(usage),
+  };
 }

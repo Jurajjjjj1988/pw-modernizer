@@ -37,3 +37,6 @@ outputs/.stage1-cache/
 # Trajectory replay JSONs (local-only, managed by scripts/trajectory-trace.ts;
 # Layer 11 / Trajectory Review scaffold).
 outputs/.trajectories/
+
+# Compiled-at-runtime sidecar for danger-rules.ts (created by danger.yml)
+scripts/lib/danger-rules.js

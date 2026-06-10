@@ -388,9 +388,13 @@ jobs:
             # Accept multiple shapes Sonnet/Opus produce in practice:
             #   `- Verdict: SHIP IT`
             #   `Verdict: SHIP IT`
+            #   `## Verdict: FIX FIRST` (markdown H2 header form — bad-PW run
+            #      27294558731 CR report)
             #   `Verdict: **SHIP IT**` (markdown bold)
-            # Strip leading dash, leading **, and any trailing markdown/parens.
-            v=$(grep -iE '^(- )?Verdict:' "$file" | head -n1 \
+            # Strip leading hashes (##), leading dash, leading **, and any trailing
+            # markdown/parens.
+            v=$(grep -iE '^(#+ )?(- )?Verdict:' "$file" | head -n1 \
+                | sed -E 's/^#+[[:space:]]+//' \
                 | sed -E 's/^(- )?[Vv]erdict:[[:space:]]+//' \
                 | sed -E 's/^\*\*//; s/\*\*//g' \
                 | sed -E 's/[[:space:]]*\(.*$//' \

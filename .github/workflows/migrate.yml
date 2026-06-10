@@ -664,6 +664,41 @@ jobs:
             --root outputs \
             --input-basename "$BASE"
 
+      - name: Auto-correct report Output line (Bullet 12 pre-flight)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Sonnet repeatedly copies the input filename into the report's
+          # `Output:` line instead of the kebab-cased emitted filename
+          # (sel-python iters 3-7, 2026-06-10/11). Bullet 12 prompt
+          # strengthening (PR #76) hasn't been enough. Auto-correct the line
+          # to match the actually-emitted spec BEFORE the validator runs.
+          # The validator still hard-fails the residual cases (LOC mismatch,
+          # wholesale paragraph copy-paste) — this pre-flight only fixes the
+          # filename + LOC numbers, which are mechanical and unambiguous.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          REPORT="outputs/reports/${BASE}.md"
+          if [ ! -f "$REPORT" ]; then
+            echo "No report at $REPORT yet (evaluate.ts will write it later) — skip."
+            exit 0
+          fi
+          # Find the emitted spec — first .spec.ts under outputs/tests/ that is
+          # NOT under the _legacy-v0.1.x archive subdirectory.
+          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' \
+            -not -path '*/_legacy-v0.1.x/*' | head -1)
+          if [ -z "$OUT_SPEC" ]; then
+            echo "::warning::No emitted spec found under outputs/tests — skip pre-flight."
+            exit 0
+          fi
+          ACTUAL_BASENAME=$(basename "$OUT_SPEC")
+          ACTUAL_LOC=$(wc -l < "$OUT_SPEC" | tr -d ' ')
+          # Replace any `outputs/tests/<old>.spec.ts (<old> LOC)` pattern with
+          # the corrected line. The match is permissive (any *.spec.ts basename)
+          # so it works for snake_case, PascalCase, or already-kebab carryover.
+          # sed -i works on Linux runners.
+          sed -E -i "s#outputs/tests/[A-Za-z0-9._-]+\\.spec\\.ts \\([0-9]+ LOC\\)#outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)#g" "$REPORT"
+          echo "Pre-flight: report Output line set to outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)"
+
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
         shell: bash
         run: |
@@ -673,6 +708,9 @@ jobs:
           # report (PR #13 PromptJupiter root cause: report said
           # using_selenium_tests.spec.ts(29 LOC) while actual was
           # prompt-jupiter.spec.ts(52 LOC)). Hard-fail — block-severity bug.
+          # The pre-flight step above auto-corrects the filename + LOC; this
+          # validator still catches deeper inconsistencies (selector counts,
+          # web-first rate arithmetic, paragraph copy-paste).
           BASE="${{ needs.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}.md"
           INPUT="${{ needs.guard.outputs.input_path }}"

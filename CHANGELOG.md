@@ -4,6 +4,24 @@ All notable changes per release.
 
 Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
+## [v0.1.2] — 2026-06-10 — qa-master architecture KB documentation
+
+**Theme**: documentation-only addition. Catalogs the qa-master (CustomInk production Playwright suite) target architecture as a reference for future migrations targeting that style. **No pipeline behavior change.** The v0.1.1 minimal-output mode remains the default and is production-validated (PromptJupiter spec passes 4/4 against live SUT).
+
+### Added
+
+- **`config/knowledge-base.md` `qa-master/` namespace** — 15 KB IDs catalogue qa-master ARCHITECTURE.md anti-patterns and corrections: `import-source` (`@fixtures/base.fixture` single source), `relative-imports` (path-alias mandate), `no-constructor` (`BasePage`/`BaseBlock` only), `locator-no-describe` (`.describe('[LABEL] …')` on every locator), `expect-no-label` (`[LABEL]` message inside page-method `expect()`), `parameterised-locator-method` (arrow-function readonly fields, not methods), `naming-no-prefix` (type-prefix on every locator), `nav-returns-void` (return destination POM), `parse-in-page-method` (Grab → Parse → Assert), `page-goto-in-spec` (never `page.goto` in tests), `ui-data-prep` (API-first), `should-test-name`, `step-without-action`, `selector-not-testid-first` (qa-master diverges: testid-first), `foreign-framework-import`, `utilities-coverage` (100% gate).
+
+### Not yet shipped (deferred to a future v0.2.0)
+
+The 6-phase "TARGET_STYLE=qa-master as default" roadmap (Stage 1/2 prompts rewritten for multi-file output, conformance validator, workflow input flag, end-to-end benchmark) is **not in this release**. The honest assessment that triggered the deferral:
+- Empirical validation is missing — multi-file Sonnet generation is unproven at the scope qa-master architecture requires.
+- Token budget per turn may break on coordinated emission of 5–10 files (page, block, base.fixture, api wrapper, utilities) from a single Stage 2 turn.
+- Output overhead is disproportionate for small migrations (84-LOC input → 52-LOC v0.1.1 spec vs ~500-LOC qa-master scaffold).
+- Licence on the qa-master source files needs explicit CustomInk permission before redistribution.
+
+Future v0.2.0 would: pilot on one input with explicit CustomInk-permission qa-master files locally, validate empirically, then ship the prompt rewrites guarded behind an opt-in flag.
+
 ## [v0.1.1] — 2026-06-10 — verify-pipeline closure (5 calibration fixes)
 
 **Theme**: end-to-end verify CANDOR pipeline closure. The v0.1.0 hardened generate.md prompt + cost monitoring landed, but verify-run calibration on PR #13 (PromptJupiter) exposed 5 real bugs that turned 4 verify runs into fake "regressions". Each iteration pinned the next bug.

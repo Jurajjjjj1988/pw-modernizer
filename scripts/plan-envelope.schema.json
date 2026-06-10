@@ -83,10 +83,66 @@
     },
     "requiredFixtures": {
       "type": "array",
-      "description": "Fixture file paths Stage 2 must produce (e.g. 'outputs/tests/fixtures/auth.fixture.ts'). Empty array when fixture extraction is not justified.",
+      "description": "Legacy fixture file paths (`outputs/tests/fixtures/...`) — preserved for v0.1.x compatibility. v0.2.0 qa-master target prefers `outputs/helper/fixtures/...` (e.g. base.fixture.ts).",
       "items": {
         "type": "string",
-        "pattern": "^outputs/tests/fixtures/[A-Za-z0-9._/-]+\\.fixture\\.ts$"
+        "pattern": "^outputs/(tests/fixtures|helper/fixtures)/[A-Za-z0-9._/-]+\\.fixture\\.ts$"
+      }
+    },
+    "requiredPages": {
+      "type": "array",
+      "description": "qa-master Page Object Model files Stage 2 must emit (e.g. 'outputs/helper/page-object/pages/dialog.page.ts'). Each extends BasePage with the no-constructor / readonly-fields / .describe() / [LABEL]-expects discipline from migration-rules.md §3.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/page-object/pages/[A-Za-z0-9._/-]+\\.page\\.ts$"
+      }
+    },
+    "requiredBlocks": {
+      "type": "array",
+      "description": "qa-master Block files Stage 2 must emit (e.g. 'outputs/helper/page-object/blocks/header.block.ts'). Each extends BaseBlock. Extract when a section reaches ~5+ locators or 3+ methods, or appears on 3+ pages.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/page-object/blocks/[A-Za-z0-9._/-]+\\.block\\.ts$"
+      }
+    },
+    "requiredApi": {
+      "type": "array",
+      "description": "qa-master API wrapper files Stage 2 must emit (e.g. 'outputs/helper/api/accounts.api.ts'). One file per endpoint. Used for data preparation — the only sanctioned path; never UI-prep.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/api/[A-Za-z0-9._/-]+\\.api\\.ts$"
+      }
+    },
+    "requiredActions": {
+      "type": "array",
+      "description": "Cross-page flow files Stage 2 must emit (e.g. 'outputs/helper/actions/add-product-to-cart.ts'). Extract when the journey crosses 2+ Pages.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/actions/[A-Za-z0-9._/-]+\\.ts$"
+      }
+    },
+    "requiredUtilities": {
+      "type": "array",
+      "description": "Pure utility files Stage 2 must emit (e.g. 'outputs/helper/utilities/parse-prices.ts'). Verb-prefixed names: parse*, get*, calculate*, verify*, generate*. Each requires a matching unit test file (100% coverage gate).",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/utilities/[A-Za-z0-9._/-]+\\.ts$"
+      }
+    },
+    "requiredTestData": {
+      "type": "array",
+      "description": "Test-data files Stage 2 must emit or mutate (e.g. 'outputs/helper/test-data/labels.ts'). Constants only — URLs, ids, cookies, LABEL_* describe-prefixes, TestRail suite IDs.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/test-data/[A-Za-z0-9._/-]+\\.ts$"
+      }
+    },
+    "requiredTypes": {
+      "type": "array",
+      "description": "Type-shape files Stage 2 must emit (e.g. 'outputs/helper/types/external/accounts-api.ts' or 'outputs/helper/types/internal/parsed-price.ts').",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/helper/types/(external|internal)/[A-Za-z0-9._/-]+\\.ts$"
       }
     },
     "locatorTable": {

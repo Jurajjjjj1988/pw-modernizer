@@ -118,20 +118,96 @@ The pin is a contract for Stage 2: it tells the code generator EXACTLY what sele
 
 If your locator table contains zero MED/LOW rows (rare, only happens on subtractive bad-Playwright migrations where every original locator is already on the canonical hierarchy), emit the section with body "N/A — all locators are HIGH confidence." The section MUST be present even when empty so the schema validator doesn't reject the plan.
 
-### Step 5 — Structural decisions
+### Step 5 — Structural decisions (qa-master multi-file layout)
 
-Decide whether to:
-- **Extract a Page Object Model (POM)**. Default: NO for tests under 50 LOC operating on a single page. YES if the test touches ≥3 distinct pages, or if there are repeated locator blocks that would clearly be reused. Cite `migration-rules.md` on POM thresholds. If you propose extracting a POM, name the file (`outputs/tests/pages/<name>.page.ts`) and list the methods + properties it must contain.
+The target architecture is qa-master (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
+
+For each input, decide what goes in which directory:
+
+#### 5a — Pages (`outputs/helper/page-object/pages/<name>.page.ts`)
+
+**Always at least one.** Every page the test visits gets a `PageClass<Name>` extending `BasePage` (no-constructor + readonly-fields + `.describe()` + `[LABEL]`-expects discipline from migration-rules §3). List:
+- File path: `outputs/helper/page-object/pages/<name>.page.ts`
+- Class name: `PageClass<Name>`
+- Locators: type-prefixed fields (`buttonClose`, `inputEmail`, …) — name and target locator
+- Action methods: verb-phrase names + parameter shape + what they do
+- Whether navigation methods return a destination POM
+- Required `LABEL_<NAME>` constant in `outputs/helper/test-data/labels.ts`
+
+#### 5b — Blocks (`outputs/helper/page-object/blocks/<name>.block.ts`)
+
+Extract a `BlockClass<Name>` when a section reaches ~5+ locators or 3+ methods, OR is shared across 3+ pages. List the same fields as for Pages plus: which Page(s) instantiate this block.
+
+#### 5c — Fixtures (`outputs/helper/fixtures/<name>.fixture.ts`)
+
+Always: `outputs/helper/fixtures/base.fixture.ts` exists (Stage 2 creates or mutates it). The plan lists which Pages need to be added as injectable fixtures there.
+
+Add a separate fixture file ONLY when:
+- The test needs an authenticated user → `authenticated.fixture.ts` (extends base; per-test fresh user via `helper/api/accounts.api.ts`)
+- The test needs network mocking baseline → `<feature>-mocks.fixture.ts`
+- Same setup is needed by ≥2 specs
+
+#### 5d — API wrappers (`outputs/helper/api/<feature>.api.ts`)
+
+If the test needs to PREPARE data (a user, a cart, an order, a saved design), the plan REQUIRES an `api/<feature>.api.ts` wrapper. Never UI-prep. List endpoints + payload + return shape.
+
+Exception: when the source test IS the test that owns the UI flow (e.g. the sign-up spec is the one that exercises the sign-up form).
+
+#### 5e — Actions (`outputs/helper/actions/<flow>.ts`)
+
+Extract when the journey crosses **2+ Pages** (e.g. PDP → designer → cart). Single-page logic stays on the Page. Plan lists: signature `{ page, ...params }` → return type, and the Pages composed.
+
+#### 5f — Utilities (`outputs/helper/utilities/<name>.ts`)
+
+When a Page method needs to parse data (numbers out of price strings, dates out of timestamps), the plan declares a pure utility:
+- File path
+- Function name (verb-prefix: `parse*`, `get*`, `calculate*`, `verify*`, `generate*`, `normalize*`)
+- Input type, output type
+- 100% unit coverage gate (Stage 2 emits `outputs/tests/unit/<utility-name>.test.ts`)
+
+#### 5g — Test-data (`outputs/helper/test-data/<name>.ts`)
+
+Every `LABEL_*` constant referenced from a Page → `outputs/helper/test-data/labels.ts`. Every URL → `urls.ts`. Every cookie/feature-flag → `cookies.ts`. Every TestRail suite reference → `testrail.ts`.
+
+#### 5h — Types (`outputs/helper/types/{external,internal}/`)
+
+New API response shapes → `helper/types/external/<feature>.ts`. Internal value objects (parsed prices, structured assertion payloads) → `helper/types/internal/<name>.ts`.
+
+#### 5i — Spec file (`outputs/tests/<feature>.spec.ts`)
+
+Always exactly one per input file. Emits:
+- `import { test, expect } from "@fixtures/base.fixture";`
+- One flat `test.describe('<Feature>', { tag: [...] }, () => { ... });`
+- Test titles: `[TICKET-ID] - Check that <user-perceivable outcome>`
+- Each `test.step()` is one action → one expectation
+
+#### 5j — When to split the spec file
+
+Split when the source has unrelated test cases per `test-organization` (one feature per file). List target file names with one-line justification each.
+
+#### Summary table (mandatory section of the plan)
+
+End §5 with a markdown table summarising EVERY file Stage 2 must emit:
+
+| Layer | File path | Why it exists |
+|---|---|---|
+| Page | `outputs/helper/page-object/pages/dialog.page.ts` | exposes #my-prompt + dialog handler |
+| Block | (none) | n/a — single section, no reuse |
+| Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | add `dialogPage` injection |
+| API | (none) | source has no data prep |
+| Action | (none) | single-page journey |
+| Utility | (none) | no parsing required |
+| Test-data | `outputs/helper/test-data/labels.ts` (mutate) | add `LABEL_DIALOG = "Dialog"` |
+| Type | (none) | n/a |
+| Spec | `outputs/tests/dialog.spec.ts` | the test |
+
+This table feeds the envelope's `requiredPages` / `requiredBlocks` / `requiredFixtures` / `requiredApi` / `requiredActions` / `requiredUtilities` / `requiredTestData` / `requiredTypes` arrays. Stage 2's `plan-envelope-validate.ts --code` validates that exactly those files exist after generation.
+
+For trivial migrations the table may be 90% "(none)" — that's correct. The point is explicitness; Stage 2 doesn't have to guess.
 
 <!-- include-begin: selenium-multifile-rules -->
 {{include:_fragments/selenium-multifile-rules.md}}
 <!-- include-end: selenium-multifile-rules -->
-
-- **Extract a fixture**. YES if the test has nontrivial setup (login, seeded data, feature flags). Name the fixture file and list its scope (test / worker).
-- **Split the file**. YES if the source file contains unrelated test cases that should live in separate spec files per `test-organization` conventions (one feature per file). List the target file names.
-- **Inline everything**. The boring, correct default for trivial tests.
-
-For each structural change, write a one-sentence justification tied to a `migration-rules.md` clause. **Do not recommend POM extraction on a 20-line single-page smoke test.** That's gold-plating and Stage 2 will produce a worse result than inlining.
 
 ### Step 6 — Open questions for the reviewer
 

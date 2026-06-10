@@ -22,119 +22,121 @@ Do not add rules speculatively. Every rule here exists because output without it
 
 ---
 
-## 1. Project structure target
+## 1. Project structure target (qa-master architecture — v0.2.0 default)
 
-Every migrated suite lands in this exact layout. Do not reinvent it per-input.
+Every migrated suite lands in this exact layout, matching `examples/reference/qa-master/`. Reference: `config/knowledge-base.md` §`qa-master/...` namespace.
 
 ```
-tests/
-├── <feature>.spec.ts
-├── <feature>-edge-cases.spec.ts
-fixtures/
-├── pages.fixture.ts
-├── <domain>.fixture.ts
-pages/
-├── <page-name>.page.ts
-data/
-├── <feature>-fixtures.ts
-playwright.config.ts
+outputs/
+├── helper/
+│   ├── fixtures/
+│   │   └── base.fixture.ts          # the ONE file that imports from @playwright/test
+│   ├── page-object/
+│   │   ├── basepage.ts              # abstract BasePage — wires `page`, abstract waitForPageLoad()
+│   │   ├── baseblock.ts             # abstract BaseBlock — same for sections
+│   │   ├── pages/                   # one file per page: <name>.page.ts
+│   │   └── blocks/                  # one file per reusable section
+│   ├── actions/                     # cross-page flows (compose 2+ POMs)
+│   ├── api/                         # one wrapper per endpoint: <feature>.api.ts (data prep)
+│   ├── browser/                     # page-bound helpers (locator builders, data-layer readers)
+│   ├── utilities/                   # pure functions: parse* / get* / calculate* / verify*
+│   ├── test-data/                   # constants ONLY: urls, ids, cookies, ticket suites
+│   └── types/
+│       ├── external/                # API + 3rd-party response shapes
+│       └── internal/                # internal data structures
+├── tests/
+│   └── <feature>.spec.ts            # specs import test/expect from @fixtures/base.fixture
+└── playwright.config.ts             # path aliases (@page-object, @api, @fixtures, …), project matrix
 ```
 
 ### File naming
 
-- Files: `kebab-case`. `checkout-flow.spec.ts`, not `CheckoutFlow.spec.ts` or `checkout_flow.spec.ts`.
-- POM classes: `PascalCase`, suffix `Page`. `CheckoutPage`, not `Checkout` or `checkoutPage`.
-- Fixture exports: `camelCase`. `authenticatedPage`, not `AuthenticatedPage`.
-- Locator properties on a POM: `camelCase`, named after the element's *role + label*, not its CSS shape. `submitButton`, not `btnSubmit` or `submit_btn`.
-- Test data exports: `camelCase` if a value, `PascalCase` if a type. `validCreditCard`, `type CardInput`.
+- **Files: kebab-case**. `prompt-jupiter.spec.ts`, `pdp.page.ts`, `accounts.api.ts`. Never PascalCase, never snake_case.
+- **POM classes: `PageClass<Name>`**. `PageClassCheckout`, `PageClassPDP`. Distinctive in stack traces.
+- **Block classes: `BlockClass<Name>`**. `BlockClassHeader`, `BlockClassRecommendations`.
+- **Locator fields: type-prefix the property name.** `buttonClose`, `inputEmail`, `textProductName`, `imageMain`, `headingPersonalData`, `linkForgotPassword`, `iconSearch`. Arrays prefix `array`: `arrayPrices`, `arrayProductCards`. Parameterised arrow-function fields prefix `by`: `byStyleId(id)`, `byColorSwatch(name)`.
+- **Method names: verb phrases.** `clickAddToCart`, `fillEmail`, `getPriceTexts`, `startDesigning`.
+- **Test data exports: camelCase value, PascalCase type.** `validCreditCard`, `type CardInput`.
+- **Test titles**: `[TICKET-ID] - Check that <user-perceivable outcome>`. Never "should".
 
-### When to add a new POM
+### When to extract a Block vs keep inline on the Page
 
-Threshold: **200 lines of code in a single test file** triggers extracting a POM. Below 200 LOC, inline locators are fine — the indirection cost of a POM outweighs the dedup benefit on small suites.
+Extract a `BlockClass<Name>` when a section reaches **~5+ locators or 3+ methods**, OR appears on 3+ pages (header, footer, modal, cart summary). Blocks are eagerly instantiated as `readonly` fields on the owning page.
 
-Other extraction triggers, even under 200 LOC:
+### When to extract an Action vs keep on the Page
 
-- The same DOM region is referenced by ≥3 test files. Dedup wins.
-- The page has a non-trivial state machine (login, checkout, multi-step form). Encapsulating the transitions in named action methods makes the test read as a user story.
-- The page requires bilingual selectors (EN/CZ regex). Centralise so one place owns the locale matrix.
+Extract a function in `helper/actions/` when **2+ page objects** are involved in the same journey. Single-page logic stays on the page.
 
-### When to extract a fixture vs keep inline
+### When to extract an api wrapper
 
-Extract a fixture when:
+ALWAYS, before driving test data through the UI. Every test that needs setup uses `helper/api/<feature>.api.ts` — never UI-prep. Exercise each UI flow in exactly ONE test (the one that owns that behaviour).
 
-- The setup is needed by ≥2 test files. One file is not enough — premature abstraction.
-- The setup involves network mocking, auth state, or any cross-test contract.
-- The setup is slow and benefits from worker-scoped caching (login token, seeded DB).
+### POM vs page-utility split (qa-master discipline)
 
-Keep inline when:
+A POM owns *locators* and *thin action methods that touch only its own page*. It does NOT own:
 
-- It is a one-line `await page.goto('/foo')`.
-- It is unique to a single test's narrative and lifting it out would make the test harder to read.
-
-### POM vs page-utility split
-
-A POM owns *locators + actions*. It does not own *assertions* — those are the caller's responsibility, because assertion phrasing is where the test's narrative lives. If you find yourself adding `expect` inside a POM method, you are leaking the test's intent into shared code. Stop and refactor.
+- **Assertions** (other than `[LABEL]`-messaged `waitForPageLoad()` web-first guards) — those are the spec's narrative.
+- **Parsing** — raw DOM strings go through pure `helper/utilities/parse*` functions. Page method grabs, utility parses, spec asserts.
+- **API calls** — page objects are browser-only. API wrappers live under `helper/api/`.
+- **Cross-page flows** — those live in `helper/actions/`.
 
 ---
 
-## 2. Test file template
+## 2. Test file template (qa-master)
 
-Every `*.spec.ts` file Migrator emits follows this skeleton. Deviations require a comment explaining why.
-
-**Import policy (relaxed 2026-06-03 after audit):** The fixture import (`import { test } from "../fixtures/pages.fixture"`) is **PREFERRED** when the spec uses POMs or custom fixtures. For small subtractive bad-Playwright migrations with ≤2 tests and no POM extraction (per plan's Structural changes section), `import { test, expect } from "@playwright/test"` is acceptable. Use the same source of `test` and `expect` to avoid type-mismatch foot-guns.
+Every `*.spec.ts` file Migrator emits follows this skeleton. `test` and `expect` come from `@fixtures/base.fixture` — never from `@playwright/test` (that import is allowed in exactly ONE file in the whole project: `helper/fixtures/base.fixture.ts`).
 
 ```typescript
-// Migrated from cypress on 2026-06-03 by Migrator. See outputs/plans/checkout-flow.md for plan.
+// Migrated from selenium-java on 2026-06-10 by Migrator. See outputs/plans/prompt-jupiter.md for plan.
 
-// FULL form (POM/fixture extraction): split test + expect imports.
-import { expect } from "@playwright/test";
+import { test, expect } from "@fixtures/base.fixture";
 
-import { test } from "../fixtures/pages.fixture";
-import { CheckoutPage } from "../pages/checkout.page";
-import { validCreditCard } from "../data/checkout-fixtures";
+import { LABEL_DIALOG } from "@test-data/labels";
 
-test.describe("Checkout flow", () => {
-  test.beforeEach(async ({ checkoutPage }) => {
-    await checkoutPage.navigate();
-  });
+const EXPECTED_PROMPT_MESSAGE = "Please enter your name";
+const PROMPT_INPUT_TEXT = "John Doe";
 
-  test("completes purchase with valid card @positive @e2e", async ({
-    checkoutPage,
-    page,
-  }) => {
-    await checkoutPage.fillShippingAddress(validCreditCard.shippingAddress);
-    await checkoutPage.enterCard(validCreditCard);
-    await checkoutPage.submitOrder();
+test.describe("Prompt dialog", () => {
+  test(
+    "[CHK-1] - Check that a browser prompt dialog accepts a name and reflects it back",
+    {
+      annotation: [{ type: "Test", description: "Native prompt dialog acceptance flow" }],
+      tag: ["@positive", "@dialog"],
+    },
+    async ({ promptDialogPage }) => {
+      await test.step("Open the dialog-boxes demo page", async () => {
+        await promptDialogPage.open();
+      });
 
-    // Order confirmation page is the only observable outcome of a successful purchase.
-    // We assert on the heading because the URL is opaque (contains a one-time token).
-    await expect(
-      page.getByRole("heading", { name: /order confirmed/i }),
-    ).toBeVisible();
-  });
+      await test.step("Trigger the prompt and accept with the test name", async () => {
+        const message = await promptDialogPage.openAndAcceptPrompt(PROMPT_INPUT_TEXT);
+        expect(message, `[${LABEL_DIALOG}] Prompt message should match the spec`)
+          .toBe(EXPECTED_PROMPT_MESSAGE);
+      });
 
-  test("blocks submission when card number is invalid @negative", async ({
-    checkoutPage,
-  }) => {
-    await checkoutPage.enterCard({ ...validCreditCard, number: "0000" });
-    await checkoutPage.submitOrder();
-
-    await expect(checkoutPage.cardErrorMessage).toHaveText(/invalid card/i);
-  });
+      await test.step("Check that the entered name is rendered on the page", async () => {
+        await expect(promptDialogPage.textEnteredName,
+          `[${LABEL_DIALOG}] Entered name should appear after acceptance`)
+          .toBeVisible();
+      });
+    },
+  );
 });
 ```
 
 ### Imports order
 
-Strict order, blank line between groups:
+Strict order, blank line between groups. Every internal import uses a path alias:
 
-1. Playwright (`@playwright/test`)
-2. Fixtures (relative imports from `fixtures/`)
-3. POMs (relative imports from `pages/`)
-4. Data (relative imports from `data/`)
-5. Anything else
+1. Node built-ins (`node:fs`, `node:path`)
+2. External packages (none allowed in a spec — `test`/`expect` come from `@fixtures/base.fixture`)
+3. `@fixtures/...` (the test/expect barrel)
+4. `@actions/...` (cross-page flows)
+5. `@api/...` (data-prep wrappers)
+6. `@page-object/...`, `@browser/...`
+7. `@test-data/...`, `@project-types/...`, `@utilities/...`
 
-Why: makes diffs predictable and grep-friendly. A regex for `^import.*pages/` finds every POM consumer.
+Why: alphabetical-within-group is the existing repo convention; path aliases survive folder moves; barring `@playwright/test` from specs is what makes auto-fixtures unforgettable.
 
 ### Describe nesting
 
@@ -207,98 +209,185 @@ Every test ends with at least one assertion on a user-perceivable thing — a he
 Exact shape. Constructor wires every locator. No lazy getters, no `init()` methods.
 
 ```typescript
-import { type Locator, type Page } from "@playwright/test";
+import { type Page, expect } from "@playwright/test";
 
-export class CheckoutPage {
-  readonly page: Page;
-  readonly heading: Locator;
-  readonly shippingFirstNameInput: Locator;
-  readonly shippingLastNameInput: Locator;
-  readonly cardNumberInput: Locator;
-  readonly cardExpiryInput: Locator;
-  readonly cardCvcInput: Locator;
-  readonly submitButton: Locator;
-  readonly cardErrorMessage: Locator;
+const LABEL_CHK = "Checkout";
 
-  constructor(page: Page) {
-    this.page = page;
-    this.heading = page.getByRole("heading", { name: /checkout|pokladna/i });
-    this.shippingFirstNameInput = page.getByLabel(/first name|jméno/i);
-    this.shippingLastNameInput = page.getByLabel(/last name|příjmení/i);
-    this.cardNumberInput = page.getByLabel(/card number|číslo karty/i);
-    this.cardExpiryInput = page.getByLabel(/expiry|expirace/i);
-    this.cardCvcInput = page.getByLabel(/cvc|cvv/i);
-    this.submitButton = page.getByRole("button", { name: /place order|odeslat/i });
-    this.cardErrorMessage = page.getByRole("alert").filter({ hasText: /card/i });
+// Bases live in helper/page-object/basepage.ts and helper/page-object/baseblock.ts.
+// They are the ONLY page-side classes that declare constructors.
+abstract class BasePage {
+  readonly url: string = "";
+  constructor(readonly page: Page) {}
+  abstract waitForPageLoad(): Promise<void>;
+}
+
+export class PageClassCheckout extends BasePage {
+  readonly url = "/checkout";
+
+  // Static locators — readonly fields, NO constructor on this subclass.
+  // Every locator carries .describe('[LABEL] short description').
+  readonly headingCheckout = this.page
+    .getByRole("heading", { name: /checkout|pokladna/i })
+    .describe(`[${LABEL_CHK}] Page heading`);
+  readonly inputShippingFirstName = this.page
+    .getByLabel(/first name|jméno/i)
+    .describe(`[${LABEL_CHK}] Shipping first name input`);
+  readonly inputShippingLastName = this.page
+    .getByLabel(/last name|příjmení/i)
+    .describe(`[${LABEL_CHK}] Shipping last name input`);
+  readonly inputCardNumber = this.page
+    .getByLabel(/card number|číslo karty/i)
+    .describe(`[${LABEL_CHK}] Card number input`);
+  readonly inputCardExpiry = this.page
+    .getByLabel(/expiry|expirace/i)
+    .describe(`[${LABEL_CHK}] Card expiry input`);
+  readonly inputCardCvc = this.page
+    .getByLabel(/cvc|cvv/i)
+    .describe(`[${LABEL_CHK}] Card CVC input`);
+  readonly buttonPlaceOrder = this.page
+    .getByRole("button", { name: /place order|odeslat/i })
+    .describe(`[${LABEL_CHK}] Place order button`);
+  readonly textCardError = this.page
+    .getByRole("alert")
+    .filter({ hasText: /card/i })
+    .describe(`[${LABEL_CHK}] Card validation error`);
+
+  // Parameterised locators — readonly arrow-function fields, evaluated lazily.
+  readonly byOrderLineSku = (sku: string) =>
+    this.page
+      .getByTestId(`order-line-${sku}`)
+      .describe(`[${LABEL_CHK}] Order line ${sku}`);
+
+  // Navigation method returns the destination POM (never void) when crossing pages.
+  // .open() opens THIS page; subsequent pages come from their own POMs.
+  async open(): Promise<void> {
+    await this.page.goto(this.url);
+    await this.waitForPageLoad();
   }
 
-  async navigate(): Promise<void> {
-    await this.page.goto("/checkout");
-    await this.heading.waitFor();
+  async waitForPageLoad(): Promise<void> {
+    await expect(this.headingCheckout,
+      `[${LABEL_CHK}] Heading should be visible`).toBeVisible({ timeout: 45_000 });
   }
 
-  async fillShippingAddress(address: ShippingAddress): Promise<void> {
-    await this.shippingFirstNameInput.fill(address.firstName);
-    await this.shippingLastNameInput.fill(address.lastName);
+  // Action methods touch only THIS page's surface. Each [LABEL] message
+  // explains the failure to the spec author who can't see inside the method.
+  async fillShipping(address: { firstName: string; lastName: string }): Promise<void> {
+    await this.inputShippingFirstName.fill(address.firstName);
+    await this.inputShippingLastName.fill(address.lastName);
+    await expect(this.inputShippingFirstName,
+      `[${LABEL_CHK}] First name input should hold the value`).toHaveValue(address.firstName);
   }
 
-  async enterCard(card: CardInput): Promise<void> {
-    await this.cardNumberInput.fill(card.number);
-    await this.cardExpiryInput.fill(card.expiry);
-    await this.cardCvcInput.fill(card.cvc);
+  async enterCard(card: { number: string; expiry: string; cvc: string }): Promise<void> {
+    await this.inputCardNumber.fill(card.number);
+    await this.inputCardExpiry.fill(card.expiry);
+    await this.inputCardCvc.fill(card.cvc);
   }
 
   async submitOrder(): Promise<void> {
-    await this.submitButton.click();
+    await this.buttonPlaceOrder.click();
   }
 }
 ```
 
-### Rules
+### Rules (qa-master)
 
-- **Constructor wires all locators.** Lazy getters create a hidden lifecycle and make the POM harder to reason about. Locators in Playwright are cheap — they're just descriptors, not DOM queries.
-- **Action methods are `async`** and named as verb phrases — `submitOrder`, not `submit` or `clickSubmit`. They return `Promise<void>` unless they return something the caller observes (e.g., a confirmation number).
-- **POMs do not assert.** They expose Locators; the test file decides what to assert on them. If you find yourself adding `expect` inside the POM, that logic belongs in the test.
-- **One file per POM.** `checkout.page.ts` exports `CheckoutPage`. Multiple POMs per file get tangled.
-- **Bilingual EN/CZ matching via regex.** Project precedent: the Czech and English flavours of the same product share locators differentiated only by visible text. Use `/english|czech/i` regex inside `name:` options. Do not branch on locale at runtime.
-- **Public methods have a JSDoc when their semantics are non-obvious.** A method named `submitOrder` does not need JSDoc. A method named `seedAddressFromGeolocation` does.
+- **No constructor on the subclass.** Only `BasePage`/`BaseBlock` declares the constructor (parameter property `readonly page: Page`). The subclass uses `readonly` class fields that reference `this.page`. Field initialisers run after `super()`, so `this.page` is set when they execute.
+- **Every static locator is a `readonly` field with `.describe('[LABEL] …')`.** The label prefix is a per-section constant (e.g. `LABEL_CHK = "Checkout"`) imported from `@test-data/labels`. The describe surfaces in trace viewer and failure messages.
+- **Parameterised locators are `readonly` arrow-function fields, not methods.** Methods are reserved for actions; locators stay declarative.
+- **Type-prefix every locator name.** `button*`, `input*`, `text*`, `heading*`, `link*`, `image*`, `icon*`, `array*` for multi-element collections, `by*` for parameterised getters.
+- **Every `expect()` inside a page method takes a `[LABEL]` message argument.** The caller can't see inside the method — the message is the only diagnostic they get when CI shows the failure.
+- **Navigation methods return the destination POM, never `void`.** `await productPage.startDesigning()` yields the next POM with its `waitForPageLoad()` already awaited.
+- **`waitForPageLoad()` uses web-first assertions, NEVER `waitForLoadState('networkidle')` or `waitForTimeout`.**
+- **Optional elements: `.catch(() => {})`, never `try/catch`.**
+- **`private` for internal helpers**; public methods are the test-facing API.
+- **Page methods never parse.** They GRAB raw DOM strings, guard the result non-empty, and return. Parsing happens in `helper/utilities/parse*` pure functions.
+- **Page methods never call API.** API wrappers live in `helper/api/*.api.ts`.
 
-### Composition over inheritance
+### Blocks (reusable sections)
 
-A `CheckoutPage` does not extend a `BasePage`. If you find shared behaviour across POMs (e.g., a common header), extract a `HeaderComponent` class that takes a `Page` in its constructor and is composed into the POMs that need it. Inheritance forces unrelated pages into the same hierarchy and pulls in fields they don't use.
+```typescript
+abstract class BaseBlock {
+  constructor(readonly page: Page) {}
+}
+
+const LABEL_HEADER = "Header";
+
+class BlockClassHeader extends BaseBlock {
+  readonly buttonCart = this.page
+    .getByTestId("cart-button")
+    .describe(`[${LABEL_HEADER}] Cart button`);
+  readonly byNavLink = (label: string) =>
+    this.page
+      .getByRole("link", { name: label })
+      .describe(`[${LABEL_HEADER}] Nav link ${label}`);
+}
+
+// Eagerly instantiated as a field on every page that has the header.
+class PageClassDashboard extends BasePage {
+  readonly blockHeader = new BlockClassHeader(this.page);
+  // ...
+}
+```
 
 ---
 
-## 4. Fixture template
+## 4. Fixture template (qa-master)
 
-Use Playwright's `test.extend<>()`. The conventional file is `fixtures/pages.fixture.ts` for POM fixtures and one file per domain for everything else (mocks, auth, baseline state).
+`helper/fixtures/base.fixture.ts` is the **single import source** for `test` and `expect` across the whole repo. Every spec, every action helper, every page object that needs `expect` imports from here. It's the only file allowed to import from `@playwright/test`.
 
-### Page fixture
+### `base.fixture.ts`
 
 ```typescript
-import { test as base } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
 
-import { CheckoutPage } from "../pages/checkout.page";
-import { ProductPage } from "../pages/product.page";
+import { PageClassCheckout } from "@page-object/pages/checkout.page";
+import { PageClassProductDetail } from "@page-object/pages/pdp.page";
+import { COOKIE_AUTOMATED_USER, COOKIE_FEATURE_FLAG } from "@test-data/cookies";
 
-type Pages = {
-  checkoutPage: CheckoutPage;
-  productPage: ProductPage;
+type Fixtures = {
+  checkoutPage: PageClassCheckout;
+  productDetailPage: PageClassProductDetail;
 };
 
-export const test = base.extend<Pages>({
-  checkoutPage: async ({ page }, use) => {
-    await use(new CheckoutPage(page));
+export const test = base.extend<Fixtures>({
+  // Page-level setup auto-fixture: cookies and feature flags.
+  page: async ({ page }, use) => {
+    await page.context().addCookies([COOKIE_AUTOMATED_USER, COOKIE_FEATURE_FLAG]);
+    await use(page);
   },
-  productPage: async ({ page }, use) => {
-    await use(new ProductPage(page));
-  },
+  // Page object fixtures — every POM injected so specs never `new PageClass…(page)` manually.
+  checkoutPage:      async ({ page }, use) => use(new PageClassCheckout(page)),
+  productDetailPage: async ({ page }, use) => use(new PageClassProductDetail(page)),
 });
 
-export { expect } from "@playwright/test";
+export { expect };
 ```
 
-Why re-export `expect`: every test file imports `expect` from somewhere. Sourcing it from the fixture file means a single import line at the top of each test instead of two, and the IDE auto-import lands on the right thing.
+### How specs use it
+
+```typescript
+import { test, expect } from "@fixtures/base.fixture";
+
+test("[CHK-42] - Check that the cart shows the added product", async ({ productDetailPage, checkoutPage }) => {
+  // ...
+});
+```
+
+### Variants
+
+- `helper/fixtures/staging.fixture.ts` — extends `base`; auto-skips when `IS_PRODUCTION=true`.
+- `helper/fixtures/authenticated.fixture.ts` — creates a fresh user via `helper/api/accounts.api.ts` and injects the session cookies. Used for any test that mutates account state.
+
+### Authentication — per-test API user (default for mutating state)
+
+Two mechanisms:
+
+- **Per-test API user (default for mutating state).** A fixture creates a fresh user via the API and injects its session cookies. Each test starts signed in as its own user — isolation by default.
+- **Shared `storageState` (read-only / expensive auth).** Authenticate once in a setup project, save `storageState`, load via `use: { storageState }`. Acceptable ONLY when tests don't mutate the shared account.
+
+Either way, the UI login flow is exercised in exactly ONE test (the sign-in test); every other test uses the API helper.
 
 ### Mock fixture
 

@@ -63,6 +63,10 @@ for (const v of checkTransientFileStaged(snap)) emit(v);
 // Wrapped in an async IIFE because Danger's inline runner (require-based)
 // chokes on top-level await.
 const SIZE_LIMIT = 1500;
+// Reference catalogs — grep-iterable, not code. The 1.5k review-accuracy heuristic
+// applies to code reviewers reading top-to-bottom; KB entries are looked up by ID.
+const REFERENCE_CATALOG_LIMIT = 8000;
+const REFERENCE_CATALOGS = new Set(["config/knowledge-base.md"]);
 const LOCKFILES = new Set(["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]);
 const touchedFiles = [...snap.modifiedFiles, ...snap.createdFiles];
 const sizeChecks = (async () => {
@@ -71,8 +75,9 @@ const sizeChecks = (async () => {
     const diff = await danger.git.diffForFile(file);
     if (!diff) continue;
     const afterLines = typeof diff.after === "string" ? diff.after.split("\n").length : 0;
-    if (afterLines > SIZE_LIMIT) {
-      fail(`\`${file}\` is ${afterLines} lines (>${SIZE_LIMIT}). Split it — human review accuracy falls off a cliff past 1.5k LOC.`);
+    const limit = REFERENCE_CATALOGS.has(file) ? REFERENCE_CATALOG_LIMIT : SIZE_LIMIT;
+    if (afterLines > limit) {
+      fail(`\`${file}\` is ${afterLines} lines (>${limit}). Split it — human review accuracy falls off a cliff past 1.5k LOC.`);
     }
   }
 })();

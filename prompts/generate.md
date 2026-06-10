@@ -79,10 +79,11 @@ The envelope JSON's `required*` arrays MUST list EVERY file you write (except th
 - Every `requiredUtilities[]` path → file must exist + the matching unit test file too
 - `requiredFixtures[]` includes `outputs/helper/fixtures/base.fixture.ts` if you mutated it
 
-### Imports policy — STRICT
+### Imports policy — STRICT (two scopes)
 
-- **NEVER `import { test, expect } from "@playwright/test"`** anywhere in `outputs/tests/`. Only `outputs/helper/fixtures/base.fixture.ts` is allowed to import from `@playwright/test`. ESLint `no-restricted-imports` enforces this.
-- **Path aliases ONLY.** `@page-object/pages/…`, `@actions/…`, `@fixtures/…`, `@api/…`, `@browser/…`, `@test-data/…`, `@project-types/…`, `@utilities/…`, `@logger`. No relative imports between `helper/*` subdirs.
+- **In specs (`outputs/tests/*.spec.ts`): NEVER import from `@playwright/test`.** Specs import `test` + `expect` from `@fixtures/base.fixture` — the single spec-layer source. `validate-qa-master-conformance.ts` hard-fails any other shape.
+- **In helpers (`outputs/helper/**`): `expect` and type imports are ALLOWED from `@playwright/test`.** PageClass methods call `expect(this.locator, '[LABEL] WHY').toBe…()` legitimately — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1. The ONLY runtime symbol restricted in helpers is `test`: only `outputs/helper/fixtures/base.fixture.ts` may import `test` from `@playwright/test`.
+- **Path aliases ONLY across helper boundaries.** `@page-object/pages/…`, `@actions/…`, `@fixtures/…`, `@api/…`, `@browser/…`, `@test-data/…`, `@project-types/…`, `@utilities/…`, `@logger`. No relative `../` imports between `helper/*` subdirs.
 - **Import order**: node:* → @fixtures → @actions → @api → @page-object,@browser → @test-data,@project-types,@utilities. Alphabetical within each group.
 
 ### Baseline scaffolding — already on main, do NOT recreate
@@ -132,7 +133,7 @@ These are pulled from `migration-rules.md` for emphasis. The migration-rules fil
 
 Additional generator-specific rules (not covered by the forbidden-patterns list):
 
-- **All imports correct (v0.2.0 qa-master).** Specs use `import { test, expect } from "@fixtures/base.fixture"` — NEVER `@playwright/test` (only `outputs/helper/fixtures/base.fixture.ts` itself may import from `@playwright/test`; `validate-qa-master-conformance.ts` hard-fails on any other usage). Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
+- **All imports correct (v0.2.0 qa-master, two scopes).** SPECS (`outputs/tests/*.spec.ts`) import `test` + `expect` from `@fixtures/base.fixture` — NEVER `@playwright/test`. HELPERS (`outputs/helper/**`) may import `expect` and types (`type Page`, `type Locator`) from `@playwright/test` (PageClass methods use `expect` for `[LABEL]`-prefixed page-level assertions — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1) — but only `outputs/helper/fixtures/base.fixture.ts` may import `test`. Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.

@@ -244,9 +244,19 @@ function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Vi
   const scoped = filterCodePathsByInput(envelope, codePaths);
   if (scoped.length === 0) return [];
   const out: Violation[] = [];
-  // Allow Playwright core, node built-ins, and relative imports. Anything else
-  // is a framework-translation smell that doesn't belong in a subtractive run.
+  // Allow Playwright core, node built-ins, relative imports, AND qa-master path
+  // aliases. Path aliases (@fixtures, @page-object, @api, etc.) resolve to local
+  // helper files under outputs/helper/ — they're the same framework (Playwright)
+  // routed through qa-master architecture, not foreign framework imports. The
+  // subtractive flag's purpose is to prevent ADDING a new framework (Cypress,
+  // Selenium); qa-master aliases are bookkeeping for the existing one.
   const allowed = new Set(["@playwright/test", "playwright"]);
+  const allowedAliasPrefixes = [
+    "@fixtures/", "@page-object/", "@page-object",
+    "@api/", "@actions/", "@browser/",
+    "@utilities/", "@test-data/", "@types/",
+    "@logger",
+  ];
   const project = new Project({ useInMemoryFileSystem: false });
   for (const p of scoped) {
     const sf = project.addSourceFileAtPath(p);
@@ -255,10 +265,12 @@ function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Vi
       if (mod.startsWith(".") || mod.startsWith("/")) continue;
       if (mod.startsWith("node:")) continue; // node built-ins always allowed
       if (allowed.has(mod)) continue;
+      // qa-master path aliases resolve to local helper files — not foreign.
+      if (allowedAliasPrefixes.some((prefix) => mod === prefix || mod.startsWith(prefix))) continue;
       out.push({
         file: p,
         line: imp.getStartLineNumber(),
-        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test + relative + node: imports allowed`,
+        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test + relative + node: + qa-master path aliases allowed`,
       });
     }
   }

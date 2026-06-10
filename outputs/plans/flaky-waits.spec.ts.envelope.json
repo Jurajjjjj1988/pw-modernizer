@@ -5,10 +5,20 @@
   "scenarios": [
     {
       "id": "1.1",
-      "title": "primary scenario (derived placeholder)",
-      "userAction": "Derived from markdown without an assertion checklist; reviewer must enrich.",
+      "title": "signs in with valid credentials @positive",
+      "userAction": "Navigate to /login, fill email + password with valid creds, click Sign in, dashboard greeting visible.",
       "expectedAssertions": [
-        "TODO: populate from source test"
+        "dashboard greeting visible after submit",
+        "greeting contains 'Welcome back, Jane'"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "rejects an invalid password @negative",
+      "userAction": "Navigate to /login, fill valid email + wrong password, click Sign in, error banner shows invalid credentials.",
+      "expectedAssertions": [
+        "error banner visible after submit",
+        "error banner text contains 'Invalid credentials'"
       ]
     }
   ],

@@ -40,3 +40,4 @@ outputs/.trajectories/
 
 # Compiled-at-runtime sidecar for danger-rules.ts (created by danger.yml)
 scripts/lib/danger-rules.js
+.claude/

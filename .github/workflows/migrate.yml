@@ -202,37 +202,83 @@ jobs:
 
           ## STOP — read this before any tool call
 
-          The post-generate qa-master conformance validator HARD-FAILS on the two
-          patterns below. Three consecutive Stage 2 runs (27257207504,
-          27258160013, 27260892741) have committed them. Internalise these
-          examples BEFORE you read any other file:
+          The post-generate qa-master conformance validator HARD-FAILS on the patterns
+          below. FOUR consecutive Stage 2 runs (27257207504, 27258160013, 27260892741,
+          27262055163) have committed them. Internalise the FULL shape (spec + Page +
+          fixture together) BEFORE you read any other file:
 
           \`\`\`ts
-          // ❌ FORBIDDEN in outputs/tests/*.spec.ts
-          //    Run rejected. Migration aborted. Do not write this.
-          import { test, expect } from "@playwright/test";
-          test("…", async ({ page }) => {
-            await page.goto("/some/path");
+          // ❌ FORBIDDEN: outputs/tests/*.spec.ts that imports from @playwright/test
+          //    AND ignores the page-object fixture (uses raw \`page\` + \`page.goto\`).
+          //    Run 27262055163 rejected for exactly this: helpers were correct but
+          //    the spec didn't consume them.
+          import { test, expect } from "@playwright/test";       // ❌ wrong source
+          test("…", async ({ page }) => {                         // ❌ raw page param
+            await page.goto("/some/path");                        // ❌ goto in spec
+            await expect(page.getByText("x")).toBeVisible();      // ❌ assertion not on Page method
           });
           \`\`\`
 
           \`\`\`ts
-          // ✅ REQUIRED in outputs/tests/*.spec.ts (the ONLY accepted shape)
-          //    Path alias resolves via outputs/tests/tsconfig.json (already on disk).
+          // ✅ REQUIRED: outputs/tests/<kebab>.spec.ts (the ONLY accepted shape)
+          //    Three integrated pieces — write ALL THREE for every migration.
+          //
+          // 1) The spec — imports test/expect from @fixtures/base.fixture,
+          //    pulls the page-object fixture by name, never touches raw \`page\`.
           import { test, expect } from "@fixtures/base.fixture";
-          test("…", async ({ promptJupiterPage }) => {
-            await promptJupiterPage.open();          // navigation in the Page, not the spec
-            await promptJupiterPage.expectSomething(); // [LABEL]-prefixed expect inside the Page method
+          test("…", async ({ promptJupiterPage }) => {            // ✅ fixture name as param
+            await test.step("open the page", async () => {
+              await promptJupiterPage.open();                     // ✅ Page owns navigation
+            });
+            await test.step("the result is visible", async () => {
+              await promptJupiterPage.expectResultVisible("John"); // ✅ assertion as Page method
+            });
           });
           \`\`\`
 
-          The PageClass you write for THIS migration goes in
-          \`outputs/helper/page-object/pages/<kebab-name>.page.ts\` and extends the
-          \`BasePage\` that already exists on disk at
-          \`outputs/helper/page-object/basepage.ts\`. BasePage already implements
-          \`open()\` (it calls \`page.goto(this.url)\` + \`waitForPageLoad()\`), so
-          your subclass only declares \`readonly url\`, the locator fields, and the
-          assertion methods. NO own constructor on the subclass.
+          \`\`\`ts
+          // 2) The PageClass — outputs/helper/page-object/pages/<kebab>.page.ts
+          //    Extends the pre-existing BasePage. NO own constructor. Locator fields
+          //    use .describe('[LABEL] …'). expect() inside page methods takes [LABEL] msg.
+          import { expect, type Locator } from "@playwright/test";  // ✅ helpers can do this
+          import { BasePage } from "@page-object/basepage";
+          import { DIALOG_BOXES_PATH } from "@test-data/prompt-jupiter";
+
+          const LABEL = "PromptJupiter";
+
+          export class PageClassPromptJupiter extends BasePage {
+            readonly url = DIALOG_BOXES_PATH;
+            readonly buttonPrompt: Locator =
+              this.page.locator("#my-prompt").describe(\`[\${LABEL}] Prompt button\`);
+
+            async waitForPageLoad(): Promise<void> {
+              await expect(this.buttonPrompt, \`[\${LABEL}] Prompt button visible\`).toBeVisible();
+            }
+            async expectResultVisible(name: string): Promise<void> {
+              await expect(this.page.getByText(name), \`[\${LABEL}] result text\`).toBeVisible();
+            }
+          }
+          \`\`\`
+
+          \`\`\`ts
+          // 3) The base.fixture.ts EXTENSION — outputs/helper/fixtures/base.fixture.ts
+          //    Pre-existing shell on disk. EXTEND it (add a fixture entry per Page);
+          //    do NOT rewrite or re-emit the whole file.
+          //    Re-export test + expect at the bottom unchanged.
+          import { test as base, expect } from "@playwright/test"; // ✅ ONLY this file
+          import { PageClassPromptJupiter } from "@page-object/pages/prompt-jupiter.page";
+
+          type Fixtures = { promptJupiterPage: PageClassPromptJupiter };
+          const test = base.extend<Fixtures>({
+            promptJupiterPage: async ({ page }, use) =>
+              use(new PageClassPromptJupiter(page)),
+          });
+          export { test, expect };
+          \`\`\`
+
+          All THREE pieces ship together. The spec MUST pull its Page through the fixture
+          (not via raw \`page\`); the Page MUST extend BasePage (so \`open()\` is inherited);
+          the fixture MUST inject the Page (so the spec can name it as a param).
 
           ## Your task
 

@@ -24,28 +24,77 @@ Two things to internalize before you start:
 
 If the envelope JSON is missing or unreadable, **stop**. Emit `outputs/reports/<input-basename>.md` with body `BLOCKED: envelope file missing at outputs/plans/<input-basename>.envelope.json` and exit. Same protocol if the markdown plan is missing.
 
-## Your task — files to produce
+## Your task — files to produce (qa-master multi-file layout)
 
-Always produce:
+Target architecture is qa-master (`config/migration-rules.md` §1). Output is always a layered tree, never a single bare spec. Stage 1 declares every file you must emit in the plan's §5 summary table; the envelope JSON's `required*` arrays MUST match what you actually write.
 
-1. **`outputs/tests/<input-basename>.spec.ts`** — the migrated test. Top of file must include the attribution comment:
-   ```ts
-   // Migrated from <source-framework> on <YYYY-MM-DD> by Migrator.
-   // See outputs/plans/<input-basename>.md for plan and rationale.
-   ```
-   Use the current date in `YYYY-MM-DD`.
+**Style anchor — read before generating**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating EXACTLY the shape your output should take. Specifically:
+- `examples/reference/qa-master/helper/page-object/basepage.ts` — the abstract base every Page extends (NO own constructor in subclasses)
+- `examples/reference/qa-master/helper/page-object/accounts.page.ts`, `cart.page.ts` — canonical PageClass shape: readonly fields, `.describe('[LABEL] …')` on every locator, type-prefix names, `[LABEL]` message in every `expect()` inside page methods
+- `examples/reference/qa-master/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`; the only file allowed to import from `@playwright/test`
+- `examples/reference/qa-master/helper/api/accounts.api.ts` — the data-prep wrapper pattern: typed functions over HTTP, never called from a Page object
+- `examples/reference/qa-master/tests/account.sign-in.spec.ts` — the canonical spec: imports `test`/`expect` from `@fixtures/base.fixture`, uses injected page-object fixtures, asserts via UI
 
-2. **`outputs/reports/<input-basename>.md`** — the migration report (schema below). This is not optional. A migration without a report is incomplete.
+Read these files BEFORE you write any output. Your generated POMs, fixtures, and specs should look like they would be at home in this directory. If they don't, you've drifted — start over.
 
-Conditionally produce (only if the plan said to):
+Every emitted file starts with the attribution comment:
+```ts
+// Migrated from <source-framework> on <YYYY-MM-DD> by Migrator.
+// See outputs/plans/<input-basename>.md for plan and rationale.
+```
 
-3. **`outputs/tests/pages/<name>.page.ts`** — one POM per file the plan named in §"Structural decisions". The plan lists methods and properties; implement exactly those, no extras. Page objects extend `Page` (or your project's base page if conventions specify one — check `migration-rules.md`).
+### Always produce
 
-4. **`outputs/tests/fixtures/<name>.fixture.ts`** — one fixture file per fixture the plan named. Use Playwright's `test.extend` pattern, set scope (`test` or `worker`) per plan, type all fixture values strictly.
+1. **`outputs/tests/<feature>.spec.ts`** — the spec. Imports `test`/`expect` from `@fixtures/base.fixture` (NEVER `@playwright/test`). Uses the page-object fixtures the plan declared. Test title format `[TICKET-ID] - Check that <user-perceivable outcome>`. Each `test.step()` is one action → one expectation.
 
-If the plan said "Split: yes" and named multiple target files, produce **all** of them. Each gets its own attribution comment and its own row in the report's file list.
+2. **`outputs/reports/<input-basename>.md`** — the migration report (schema in §"Migration report schema" below). Mandatory.
 
-If the plan said "POM extract: no" or "Fixture extract: no", **do not produce** those files. Inline the logic in the spec file. Do not gold-plate.
+### Conditionally produce (driven by the plan's §5 file table)
+
+3. **`outputs/helper/page-object/pages/<name>.page.ts`** — one `PageClass<Name>` per Page in the plan. Extends `BasePage`, NO own constructor, every locator a `readonly` field with `.describe('[LABEL] ...')`, `[LABEL]` message on every `expect()` inside page methods, navigation methods return the destination POM. See `config/migration-rules.md` §3 for the canonical shape.
+
+4. **`outputs/helper/page-object/blocks/<name>.block.ts`** — one `BlockClass<Name>` per Block in the plan. Extends `BaseBlock`, same locator/label discipline. Eagerly instantiated as `readonly` fields on the owning Page.
+
+5. **`outputs/helper/fixtures/<name>.fixture.ts`** — only when the plan says a NEW fixture file. The base fixture mutation (adding Page injections) is handled below.
+
+6. **MUTATE OR CREATE `outputs/helper/fixtures/base.fixture.ts`** — add a `<pageName>Page` entry per Page the plan declared. If the file doesn't exist, CREATE it per migration-rules §4.
+
+7. **`outputs/helper/api/<feature>.api.ts`** — one wrapper per endpoint the plan named. Typed functions over HTTP. Used from specs / actions / fixtures. Never called from a Page object.
+
+8. **`outputs/helper/actions/<flow>.ts`** — cross-page flows declared in the plan §5e. Signature `{ page, ...params }`, returns the terminal POM or `void`.
+
+9. **`outputs/helper/utilities/<name>.ts`** — pure functions declared in §5f. PLUS the matching `outputs/tests/unit/<name>.test.ts` with full coverage (100% gate). Verb-prefixed names: `parse*`, `get*`, `calculate*`, `verify*`, `generate*`.
+
+10. **MUTATE OR CREATE `outputs/helper/test-data/<labels|urls|cookies|testrail>.ts`** — append every constant declared in §5g. Never duplicate an existing entry (check first).
+
+11. **`outputs/helper/types/external/<feature>.ts`** / **`outputs/helper/types/internal/<name>.ts`** — type shapes declared in §5h.
+
+### Schema enforcement
+
+The envelope JSON's `required*` arrays MUST list EVERY file you write (except the report) AND every existing file you mutate. `plan-envelope-validate.ts --code` walks the disk after generation:
+- Every `requiredPages[]` path → file must exist + extend `BasePage` + contain at least one `.describe(`
+- Every `requiredBlocks[]` path → file must exist + extend `BaseBlock`
+- Every `requiredApi[]` path → file must exist + export at least one async function
+- Every `requiredActions[]` path → file must exist + signature `{ page, ...params }`
+- Every `requiredUtilities[]` path → file must exist + the matching unit test file too
+- `requiredFixtures[]` includes `outputs/helper/fixtures/base.fixture.ts` if you mutated it
+
+### Imports policy — STRICT
+
+- **NEVER `import { test, expect } from "@playwright/test"`** anywhere in `outputs/tests/`. Only `outputs/helper/fixtures/base.fixture.ts` is allowed to import from `@playwright/test`. ESLint `no-restricted-imports` enforces this.
+- **Path aliases ONLY.** `@page-object/pages/…`, `@actions/…`, `@fixtures/…`, `@api/…`, `@browser/…`, `@test-data/…`, `@project-types/…`, `@utilities/…`, `@logger`. No relative imports between `helper/*` subdirs.
+- **Import order**: node:* → @fixtures → @actions → @api → @page-object,@browser → @test-data,@project-types,@utilities. Alphabetical within each group.
+
+### Trivial-migration minimum (5 files)
+
+For SMALL inputs (a single test that touches one Page, no data prep, no parsing), the minimum legal output is:
+- `outputs/helper/page-object/pages/<name>.page.ts` (the one Page)
+- `outputs/helper/fixtures/base.fixture.ts` (mutation OR creation)
+- `outputs/helper/test-data/labels.ts` (mutation OR creation with the new `LABEL_*` constant)
+- `outputs/tests/<feature>.spec.ts` (the spec)
+- `outputs/reports/<input-basename>.md` (the report)
+
+There is no "minimal mode" — qa-master IS the mode.
 
 <!-- include-begin: selenium-multifile-rules -->
 {{include:_fragments/selenium-multifile-rules.md}}

@@ -4,6 +4,61 @@ All notable changes per release.
 
 Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
+## [v0.2.0] — 2026-06-10 — qa-master target architecture (full rewrite)
+
+**Theme**: PWmodernizer now produces qa-master-tier production-grade multi-file Playwright TypeScript by default. Single-spec minimal mode (the v0.1.x default) is gone. Every migration emits a layered tree: `outputs/helper/page-object/{pages,blocks,basepage,baseblock}`, `outputs/helper/fixtures/base.fixture.ts` (single import source for `test`/`expect`), `outputs/helper/api/`, `outputs/helper/actions/`, `outputs/helper/utilities/`, `outputs/helper/test-data/`, `outputs/helper/types/` plus `outputs/tests/<feature>.spec.ts`.
+
+This is additive ambition: keep everything v0.1.x got right (calibrated prompts, validators, cost capture, CANDOR verify with max-severity tally) and stack a qa-master-grade output layer on top.
+
+### Added
+
+- **`config/migration-rules.md` §1–§4 rewritten for qa-master architecture**:
+  - §1 Project structure target — layered `outputs/helper/{page-object,fixtures,actions,api,browser,utilities,test-data,types}` + `tests/<feature>.spec.ts`. Type-prefix locator naming (`button*`, `input*`, `text*`, `array*`, `by*`). Test titles `[TICKET-ID] - Check that <user-perceivable outcome>`.
+  - §2 Test file template — imports `test`/`expect` from `@fixtures/base.fixture`, never `@playwright/test`. Each `test.step()` = one action → one expectation pair.
+  - §3 POM template — `PageClass<Name>` extends `BasePage` (NO own constructor), `readonly` locator fields with `.describe('[LABEL] ...')`, `[LABEL]` message on every `expect()` inside page methods, navigation methods return destination POMs, parameterised locators as arrow-function readonly fields. Block extraction discipline (~5+ locators or 3+ methods, or reuse across 3+ pages).
+  - §4 Fixture template — `base.fixture.ts` is the **single import source** for the whole repo. Per-test API user (default for mutating tests) via `helper/api/accounts.api.ts`; shared `storageState` only for read-only auth.
+- **`prompts/analyze.md` Step 5 rewritten for qa-master multi-file planning** — 9 sub-steps (5a–5i): Pages, Blocks, Fixtures, API wrappers, Actions, Utilities (with mandatory unit tests), Test-data mutations, Types, Spec file (and §5j split-spec). Each plan ends with a §5 summary table enumerating every file Stage 2 must emit; this feeds the envelope's `required*` arrays.
+- **`prompts/generate.md` Your-task section rewritten for qa-master multi-file output** — Stage 2 emits multi-file output ALWAYS. Strict imports: `test`/`expect` only from `@fixtures/base.fixture`; path aliases mandatory; alphabetical import groups. Trivial-migration minimum is 5 files (Page + base.fixture mutation + labels mutation + spec + report), never a single bare spec.
+- **`scripts/plan-envelope.schema.json` — 7 new `required*` arrays**: `requiredPages` (helper/page-object/pages/*.page.ts), `requiredBlocks` (helper/page-object/blocks/*.block.ts), `requiredApi` (helper/api/*.api.ts), `requiredActions` (helper/actions/*.ts), `requiredUtilities` (helper/utilities/*.ts), `requiredTestData` (helper/test-data/*.ts), `requiredTypes` (helper/types/{external,internal}/*.ts). Each pattern-validated against its target directory. Optional in the JSON schema (preserves v0.1.x envelope back-compat); the qa-master conformance validator enforces shape at the file level.
+- **`scripts/validate-qa-master-conformance.ts` (new, ~330 LOC)** — defense-in-depth gate wired into `migrate.yml` after `plan-vs-code coverage` and before the report-metric gate. Hard-fails on:
+  1. Spec imports `test`/`expect` from `@playwright/test` (KB qa-master/architecture/import-source)
+  2. `PageClass`/`BlockClass` subclass declares own constructor (KB qa-master/architecture/no-constructor)
+  3. Locator field without `.describe('[LABEL] …')` (KB qa-master/architecture/locator-no-describe)
+  4. `expect()` inside page method without `[LABEL]` message arg (KB qa-master/architecture/expect-no-label)
+  5. Relative `../` cross-helper import instead of path alias (KB qa-master/architecture/relative-imports)
+  6. Type-prefix missing on locator field name (warn-only by default; block in `--strict`) (KB qa-master/architecture/naming-no-prefix)
+  7. `page.goto(` in a spec file (KB qa-master/architecture/page-goto-in-spec)
+
+  Plus a soft-fail (warn) for utilities without matching unit tests (KB qa-master/architecture/utilities-coverage).
+- **`.github/workflows/migrate.yml` — qa-master conformance step** wired between `plan-vs-code coverage` and `Report-metric self-consistency`. Default mode: block-severity findings fail the workflow; warns annotate but don't block.
+- **`config/knowledge-base.md` `qa-master/` namespace** — 15 KB IDs catalogue qa-master ARCHITECTURE.md anti-patterns: `import-source`, `relative-imports`, `no-constructor`, `locator-no-describe`, `expect-no-label`, `parameterised-locator-method`, `naming-no-prefix`, `nav-returns-void`, `parse-in-page-method`, `page-goto-in-spec`, `ui-data-prep`, `should-test-name`, `step-without-action`, `selector-not-testid-first` (qa-master diverges: testid-first), `foreign-framework-import`, `utilities-coverage`.
+
+### Why no minimal mode
+
+The v0.1.x minimal output (single `.spec.ts`, ~50 LOC) was production-validated (4/4 Playwright tests pass against live SUT). But it doesn't represent senior-SDET production engineering. A real test suite has layered POMs, API-prep, fixtures, utilities. PWmodernizer's value proposition is "generate the kind of test a senior SDET would write" — that demands the qa-master layout, not a 50-LOC sketch. We're betting on quality over backwards-compat.
+
+### What carries forward from v0.1.x
+
+- All Bullets 1–15 in `prompts/generate.md` (anti-pattern enforcement, dialog-handler closure pattern, report-metric self-consistency)
+- `scripts/validate-report-metrics.ts` (report's claimed filename + LOC must match emitted spec)
+- CANDOR max-severity tally (`scripts/verify-tally.ts` + `verify.yml`)
+- Evaluator web-first counting (`scripts/evaluate.ts`)
+- Cost & token capture (`scripts/extract-claude-usage.ts` + all 3 workflows)
+- Danger precompile fix (`danger.yml`)
+- v0.1.x test infrastructure: validators, calibration fixtures, dashboard
+
+### Migration path for existing in-flight code PRs
+
+12 plan PRs (#19, #20, #27–#31, #33–#37) were drafted under v0.1.x conventions. They CAN merge as-is and produce v0.1.x-shaped Stage 2 output (the prompts default to qa-master; the existing plan PRs predate that switch). For the cleanest result, re-trigger Stage 1 on each input after v0.2.0 merges so the plan is qa-master-shaped first.
+
+### v0.1.x corpus preserved
+
+The v0.1.x-shaped generated specs in `outputs/tests/*.spec.ts` and envelopes in `outputs/plans/*.envelope.json` remain on `main` as historical corpus. The git tags `v0.1.0` and `v0.1.1` mark the v0.1.x snapshot — `git checkout v0.1.1` recovers the full pre-rewrite state at any time. The qa-master conformance validator will flag the v0.1.x specs (page.goto in spec, no Pages, etc.) — that's expected; they're frozen historical artifacts, not future targets.
+
+### Empirical validation status
+
+End-to-end validation of the qa-master Stage 2 output is **deferred to v0.2.1**. The first qa-master Stage 2 run will be triggered immediately after this PR merges; iterative prompt calibration based on what Sonnet actually emits is expected (same loop pattern as v0.1.x verify-pipeline closure took today).
+
 ## [v0.1.1] — 2026-06-10 — verify-pipeline closure (5 calibration fixes)
 
 **Theme**: end-to-end verify CANDOR pipeline closure. The v0.1.0 hardened generate.md prompt + cost monitoring landed, but verify-run calibration on PR #13 (PromptJupiter) exposed 5 real bugs that turned 4 verify runs into fake "regressions". Each iteration pinned the next bug.

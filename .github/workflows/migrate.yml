@@ -486,6 +486,21 @@ jobs:
             --envelope "$ENV" \
             --output "outputs/tests"
 
+      - name: qa-master architecture conformance (v0.2.0 default)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Defense-in-depth gate for qa-master architecture compliance:
+          # - no @playwright/test imports in specs (only base.fixture.ts may)
+          # - no constructor on PageClass/BlockClass subclasses
+          # - every locator field has .describe('[LABEL] ...')
+          # - every expect() inside page methods has [LABEL] message arg
+          # - no relative cross-helper imports (path aliases only)
+          # - type-prefix locator names (warn, not block)
+          # - no page.goto in specs (Page.open() owns navigation)
+          # - utilities have matching unit tests (warn)
+          npx tsx scripts/validate-qa-master-conformance.ts --root outputs
+
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
         shell: bash
         run: |

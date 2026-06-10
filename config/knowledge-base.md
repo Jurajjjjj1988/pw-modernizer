@@ -3210,6 +3210,192 @@ npx playwright test outputs/ --grep @smoke --trace on --reporter=line
 
 ---
 
+## qa-master target architecture (v0.2.0 default)
+
+PWmodernizer's default `TARGET_STYLE` is `qa-master` — Sonnet emits multi-file
+layered output matching `examples/reference/qa-master/` (CustomInk's
+production Playwright suite). The KB IDs below catalogue the anti-patterns
+the qa-master conformance validator and verify CANDOR check for in
+generated output. Cross-references to ARCHITECTURE.md sections in the
+reference directory.
+
+### qa-master/architecture/import-source
+
+**Smell**: spec imports `test`/`expect` directly from `@playwright/test`.
+**Fix**: import from `@fixtures/base.fixture` — the single source per
+ARCHITECTURE.md §3.7. Only the fixture file itself imports from
+`@playwright/test`. ESLint `no-restricted-imports` enforces this.
+
+```ts
+// ❌ WRONG
+import { test, expect } from "@playwright/test";
+
+// ✅ RIGHT
+import { test, expect } from "@fixtures/base.fixture";
+```
+
+### qa-master/architecture/relative-imports
+
+**Smell**: relative imports like `../../helper/page-object/cart.page`.
+**Fix**: path aliases — `@page-object`, `@actions`, `@fixtures`, `@api`,
+`@browser`, `@test-data`, `@project-types`, `@utilities`, `@logger`. Enforced
+import order: builtin → external → internal (internal alphabetised within
+group). ARCHITECTURE.md §9.
+
+### qa-master/architecture/no-constructor
+
+**Smell**: a `PageClass*` or `BlockClass*` declares its own constructor.
+**Fix**: only `BasePage`/`BaseBlock` (the abstract bases) declare constructors;
+subclasses inherit and use `readonly` class fields that reference `this.page`.
+Field initialisers run after `super()`, so `this.page` is set. ARCHITECTURE.md §3.1.
+
+```ts
+// ❌ WRONG
+class PageClassCart extends BasePage {
+  constructor(page: Page) { super(page); this.buttonCheckout = page.getByRole(...); }
+}
+
+// ✅ RIGHT
+class PageClassCart extends BasePage {
+  readonly buttonCheckout = this.page.getByRole("button", { name: "Checkout" })
+    .describe(`[${LABEL_CART}] Checkout button`);
+}
+```
+
+### qa-master/architecture/locator-no-describe
+
+**Smell**: a `readonly` locator field without `.describe()`.
+**Fix**: every locator carries a `[SECTION_LABEL]` describe so failures
+self-explain in trace + error output. ARCHITECTURE.md §5.
+
+### qa-master/architecture/expect-no-label
+
+**Smell**: `expect(locator).toBeVisible()` inside a page-method without a
+`[LABEL]` message argument.
+**Fix**: every `expect()` *inside a page method* takes the explanatory-message
+form. Callers can't see inside the method; the message is the only diagnostic
+they get. ARCHITECTURE.md §3.1.
+
+```ts
+// ❌ WRONG
+async waitForPageLoad(): Promise<void> {
+  await expect(this.textProductName).toBeVisible();
+}
+
+// ✅ RIGHT
+async waitForPageLoad(): Promise<void> {
+  await expect(this.textProductName, `[${LABEL_PDP}] Product name should be visible`)
+    .toBeVisible({ timeout: 45_000 });
+}
+```
+
+### qa-master/architecture/parameterised-locator-method
+
+**Smell**: `byStyleId(id: string): Locator { return page.getByTestId(...); }`
+declared as a method.
+**Fix**: parameterised locators are `readonly` arrow-function fields, not
+methods. Methods are reserved for actions. ARCHITECTURE.md §3.1.
+
+```ts
+// ❌ WRONG
+byColorSwatch(name: string): Locator { return this.page.getByTestId(`color-swatch-${name}`); }
+
+// ✅ RIGHT
+readonly byColorSwatch = (name: string) =>
+  this.page.getByTestId(`color-swatch-${name}`).describe(`[${LABEL_PDP}] Color swatch ${name}`);
+```
+
+### qa-master/architecture/naming-no-prefix
+
+**Smell**: locator named `addBtn` / `nameField` / `prices` — caller can't
+tell element type from the stack trace.
+**Fix**: type-prefix names — `buttonAddToCart`, `inputName`, `textProductName`,
+`imageMain`, `headingPersonalData`, `linkForgotPassword`, `iconSearch`,
+`arrayPrices`, `arrayProductCards`, `byStyleId(id)`, `byColorSwatch(name)`.
+ARCHITECTURE.md §5.
+
+### qa-master/architecture/nav-returns-void
+
+**Smell**: a navigation method returns `void`; the spec has to re-instantiate
+the next POM and rerun `waitForPageLoad()`.
+**Fix**: nav methods return the destination POM, with its `waitForPageLoad()`
+already awaited. The spec receives it from a fixture (canonical), but the
+return value enables ergonomic chaining. ARCHITECTURE.md §3.1.
+
+```ts
+// ✅ RIGHT
+async startDesigning(): Promise<PageClassNDX> {
+  await this.buttonStartDesigning.click();
+  const ndxPage = new PageClassNDX(this.page);
+  await ndxPage.waitForPageLoad();
+  return ndxPage;
+}
+```
+
+### qa-master/architecture/parse-in-page-method
+
+**Smell**: a page-method calls `.text()` / `.allTextContents()` then
+`parseFloat()` / `JSON.parse()` / `.replace()` to compute a structured
+result.
+**Fix**: Grab → Parse → Assert. The page method GRABS (returns raw `string[]`),
+a pure `utilities/` function PARSES, the spec ASSERTS. Parsing is unit-testable
+in isolation; 100% coverage gate on utilities. ARCHITECTURE.md §4.
+
+### qa-master/architecture/page-goto-in-spec
+
+**Smell**: spec calls `page.goto('/products/123')` directly.
+**Fix**: never `page.goto()` in a test — always `productPage.open(styleId)`.
+Specs are behavior, not URL strings. ARCHITECTURE.md §6.
+
+### qa-master/architecture/ui-data-prep
+
+**Smell**: spec creates a user via UI (sign-up form filled), creates a cart
+via UI (add-to-cart clicks), then asserts on something downstream.
+**Fix**: prepare data via `helper/api/*.api.ts` — the only sanctioned path.
+The UI-creation flow is exercised in exactly ONE test (the sign-up test);
+every other test uses the API helper. ARCHITECTURE.md §7.
+
+### qa-master/architecture/should-test-name
+
+**Smell**: `test("should display logo when …")` — "should" is filler.
+**Fix**: `[TICKET-ID] - Check that <user-perceivable outcome>`. Start with
+`Check that`. Never imperative ("displays") or "should". ARCHITECTURE.md §6.
+
+### qa-master/architecture/step-without-action
+
+**Smell**: `test.step("Verify cart has 3 items", () => { ... });` — a
+step that only asserts.
+**Fix**: each `test.step()` is one action → one expectation pair. Title
+names the **action** ("Add the product to the cart"); body performs the
+action AND asserts the expected outcome. No nested steps. ARCHITECTURE.md §6.
+
+### qa-master/architecture/selector-not-testid-first
+
+**Smell**: a freshly-created locator uses `getByText` or `getByRole` when
+the underlying element has a `data-testid`.
+**Fix**: selector priority for qa-master = **`getByTestId` first**, then
+`getByRole` → `getByLabel` → `getByText` → `getByPlaceholder` → CSS → XPath.
+This is the ONE point where qa-master diverges from the general Playwright
+recommendation (getByRole-first); the rationale is that the CustomInk
+front-end ships maintained testids and they're the most stable contract
+in that codebase. ARCHITECTURE.md §5.
+
+### qa-master/architecture/foreign-framework-import
+
+**Smell**: subtractive migration leaves an `import` from `cypress`,
+`selenium-webdriver`, or another framework.
+**Fix**: subtractive mode bans every non-`@playwright/test` non-relative
+non-`node:` import. Either translate the API or drop it. Already enforced
+by `plan-envelope-validate.ts:validateSubtractiveImports`; qa-master mode
+extends this to ban `@playwright/test` outside the fixture file too.
+
+### qa-master/architecture/utilities-coverage
+
+**Smell**: `helper/utilities/parse-prices.ts` exists but has no unit tests.
+**Fix**: `utilities/` carries a 100% coverage gate. Parsing functions are
+pure; testing them is cheap; not testing them means the spec inherits their
+bugs invisibly. ARCHITECTURE.md §3.3.
+
 ## Authoritative references
 
 - Playwright docs — [playwright.dev/docs](https://playwright.dev/docs/intro)

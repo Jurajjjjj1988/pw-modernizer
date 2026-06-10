@@ -200,6 +200,40 @@ jobs:
           PROMPT=$(cat <<EOF
           You are running Stage 2 of the PWmodernizer pipeline.
 
+          ## STOP — read this before any tool call
+
+          The post-generate qa-master conformance validator HARD-FAILS on the two
+          patterns below. Three consecutive Stage 2 runs (27257207504,
+          27258160013, 27260892741) have committed them. Internalise these
+          examples BEFORE you read any other file:
+
+          \`\`\`ts
+          // ❌ FORBIDDEN in outputs/tests/*.spec.ts
+          //    Run rejected. Migration aborted. Do not write this.
+          import { test, expect } from "@playwright/test";
+          test("…", async ({ page }) => {
+            await page.goto("/some/path");
+          });
+          \`\`\`
+
+          \`\`\`ts
+          // ✅ REQUIRED in outputs/tests/*.spec.ts (the ONLY accepted shape)
+          //    Path alias resolves via outputs/tests/tsconfig.json (already on disk).
+          import { test, expect } from "@fixtures/base.fixture";
+          test("…", async ({ promptJupiterPage }) => {
+            await promptJupiterPage.open();          // navigation in the Page, not the spec
+            await promptJupiterPage.expectSomething(); // [LABEL]-prefixed expect inside the Page method
+          });
+          \`\`\`
+
+          The PageClass you write for THIS migration goes in
+          \`outputs/helper/page-object/pages/<kebab-name>.page.ts\` and extends the
+          \`BasePage\` that already exists on disk at
+          \`outputs/helper/page-object/basepage.ts\`. BasePage already implements
+          \`open()\` (it calls \`page.goto(this.url)\` + \`waitForPageLoad()\`), so
+          your subclass only declares \`readonly url\`, the locator fields, and the
+          assertion methods. NO own constructor on the subclass.
+
           ## Your task
 
           Read prompts/_assembled/generate.md — that's your full system prompt. Follow
@@ -490,19 +524,6 @@ jobs:
           fi
           echo "Validation clean after retry."
 
-      - name: Archive Sonnet output on validation failure (diagnostics)
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: stage2-failed-output-${{ needs.guard.outputs.input_basename }}
-          path: |
-            outputs/.lint-errors.md
-            outputs/tests/**/*.ts
-            outputs/helper/**/*.ts
-            outputs/reports/${{ needs.guard.outputs.input_basename }}.md
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: AST-diff-not-trivial check
         shell: bash
         run: |
@@ -667,6 +688,19 @@ jobs:
             echo "::error::dom-ground hard gate (DOM_GROUND_STRICT=true): exit $DG_EXIT — failing the migrate job"
             exit "$DG_EXIT"
           fi
+
+      - name: Archive Sonnet output on ANY failure (diagnostics)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stage2-failed-output-${{ needs.guard.outputs.input_basename }}
+          path: |
+            outputs/.lint-errors.md
+            outputs/tests/**/*.ts
+            outputs/helper/**/*.ts
+            outputs/reports/${{ needs.guard.outputs.input_basename }}.md
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Evaluate migration (metrics + confidence)
         id: evaluate

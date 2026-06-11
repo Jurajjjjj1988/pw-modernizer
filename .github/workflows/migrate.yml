@@ -397,9 +397,17 @@ jobs:
           # keep up. Same root cause as verify.yml. Direct redirect is
           # the documented stable pattern for capturing stream-json.
 
-      - name: Capture Claude usage stats (cost tracking)
+      - name: Capture Claude usage stats (cost tracking + budget guard)
         continue-on-error: true
         shell: bash
+        env:
+          # Per-migration budget cap (total input+output tokens across all
+          # claude invocations for this run). Configurable via repo variable
+          # MIGRATION_TOKEN_BUDGET (vars.MIGRATION_TOKEN_BUDGET in workflow).
+          # Default 250000 tokens — generous for the worst-case 40-turn
+          # multi-file qa-master output (observed ~80k on bad-PW, ~120k on
+          # cross-language Selenium-Java).
+          BUDGET: ${{ vars.MIGRATION_TOKEN_BUDGET || '250000' }}
         run: |
           set -euo pipefail
           BASE="${{ needs.guard.outputs.input_basename }}"
@@ -417,6 +425,22 @@ jobs:
             --from /tmp/claude-migrate-result.json \
             --out "outputs/.usage/${BASE}-migration.json" \
             --tolerant
+          # Budget guard: read totals from the just-written usage.json and
+          # WARN if approaching budget (>80%) / ERROR if exceeded. ERROR
+          # surfaces as a step warning (not exit 1) so this run completes
+          # and the PR ships — but operators see the overrun annotation and
+          # the next iteration can tune --max-turns or input scope.
+          USAGE_FILE="outputs/.usage/${BASE}-migration.json"
+          if [ -f "$USAGE_FILE" ]; then
+            TOTAL=$(node -e "try { const u=require('$PWD/$USAGE_FILE'); console.log((u.totalInputTokens||0)+(u.totalOutputTokens||0)); } catch { console.log(0); }")
+            if [ "$TOTAL" -gt "$BUDGET" ]; then
+              echo "::error::Migration token budget exceeded: $TOTAL > $BUDGET (set MIGRATION_TOKEN_BUDGET repo var to adjust)"
+            elif [ "$TOTAL" -gt $((BUDGET * 80 / 100)) ]; then
+              echo "::warning::Migration token budget approaching: $TOTAL / $BUDGET (>80%)"
+            else
+              echo "Token usage: $TOTAL / $BUDGET ($((TOTAL * 100 / BUDGET))%)"
+            fi
+          fi
 
       # ---------------------------------------------------------------------
       # Aider lint-and-test feedback loop: collect ALL validation failures

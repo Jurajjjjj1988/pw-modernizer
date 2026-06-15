@@ -104,6 +104,15 @@ jobs:
           RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_BASENAME: ${{ inputs.input_basename }}
           LENS: ${{ matrix.lens }}
+          # PoC opt-in: when set to '1' (repo Variable or workflow_dispatch
+          # override), route through scripts/claude-cached-call.ts which uses
+          # the @anthropic-ai/sdk directly with cache_control: ephemeral on
+          # the static system blocks. See docs/prompt-caching.md.
+          # Falls back to the CLI path when:
+          #   - USE_CACHED_SDK is unset / != '1'
+          #   - The token is OAuth (sk-ant-oat*); the raw SDK only accepts
+          #     ANTHROPIC_API_KEY (sk-ant-api*).
+          USE_CACHED_SDK: ${{ vars.USE_CACHED_SDK }}
         run: |
           set -euo pipefail
           TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
@@ -113,6 +122,53 @@ jobs:
             sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
             *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
           esac
+          # -----------------------------------------------------------------
+          # Prompt-caching PoC branch.
+          # -----------------------------------------------------------------
+          # Conditions to take the cached-SDK path:
+          #   1. USE_CACHED_SDK == '1' (repo Variable, opt-in)
+          #   2. ANTHROPIC_API_KEY is set (raw SDK needs api key, not OAuth)
+          # If both hold, call the wrapper which writes the SAME paths the
+          # legacy CLI would write (outputs/reports/<basename>-verify-<lens>.md
+          # + outputs/.usage/<basename>-verify-<lens>.json), so all downstream
+          # steps (secret scan, persist-verify-metrics, tally) work unchanged.
+          if [ "${USE_CACHED_SDK:-0}" = "1" ] && [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::notice::USE_CACHED_SDK=1 — routing through scripts/claude-cached-call.ts (cache_control: ephemeral)"
+            mkdir -p outputs/.usage outputs/reports
+            # Resolve the input path the verify report depends on. The
+            # workflow_dispatch input is just the basename; the actual file
+            # may live under inputs/<framework>/<basename>[.spec.ts|.java|.py]
+            # or inputs/<framework>/<basename>/ (multi-file). The wrapper
+            # accepts either; pass the workflow-known path or empty (the
+            # wrapper degrades gracefully — source-under-test is optional).
+            INPUT_PATH=""
+            for candidate in \
+              "inputs/bad-playwright/${INPUT_BASENAME}.spec.ts" \
+              "inputs/cypress/${INPUT_BASENAME}.cy.ts" \
+              "inputs/cypress/${INPUT_BASENAME}.cy.js" \
+              "inputs/selenium-java/${INPUT_BASENAME}.java" \
+              "inputs/selenium-java/${INPUT_BASENAME}" \
+              "inputs/selenium-python/${INPUT_BASENAME}.py" \
+              "inputs/selenium-python/${INPUT_BASENAME}"; do
+              if [ -e "$candidate" ]; then INPUT_PATH="$candidate"; break; fi
+            done
+            npx tsx scripts/claude-cached-call.ts \
+              --lens "${LENS}" \
+              --input-basename "${INPUT_BASENAME}" \
+              --input-path "${INPUT_PATH}" \
+              --report-out "outputs/reports/${INPUT_BASENAME}-verify-${LENS}.md" \
+              --usage-out "outputs/.usage/${INPUT_BASENAME}-verify-${LENS}.json"
+            # Synthesise the events file the legacy-path "Capture Claude usage
+            # stats" step expects, so the existing step is a no-op when the
+            # SDK wrapper already wrote the usage file. The capture step
+            # checks for empty events file + warns; that warning is harmless
+            # under USE_CACHED_SDK because the usage file is already on disk.
+            : > "/tmp/claude-verify-${LENS}-events.ndjson"
+            exit 0
+          fi
+          if [ "${USE_CACHED_SDK:-0}" = "1" ]; then
+            echo "::warning::USE_CACHED_SDK=1 but only OAuth token available — raw SDK doesn't support OAuth. Falling back to CLI path."
+          fi
           # Human-readable name for the lens (only used inside the prompt
           # boilerplate; the prompt files themselves declare their role).
           case "$LENS" in

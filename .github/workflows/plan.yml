@@ -264,12 +264,235 @@ jobs:
             echo "Forced regeneration via /regenerate — bypassing dedup."
             exit 0
           fi
-          EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json number --jq 'length')
+          # Risk 3 (abandon migration flow): the dedup must NOT block a fresh
+          # Stage 1 run when the only PR with this hash label was closed-
+          # unmerged. Reviewer closed it because the plan was wrong, and the
+          # next push of the same input should produce a new plan PR.
+          #
+          # We keep the dedup for OPEN PRs (the new push is concurrent with a
+          # plan still in review — opening another would be noise) and for
+          # MERGED PRs (the plan was accepted; re-opening would create churn).
+          # Only CLOSED-unmerged is "abandoned" and allowed to fall through.
+          EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json state --jq '[.[] | select(.state == "OPEN" or .state == "MERGED")] | length')
           if [ "$EXISTING" -gt 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Stage 0 input pre-flight
+        id: input_preflight
+        if: steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ---------------------------------------------------------------
+          # Risk 4 closure — fail GRACEFULLY before any Claude API call
+          # when the input file is structurally unmigrable. Three failure
+          # modes were previously untested and would all silently waste an
+          # entire Claude run before surfacing the real problem:
+          #
+          #   (a) Empty input — `git diff --name-only` returned a path but
+          #       the file body is 0 bytes (deleted-then-re-added, broken
+          #       merge, accidental `> file` redirect). Claude would read
+          #       0 bytes and hallucinate an entire plan from thin air.
+          #   (b) Massive input — a 5000+ LOC monolith blows past the
+          #       analyze stage's max-turns=12 (and migrate stage's
+          #       max-turns=20), OR fills enough context that effective
+          #       attention degrades (NVIDIA RULER on long-context
+          #       Claude). The pipeline burns the run and produces a
+          #       truncated, unusable plan.
+          #   (c) Non-UTF8 encoding — Selenium Java files copy-pasted from
+          #       Windows tooling can carry a BOM or Windows-1252 bytes.
+          #       bash grep behavior on mixed-encoding input is undefined;
+          #       Claude's tokenizer mangles such bytes. Catch + tell the
+          #       user to iconv.
+          #
+          # This is the Stage 0 INPUT gate. The earlier "Stage 0 —
+          # Pre-flight input sanity + secret scan" step (above the dedup
+          # block) does a coarser, secret-focused pass; THIS step is the
+          # canonical Risk 4 gate per the deferred-risk closure spec.
+          # Placement AFTER dedup is intentional — when the dedup decides
+          # to skip, the input never reaches Claude regardless of its
+          # shape, so revalidating it would burn CI minutes for no gain.
+          # Placement BEFORE setup-node / npm ci is also intentional —
+          # the input checks need only POSIX tools (stat, wc, file, grep)
+          # that ubuntu-latest already ships; failing here saves ~40 s of
+          # node toolchain install on bad inputs.
+          # ---------------------------------------------------------------
+          INPUT_PATH="${{ matrix.input_path }}"
+          # Resolve to a flat file list. Directory inputs (multi-file
+          # Selenium units grouped as inputs/<framework>/<test-name>/) are
+          # aggregated; size/LOC totals roll up across all source files,
+          # encoding is checked per file, and at least one file in the
+          # unit must carry a test declaration for the content-sanity
+          # gate to pass. Single-file inputs are a 1-element list.
+          if [ -d "$INPUT_PATH" ]; then
+            mapfile -t FILES < <(find "$INPUT_PATH" -type f \( -name '*.ts' -o -name '*.js' -o -name '*.java' -o -name '*.py' \))
+          else
+            FILES=("$INPUT_PATH")
+          fi
+
+          # Check 1 — Existence.
+          # WHY: the dedup step's `gh pr list` could match a stale label
+          # whose underlying input was since removed from the working
+          # tree (rebase, force-push, manual rm). Without this gate the
+          # next checks would fail with cryptic `stat: cannot stat`
+          # noise instead of a clear "file missing" error.
+          if [ ! -e "$INPUT_PATH" ]; then
+            MSG="::error::Input file ${INPUT_PATH} does not exist on disk. Was it removed or renamed since the trigger commit?"
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** input \`${INPUT_PATH}\` missing on disk."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            MSG="::error::Input file ${INPUT_PATH} is empty - cannot generate a migration plan from 0 bytes."
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** input directory \`${INPUT_PATH}\` contains no source files (.ts/.js/.java/.py)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Aggregate counters for the size gate + final summary line.
+          TOTAL_BYTES=0
+          TOTAL_LOC=0
+          TEST_COUNT=0
+          BAD_ENC=""
+          PRIMARY_ENC="utf-8"
+          for FILE in "${FILES[@]}"; do
+            SZ=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE")
+            TOTAL_BYTES=$((TOTAL_BYTES + SZ))
+            LC=$(wc -l < "$FILE" | tr -d ' ')
+            TOTAL_LOC=$((TOTAL_LOC + LC))
+            ENC=$(file --mime-encoding -b "$FILE" 2>/dev/null || echo "unknown")
+            case "$ENC" in
+              utf-8|us-ascii)
+                # Track the dominant non-ASCII encoding for the summary.
+                if [ "$ENC" = "utf-8" ]; then PRIMARY_ENC="utf-8"; fi
+                ;;
+              binary)
+                # `binary` from `file` on a 0-byte file is the empty-file
+                # signal; that's handled by Check 2 below.
+                if [ "$SZ" -gt 0 ]; then
+                  BAD_ENC="${BAD_ENC}${FILE}=${ENC} "
+                fi
+                ;;
+              *)
+                BAD_ENC="${BAD_ENC}${FILE}=${ENC} "
+                PRIMARY_ENC="$ENC"
+                ;;
+            esac
+            # Content sanity counter — accumulate hits across all files
+            # so a directory-input only needs ONE file with a marker.
+            if grep -cE '(\btest[[:space:]]*\()|(\bit[[:space:]]*\()|(\bdef[[:space:]]+test_)|(@Test\b)' "$FILE" > /tmp/_pwm_grep_count 2>/dev/null; then
+              FILE_HITS=$(cat /tmp/_pwm_grep_count)
+              TEST_COUNT=$((TEST_COUNT + FILE_HITS))
+            fi
+          done
+
+          # Check 2 — Size lower bound (empty input).
+          # WHY: prevents the "Claude reads 0 bytes, hallucinates a plan
+          # from the filename alone" failure mode. We check TOTAL_BYTES
+          # rather than per-file because a directory input is empty in
+          # the meaningful sense only when ALL files inside are empty.
+          if [ "$TOTAL_BYTES" -le 0 ]; then
+            MSG="::error::Input file ${INPUT_PATH} is empty - cannot generate a migration plan from 0 bytes."
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** \`${INPUT_PATH}\` is 0 bytes. Claude cannot plan a migration from an empty file."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Check 3 — Size upper bound (5000 LOC / 200 KB).
+          # WHY: Stage 1 (plan.yml) caps Claude at max-turns=12 and
+          # Stage 2 (migrate.yml) at max-turns=20. A 5000+ LOC monolith
+          # exhausts both budgets reading the file before any planning /
+          # generation work happens — the migration silently truncates.
+          # 200 KB byte cap is the secondary safety: a single line that
+          # happens to be 100 KB still blows the context budget even
+          # though LOC stays tiny.
+          BYTES=$TOTAL_BYTES
+          LOC=$TOTAL_LOC
+          if [ "$BYTES" -ge 200000 ] || [ "$LOC" -ge 5000 ]; then
+            MSG="::error::Input file ${INPUT_PATH} is too large (${LOC} LOC, ${BYTES} bytes). Pipeline cap: 5000 LOC / 200 KB. Split into multiple files before migrating."
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** \`${INPUT_PATH}\` exceeds the pipeline size cap (${LOC} LOC, ${BYTES} bytes; cap 5000 LOC / 200 KB)."
+              echo ""
+              echo "Split the suite by feature group, then re-trigger Stage 1 per group."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Check 4 — Encoding (UTF-8 / ASCII only).
+          # WHY: Selenium Java files pasted from Windows tooling can be
+          # Windows-1252 or carry a UTF-8 BOM. bash grep's behavior on
+          # mixed-encoding bytes is undefined, and Claude's tokenizer
+          # mangles non-UTF8 sequences into byte-level noise that wrecks
+          # locator extraction. We refuse and tell the user how to fix
+          # it (iconv) rather than producing a corrupted plan.
+          if [ -n "$BAD_ENC" ]; then
+            ENC=$(echo "$BAD_ENC" | awk '{print $1}' | awk -F= '{print $2}')
+            MSG="::error::Input file ${INPUT_PATH} has unsupported encoding '${ENC}'. Convert to UTF-8 before migrating (iconv -f windows-1252 -t utf-8 ...)."
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** \`${INPUT_PATH}\` is encoded as \`${ENC}\` — pipeline accepts only \`utf-8\` or \`us-ascii\`."
+              echo ""
+              echo "Fix: \`iconv -f windows-1252 -t utf-8 <file> > <file>.utf8 && mv <file>.utf8 <file>\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Check 5 — Content sanity (at least one test declaration).
+          # WHY: catches the case where someone points the pipeline at a
+          # config file, a README, or a helper-only file that has no
+          # actual test cases. Without this gate Claude would dutifully
+          # produce a "plan" describing how to migrate fixtures or
+          # imports — useless output that costs a full Claude run.
+          # Markers cover the four supported source frameworks:
+          #   test(   — Playwright TS, Jest
+          #   it(     — Mocha, Cypress, Jasmine
+          #   def test_ — pytest (Selenium Python)
+          #   @Test   — JUnit (Selenium Java)
+          if [ "$TEST_COUNT" -eq 0 ]; then
+            MSG="::error::Input file ${INPUT_PATH} contains no recognizable test declaration (test(/it(/def test_/@Test). Is this actually a test file?"
+            echo "$MSG"
+            {
+              echo "## Stage 0 input pre-flight — FAILED"
+              echo ""
+              echo "**Reason:** \`${INPUT_PATH}\` contains no \`test(\`, \`it(\`, \`def test_\`, or \`@Test\` markers — does not look like a test file."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Success — single-line summary the reviewer can scan in the
+          # job log without scrolling. PRIMARY_ENC reports the dominant
+          # encoding (utf-8 unless every file was pure ASCII, in which
+          # case it stays utf-8 by default since us-ascii is a UTF-8
+          # subset and downstream consumers treat it identically).
+          echo "Pre-flight OK: ${LOC} LOC, ${PRIMARY_ENC} encoding, ${TEST_COUNT} test declarations"
+          {
+            echo "## Stage 0 input pre-flight — OK"
+            echo ""
+            echo "- Input: \`${INPUT_PATH}\` (${#FILES[@]} file(s))"
+            echo "- Size: ${LOC} LOC / ${BYTES} bytes (cap 5000 LOC / 200 KB)"
+            echo "- Encoding: ${PRIMARY_ENC}"
+            echo "- Test declarations detected: ${TEST_COUNT}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         if: steps.dedup.outputs.skip == 'false'

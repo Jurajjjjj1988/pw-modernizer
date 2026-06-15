@@ -1,0 +1,115 @@
+# Verify-as-a-service.
+#
+# Problem: verify.yml auto-fires only when migrate.yml finishes with
+# confidence < 0.7 (or unconditionally for high-confidence runs depending on
+# config). A reviewer who wants to re-run verify on an unmerged code PR
+# without bumping the source -- e.g. to re-check after a flaky Opus run, or
+# to evaluate a hand-tweaked commit on top of the migrator branch -- has
+# no clean handle. They can dispatch verify.yml manually from the Actions
+# tab, but that requires knowing the input_basename + setting pr_branch by
+# hand.
+#
+# Solution: reviewer comments `/verify` on a code PR (the one carrying the
+# `migrator:code` label). This workflow:
+#   - validates the label
+#   - extracts input_basename from the PR's head branch name
+#     (migrate.yml names code branches `migrator/code-<basename>`)
+#   - fires verify.yml via workflow_dispatch with the right input_basename
+#     and the PR's head branch as pr_branch, so verify runs against the
+#     UNMERGED code on the PR rather than main
+#
+# Auth note: `gh workflow run` needs `actions: write` on the token. The
+# fired verify.yml run uses github.token; that's fine because verify.yml
+# only writes labels + comments + an optional repository_dispatch to plan.yml
+# (all of which github.token can do).
+
+name: Verify on /verify comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+jobs:
+  verify-on-comment:
+    # Three preconditions:
+    #   1. It's a PR comment (issue_comment fires for issues + PRs).
+    #   2. Comment body starts with /verify.
+    #   3. PR carries the `migrator:code` label (gated inside the job).
+    if: |
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/verify')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate label + extract pr_branch and input_basename
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Label gate -- issue_comment trigger can't filter on PR labels.
+          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | any(. == "migrator:code")')
+          if [ "$HAS_LABEL" != "true" ]; then
+            echo "::notice::PR #$PR_NUMBER lacks migrator:code label -- ignoring /verify."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Permission gate -- only collaborators with write access may
+          # trigger this. peter-evans/slash-command-dispatch does this for
+          # /regenerate; we do it inline here so we don't pull in another
+          # action just for one workflow.
+          AUTHOR_PERM=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${{ github.event.comment.user.login }}/permission" --jq '.permission' 2>/dev/null || echo "none")
+          case "$AUTHOR_PERM" in
+            admin|maintain|write) ;;
+            *)
+              echo "::notice::Comment author lacks write permission ($AUTHOR_PERM) -- ignoring /verify."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          # The code branch name is migrator/code-<basename>. Read head.ref
+          # from the PR rather than parsing the body so we don't depend on
+          # PR body formatting.
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json headRefName)
+          HEAD_REF=$(printf '%s' "$PR_DATA" | jq -r '.headRefName')
+          case "$HEAD_REF" in
+            migrator/code-*)
+              BASENAME="${HEAD_REF#migrator/code-}"
+              ;;
+            *)
+              echo "::error::PR #$PR_NUMBER head branch '$HEAD_REF' is not migrator/code-* -- cannot derive input_basename."
+              exit 1
+              ;;
+          esac
+          if [ -z "$BASENAME" ]; then
+            echo "::error::Empty input_basename derived from head branch '$HEAD_REF'."
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "pr_branch=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "input_basename=$BASENAME" >> "$GITHUB_OUTPUT"
+          echo "Dispatching verify.yml with input_basename='$BASENAME' pr_branch='$HEAD_REF'"
+
+      - name: Trigger verify.yml
+        if: steps.context.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # generate_confidence is required by verify.yml. For a manual
+          # re-verify we don't have a Stage 2 confidence value, so we pass
+          # "0" -- verify-subagent runs regardless; downstream FIX FIRST
+          # adjudication uses confidence only to overrule the verdict.
+          gh workflow run verify.yml \
+            -f input_basename="${{ steps.context.outputs.input_basename }}" \
+            -f generate_confidence="0" \
+            -f pr_branch="${{ steps.context.outputs.pr_branch }}"
+          gh pr comment "${{ github.event.issue.number }}" --body \
+            "Verify dispatched on \`${{ steps.context.outputs.pr_branch }}\` (input_basename \`${{ steps.context.outputs.input_basename }}\`). Check the Actions tab for the run."

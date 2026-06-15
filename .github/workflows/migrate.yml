@@ -418,6 +418,31 @@ jobs:
             --out "outputs/.usage/${BASE}-migration.json" \
             --tolerant
 
+      - name: Materialize LOW-confidence pins from DOM-probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ROADMAP v1.0 "LOW-confidence pin rules" closure step.
+          # The DOM-probe report at outputs/reports/<base>-dom-probe.json
+          # tags every locator with HIGH/MEDIUM/LOW. This step materialises
+          # the LOW verdicts back into source: inserts a WHY-comment above
+          # each LOW pin, and when a fallback rule matches (e.g. getByText
+          # of a button label → getByRole) it also rewrites the locator.
+          #
+          # The probe report is only produced when MIGRATION_TARGET_URL is
+          # set AND the dom_ground step ran successfully. If the report is
+          # missing this step silently no-ops (the script handles the
+          # exists-check and exits 0). It's safe to run on every migration
+          # because the script is idempotent — already-materialised lines
+          # are skipped.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          REPORT="outputs/reports/${BASE}-dom-probe.json"
+          if [ ! -f "$REPORT" ]; then
+            echo "No DOM-probe report at $REPORT — LOW-pin materialization skipped (no-op)."
+            exit 0
+          fi
+          npm run materialize:low-pins -- --basename "$BASE"
+
       # ---------------------------------------------------------------------
       # Aider lint-and-test feedback loop: collect ALL validation failures
       # in one pass (typecheck + eslint + playwright parse), and if any are
@@ -844,6 +869,25 @@ jobs:
             $USAGE_ARG)
           echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
           echo "Migration confidence: $CONFIDENCE"
+
+      - name: Track output variability (Sonnet determinism signal)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Append a row to outputs/.usage/variability-log.jsonl with hashes
+          # of input + plan + every emitted output file. Post-hoc analysis
+          # of N runs against the same input+plan shows whether Sonnet's
+          # outputs converge (deterministic — pipeline reliable) or diverge
+          # (model-side noise dominates — needs calibration). continue-on-error
+          # because variability tracking is diagnostic, not a gate.
+          npx tsx scripts/track-output-variability.ts \
+            --input "${{ needs.guard.outputs.input_path }}" \
+            --plan "${{ needs.guard.outputs.plan_path }}" \
+            --basename "${{ needs.guard.outputs.input_basename }}" \
+            --run-id "${{ github.run_id }}" \
+            --confidence "${{ steps.evaluate.outputs.confidence }}" \
+            --attempt "1"
 
       - name: Determine confidence label
         id: clabel

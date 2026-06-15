@@ -1,0 +1,95 @@
+# Dashboard deploy → GitHub Pages.
+#
+# ROADMAP closure for item F (Dashboard deploy on GH Pages). scripts/dashboard.ts
+# now ships a `--static <outdir>` mode that renders a self-contained index.html
+# with the aggregate JSON inlined — no /api/data round-trip needed. This
+# workflow runs the static render on every push to main + on manual dispatch
+# and pushes the result to the github-pages environment via the modern
+# upload-pages-artifact + deploy-pages action pair.
+#
+# Required one-time operator setup (NOT done here — Pages can't be enabled
+# from a workflow):
+#   1. Settings → Pages → Source = "GitHub Actions"
+#   2. Re-run this workflow once after enabling, or wait for the next push to main.
+#
+# Once enabled the dashboard lives at:
+#   https://<owner>.github.io/<repo>/
+#
+# Auth: uses the default GITHUB_TOKEN via OIDC. No PAT, no extra secret.
+# Permissions for deploy-pages: pages:write + id-token:write. contents:read
+# is enough to checkout the source on a public repo. Scoped narrowly so a
+# compromised dashboard render step can't push code back to main.
+
+name: Dashboard — deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    # Trim noise: only redeploy when something that affects the dashboard
+    # render changes. Code changes that don't touch the metrics shape or the
+    # HTML shell don't need a Pages republish.
+    paths:
+      - 'scripts/dashboard.ts'
+      - 'scripts/dashboard.html'
+      - 'scripts/metrics.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/dashboard-deploy.yml'
+  workflow_dispatch:
+
+# One in-flight deploy per environment — GitHub Pages serialises uploads
+# already, but cancel-in-progress avoids stacking redundant renders when
+# main lands several pushes in a row.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Render static dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --static mode renders one self-contained index.html with the
+          # aggregate JSON inlined. MetricsDB constructor creates the SQLite
+          # file with empty tables if it's missing, so the runner doesn't need
+          # a checked-in metrics.db — the dashboard simply renders zeros
+          # until the persist-* writers populate the DB on the next migration.
+          mkdir -p dist/dashboard
+          npm run dashboard -- --static dist/dashboard/
+          ls -la dist/dashboard/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist/dashboard
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

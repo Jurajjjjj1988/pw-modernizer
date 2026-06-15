@@ -41,6 +41,63 @@ The dashboard renders cleanly even when the SQLite cache is empty (the
 counters and tables surface zero/empty-state placeholders until the pipeline
 writes its first row.
 
+### Cost + ROI panels
+
+Three operator-facing panels stacked at the top of the dashboard answer
+"what did this cost us and was it worth it":
+
+| Panel | What it shows | Where the number comes from |
+|---|---|---|
+| **A — Cost this week** | Total spend over the last 7 days + per-stage breakdown + 30-day sparkline + delta vs the previous 7 days. | `migrations + plans + verifications` rows where `created_at >= now − 7d`, summed via `cost_usd` (NULL rows excluded — see "tracked vs untracked" rationale in `metrics.ts`). |
+| **B — Cost per outcome** | Bar chart of average $ per migration across four buckets: **SHIP IT**, **FIX FIRST**, **START OVER**, **BLOCKED-BY-VALIDATOR**. Catches "we're paying $5+ for every failed migration" as an investigation signal. | Cost summed per `input_basename` across all stages, then bucketed by the latest `verifications.verdict` for that basename. `BLOCKED-BY-VALIDATOR` is synthetic — input_basenames that incurred plan/migrate cost but never produced a verify row (Stage 2 validator gates blocked them before Opus Verify ran). |
+| **C — ROI vs hand-migration** | All-time pipeline spend vs the human-hour cost the pipeline displaced. Renders as a single multiplier — `humanCostUsd / pipelineCostUsd`. | `successfulMigrations` = count of distinct input_basenames with verdict SHIP IT or FIX FIRST (START OVER and BLOCKED don't count — no value delivered). `humanCost = successfulMigrations × humanHoursPerTest × humanHourlyRateUsd`. |
+
+**Panel C assumptions (the honest part).** ROI math is only as good as
+the displaced-effort baseline:
+
+- **`humanHoursPerTest` = 4** (hard-coded). One bad-Playwright test rewritten
+  cleanly: read the source, port locators, verify the fix, debug to
+  Sonnet-equivalent quality. Tune `ROI_DEFAULT_HOURS_PER_TEST` in
+  `scripts/dashboard.ts` if your team's baseline is materially different.
+- **`humanHourlyRateUsd` = 80** (default). Override via the repo variable
+  `PWM_HUMAN_HOUR_COST_USD` — set in repo settings → Variables → Actions, or
+  exported in the shell when running `npm run dashboard` / `npm run cost:report`
+  locally. The dashboard renders a note next to the multiplier saying whether
+  it's reading the default or a configured value.
+- **What counts as success.** Only verifications with verdict `SHIP IT` or
+  `FIX FIRST` add to `successfulMigrations`. `START OVER` is a re-roll — no
+  value delivered. `BLOCKED-BY-VALIDATOR` runs are tracked but ignored for ROI.
+- **What doesn't count.** Per-test hand-migration time varies wildly
+  (bad-Playwright is ~4h, Selenium-Java is closer to 8h). The single
+  `humanHoursPerTest` number is a coarse fleet-wide average. A future
+  enhancement is per-framework hours-per-test; for now the operator can
+  multiply the displayed ROI mentally if their corpus skews toward Selenium.
+
+To configure the hourly rate locally:
+
+```bash
+export PWM_HUMAN_HOUR_COST_USD=120
+npm run cost:report           # Panel C will use $120/hour
+```
+
+To configure it for the deployed dashboard, set the repo variable
+`PWM_HUMAN_HOUR_COST_USD` in GitHub → Settings → Variables → Actions and
+re-run `dashboard-deploy.yml`.
+
+### Cost report CLI
+
+For operators who want a weekly Slack-friendly summary without booting the
+web dashboard:
+
+```bash
+npm run cost:report           # pretty-text mode (3 sections, tabular)
+npm run cost:report -- --json # machine-readable JSON (paste into a Slack /command, pipe to jq, etc.)
+npm run cost:report -- --db /path/to/.metrics.db  # override DB path
+```
+
+The CLI reads the same SQLite source as the web dashboard — numbers match by
+construction. Both default to `outputs/.metrics.db`.
+
 ## Where things live (cross-reference)
 
 - Knowledge base — [`../config/knowledge-base.md`](../config/knowledge-base.md) (125 KB IDs across pw 25 / cy 50 / sel-java 24 / sel-py 26)

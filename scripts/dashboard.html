@@ -12,6 +12,80 @@
     <h1 class="text-2xl font-bold">PWmodernizer metrics dashboard</h1>
     <p id="status" class="text-sm text-slate-600">Loading…</p>
   </header>
+
+  <!-- Panel A — "Cost this week" -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Cost this week</h2>
+    <p class="text-xs text-slate-500 mb-3">Last 7 days of pipeline spend, broken down by stage. Sparkline = daily totals over the last 30 days.</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div class="md:col-span-1">
+        <div class="text-xs text-slate-500">Spent last 7 days</div>
+        <div id="weekTotal" class="text-3xl font-semibold">$0.00</div>
+        <div id="weekDelta" class="text-xs text-slate-500">vs previous 7 days: —</div>
+        <div id="weekMigrations" class="text-xs text-slate-500 mt-1">0 migrations this week</div>
+      </div>
+      <div class="md:col-span-2">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left border-b">
+              <th class="py-1">Stage</th>
+              <th class="py-1 text-right">Cost (last 7 days)</th>
+            </tr>
+          </thead>
+          <tbody id="weekByStageTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <canvas id="weekSparklineChart" height="60"></canvas>
+  </section>
+
+  <!-- Panel B — "Cost per outcome" -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Cost per outcome</h2>
+    <p class="text-xs text-slate-500 mb-2">Average $ spent per migration, bucketed by verify verdict. <code>BLOCKED-BY-VALIDATOR</code> = ran plan/migrate but Stage 2 gates blocked it before Opus Verify. Watch the START OVER bar — paying $5+ per failed migration is a signal to investigate.</p>
+    <canvas id="costPerOutcomeChart" height="160"></canvas>
+    <table class="w-full text-sm mt-3">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-1">Outcome</th>
+          <th class="py-1 text-right">Migrations</th>
+          <th class="py-1 text-right">Total cost</th>
+          <th class="py-1 text-right">Avg cost / migration</th>
+        </tr>
+      </thead>
+      <tbody id="costPerOutcomeTable"></tbody>
+    </table>
+  </section>
+
+  <!-- Panel C — "ROI vs hand-migration" -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">ROI vs hand-migration</h2>
+    <p class="text-xs text-slate-500 mb-3">All-time pipeline spend vs the human-hour cost it displaced. <em>SHIP IT</em> and <em>FIX FIRST</em> verdicts count as successful migrations; <em>START OVER</em> and <em>BLOCKED</em> do not.</p>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
+      <div>
+        <div class="text-xs text-slate-500">Pipeline spend</div>
+        <div id="roiPipelineCost" class="text-2xl font-semibold">$0.00</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Human hours saved</div>
+        <div id="roiHoursSaved" class="text-2xl font-semibold">0</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Human cost displaced</div>
+        <div id="roiHumanCost" class="text-2xl font-semibold">$0.00</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">ROI multiplier</div>
+        <div id="roiMultiplier" class="text-2xl font-semibold">—</div>
+      </div>
+    </div>
+    <div id="roiNote" class="text-xs text-slate-500 bg-slate-100 rounded p-3">
+      Assumptions: each hand-migrated test takes <span id="roiHoursPerTest">4</span> hours
+      at <span id="roiHourlyRate">$80</span>/hour. Configure via repo variable
+      <code>PWM_HUMAN_HOUR_COST_USD</code> (currently using <span id="roiRateSource">default</span>).
+    </div>
+  </section>
+
   <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
     <div class="bg-white rounded-lg shadow p-4">
       <h2 class="text-lg font-semibold mb-2">Per source framework</h2>
@@ -276,6 +350,115 @@
       scales: { y: { beginAtZero: true, title: { display: true, text: 'USD' } } },
     },
   });
+
+  // ---- Panel A — "Cost this week" ----------------------------------------
+  const wc = data.weeklyCost || { totalLast7DaysUsd: 0, totalPrev7DaysUsd: 0, deltaPct: null, byStage: [], sparkline: [], migrationsLast7Days: 0 };
+  document.getElementById('weekTotal').textContent = fmtUsd(wc.totalLast7DaysUsd);
+  const deltaEl = document.getElementById('weekDelta');
+  if (wc.deltaPct == null) {
+    deltaEl.textContent = 'vs previous 7 days: no prior spend';
+    deltaEl.className = 'text-xs text-slate-500';
+  } else {
+    const pctText = (wc.deltaPct * 100).toFixed(1) + '%';
+    const arrow = wc.deltaPct >= 0 ? '↑' : '↓';
+    deltaEl.textContent = 'vs previous 7 days: ' + arrow + ' ' + pctText + ' (' + fmtUsd(wc.totalPrev7DaysUsd) + ')';
+    deltaEl.className = wc.deltaPct >= 0 ? 'text-xs text-amber-700' : 'text-xs text-emerald-700';
+  }
+  document.getElementById('weekMigrations').textContent = wc.migrationsLast7Days + ' migrations this week';
+  const weekStageBody = document.getElementById('weekByStageTable');
+  if (wc.byStage.length === 0) {
+    weekStageBody.innerHTML = '<tr><td colspan="2" class="py-2 text-slate-500">No tracked spend in the last 7 days.</td></tr>';
+  } else {
+    weekStageBody.innerHTML = wc.byStage
+      .map((s) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + s.stage + '</td>' +
+        '<td class="py-1 text-right">' + fmtUsd(s.costUsd) + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
+  new Chart(document.getElementById('weekSparklineChart'), {
+    type: 'line',
+    data: {
+      labels: wc.sparkline.map((s) => s.date),
+      datasets: [{
+        label: 'USD/day',
+        data: wc.sparkline.map((s) => s.costUsd),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: { beginAtZero: true, ticks: { display: false }, grid: { display: false } },
+      },
+    },
+  });
+
+  // ---- Panel B — "Cost per outcome" --------------------------------------
+  const cpo = data.costPerOutcome || [];
+  const outcomeColors = {
+    'SHIP IT': '#10b981',
+    'FIX FIRST': '#f59e0b',
+    'START OVER': '#ef4444',
+    'BLOCKED-BY-VALIDATOR': '#64748b',
+  };
+  new Chart(document.getElementById('costPerOutcomeChart'), {
+    type: 'bar',
+    data: {
+      labels: cpo.map((r) => r.outcome),
+      datasets: [{
+        label: 'Avg cost / migration (USD)',
+        data: cpo.map((r) => r.avgCostUsd),
+        backgroundColor: cpo.map((r) => outcomeColors[r.outcome] || '#94a3b8'),
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'avg USD / migration' } } },
+    },
+  });
+  const cpoBody = document.getElementById('costPerOutcomeTable');
+  const cpoTotalCount = cpo.reduce((acc, r) => acc + r.migrationCount, 0);
+  if (cpoTotalCount === 0) {
+    cpoBody.innerHTML = '<tr><td colspan="4" class="py-2 text-slate-500">No tracked migrations with cost yet.</td></tr>';
+  } else {
+    cpoBody.innerHTML = cpo
+      .map((r) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + r.outcome + '</td>' +
+        '<td class="py-1 text-right">' + r.migrationCount + '</td>' +
+        '<td class="py-1 text-right">' + fmtUsd(r.totalCostUsd) + '</td>' +
+        '<td class="py-1 text-right">' + fmtUsd(r.avgCostUsd) + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
+
+  // ---- Panel C — "ROI vs hand-migration" ---------------------------------
+  const roi = data.roi || { pipelineCostUsd: 0, successfulMigrations: 0, humanHoursPerTest: 4, humanHourlyRateUsd: 80, humanHoursSaved: 0, humanCostUsd: 0, roiMultiplier: null, rateFromEnv: false };
+  document.getElementById('roiPipelineCost').textContent = fmtUsd(roi.pipelineCostUsd);
+  document.getElementById('roiHoursSaved').textContent = roi.humanHoursSaved.toLocaleString('en-US');
+  document.getElementById('roiHumanCost').textContent = fmtUsd(roi.humanCostUsd);
+  const multEl = document.getElementById('roiMultiplier');
+  if (roi.roiMultiplier == null) {
+    multEl.textContent = '—';
+    multEl.className = 'text-2xl font-semibold text-slate-400';
+  } else {
+    multEl.textContent = roi.roiMultiplier.toFixed(1) + '×';
+    multEl.className = roi.roiMultiplier >= 1 ? 'text-2xl font-semibold text-emerald-700' : 'text-2xl font-semibold text-amber-700';
+  }
+  document.getElementById('roiHoursPerTest').textContent = roi.humanHoursPerTest;
+  document.getElementById('roiHourlyRate').textContent = '$' + roi.humanHourlyRateUsd;
+  document.getElementById('roiRateSource').textContent = roi.rateFromEnv ? ('configured = $' + roi.humanHourlyRateUsd) : ('default = $' + roi.humanHourlyRateUsd);
 
   // ---- Per-run cost table.
   const perRun = data.costPerRun || [];

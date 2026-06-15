@@ -111,6 +111,70 @@ interface DailyBurnRow {
   trackedRunCount: number; // number of rows with cost_usd NOT NULL
 }
 
+/**
+ * Panel A — "Cost this week". Big number on top + per-stage breakdown for
+ * the last 7 UTC days, plus a 30-day daily sparkline. `deltaPct` is the
+ * percent change vs the previous 7-day window (negative = cheaper than
+ * last week). `null` when the previous window has zero spend (can't divide).
+ */
+interface WeeklyCostPanel {
+  /** Sum of cost_usd across last 7 calendar days (UTC), all stages. */
+  totalLast7DaysUsd: number;
+  /** Sum of cost_usd across the prior 7 calendar days (days [-13, -7] from today). */
+  totalPrev7DaysUsd: number;
+  /** (last - prev) / prev. null when prev is zero. */
+  deltaPct: number | null;
+  /** Per-stage breakdown of the last 7 days. */
+  byStage: Array<{ stage: "plan" | "migration" | "verification"; costUsd: number }>;
+  /** 30-day daily series (oldest → newest, gaps filled with 0) for the sparkline. */
+  sparkline: Array<{ date: string; costUsd: number }>;
+  /** Migrations completed in the last 7 days. Drives the human-hours saved math. */
+  migrationsLast7Days: number;
+}
+
+/**
+ * Panel B — "Cost per outcome". Average $ spent per migration grouped by
+ * verdict bucket. `BLOCKED-BY-VALIDATOR` is synthetic — input_basenames that
+ * incurred plan/migrate cost but never produced a verification row (Stage 2
+ * gates blocked them before Opus Verify could fire).
+ */
+interface CostPerOutcomeRow {
+  outcome: "SHIP IT" | "FIX FIRST" | "START OVER" | "BLOCKED-BY-VALIDATOR";
+  /** Number of distinct input_basenames bucketed here. */
+  migrationCount: number;
+  /** Total cost across all stages for these input_basenames. */
+  totalCostUsd: number;
+  /** totalCostUsd / migrationCount; 0 when migrationCount === 0. */
+  avgCostUsd: number;
+}
+
+/**
+ * Panel C — "ROI vs hand-migration". `humanHoursPerTest` × `humanHourlyRateUsd`
+ * × `successfulMigrations` is the displaced human cost. `successfulMigrations`
+ * counts SHIP IT + FIX FIRST verdicts — START OVER and BLOCKED don't count as
+ * value delivered. `humanHourlyRateUsd` overridable via repo var
+ * `PWM_HUMAN_HOUR_COST_USD`. `roiMultiplier` is humanCost / pipelineCost; null
+ * when pipelineCost is 0.
+ */
+interface RoiPanel {
+  /** All-time pipeline spend (tracked rows only). */
+  pipelineCostUsd: number;
+  /** SHIP IT + FIX FIRST verification count. */
+  successfulMigrations: number;
+  /** Configurable; default 4. */
+  humanHoursPerTest: number;
+  /** Configurable via PWM_HUMAN_HOUR_COST_USD env var; default 80. */
+  humanHourlyRateUsd: number;
+  /** Human-hours of work displaced — successfulMigrations × humanHoursPerTest. */
+  humanHoursSaved: number;
+  /** Dollar value of displaced human work. */
+  humanCostUsd: number;
+  /** humanCostUsd / pipelineCostUsd. null when pipelineCostUsd is 0. */
+  roiMultiplier: number | null;
+  /** True when PWM_HUMAN_HOUR_COST_USD was read from env (vs default). */
+  rateFromEnv: boolean;
+}
+
 /** Top-level cost rollup shown above the per-run table. */
 interface CostSummary {
   trackedRuns: number;
@@ -144,6 +208,12 @@ interface DashboardData {
   costPerRun: CostPerRunRow[];
   /** Daily aggregated cost for the last 30 calendar days (UTC). */
   dailyBurn: DailyBurnRow[];
+  /** Panel A — "Cost this week" (last 7 days + per-stage + 30-day sparkline). */
+  weeklyCost: WeeklyCostPanel;
+  /** Panel B — "Cost per outcome" (avg $ per migration by verdict bucket). */
+  costPerOutcome: CostPerOutcomeRow[];
+  /** Panel C — "ROI vs hand-migration". */
+  roi: RoiPanel;
 }
 
 function parseCliArgs(): CliArgs {
@@ -436,6 +506,237 @@ function buildDailyBurn(db: MetricsDB): DailyBurnRow[] {
     .reverse();
 }
 
+/**
+ * Default human-effort assumptions for ROI math. Both overridable —
+ * `PWM_HUMAN_HOUR_COST_USD` from env, hours-per-test defaults to 4
+ * (one bad-Playwright test rewritten cleanly: read → port locators →
+ * verify → debug Sonnet-equivalent quality). Operators tune to their
+ * actual baseline; the dashboard renders the assumption next to the
+ * number so the ROI is honest, not magical.
+ */
+const ROI_DEFAULT_HOURS_PER_TEST = 4;
+const ROI_DEFAULT_HOURLY_RATE_USD = 80;
+
+/** Read the human-hour cost from env. Falls back to the default when unset
+ *  or unparseable; the `rateFromEnv` flag in the returned panel lets the UI
+ *  show "default" vs "configured" instead of silently lying. */
+function readHumanHourlyRate(): { rate: number; fromEnv: boolean } {
+  const raw = process.env["PWM_HUMAN_HOUR_COST_USD"];
+  if (typeof raw !== "string" || raw.length === 0) {
+    return { rate: ROI_DEFAULT_HOURLY_RATE_USD, fromEnv: false };
+  }
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { rate: ROI_DEFAULT_HOURLY_RATE_USD, fromEnv: false };
+  }
+  return { rate: parsed, fromEnv: true };
+}
+
+const SECONDS_PER_DAY = 86_400;
+
+/**
+ * Panel A builder. Sums cost across the 3 stage tables within rolling 7-day
+ * windows. Uses Unix-second arithmetic against `created_at` (the DB stores
+ * seconds since epoch) — simpler than strftime + date math here.
+ *
+ * Stage breakdown is for the LAST 7 days only — operators want "what did
+ * this week cost", not all-time. The 30-day sparkline reuses the existing
+ * `dailyBurn` query but fills missing days with 0 so the bar chart doesn't
+ * skip days with no spend.
+ */
+function buildWeeklyCost(db: MetricsDB, dailyBurn: DailyBurnRow[]): WeeklyCostPanel {
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const day0 = nowUnix - 7 * SECONDS_PER_DAY;
+  const day7 = nowUnix - 14 * SECONDS_PER_DAY;
+
+  const last7 = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM (
+       SELECT created_at, cost_usd FROM migrations
+       UNION ALL SELECT created_at, cost_usd FROM plans
+       UNION ALL SELECT created_at, cost_usd FROM verifications
+     )
+     WHERE created_at >= ${day0}`,
+  )[0] ?? {};
+
+  const prev7 = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM (
+       SELECT created_at, cost_usd FROM migrations
+       UNION ALL SELECT created_at, cost_usd FROM plans
+       UNION ALL SELECT created_at, cost_usd FROM verifications
+     )
+     WHERE created_at >= ${day7} AND created_at < ${day0}`,
+  )[0] ?? {};
+
+  const planSum = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM plans WHERE created_at >= ${day0}`,
+  )[0] ?? {};
+  const migrationSum = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM migrations WHERE created_at >= ${day0}`,
+  )[0] ?? {};
+  const verificationSum = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM verifications WHERE created_at >= ${day0}`,
+  )[0] ?? {};
+
+  const migrationsCountRow = db.query(
+    `SELECT COUNT(*) AS count FROM migrations WHERE created_at >= ${day0}`,
+  )[0] ?? {};
+
+  const totalLast = num(last7, "total");
+  const totalPrev = num(prev7, "total");
+  const deltaPct = totalPrev > 0 ? (totalLast - totalPrev) / totalPrev : null;
+
+  // Sparkline — fill the last 30 calendar days with 0s where dailyBurn has
+  // no row so Chart.js draws a flat baseline instead of jumping between
+  // distant dates.
+  const burnMap = new Map<string, number>();
+  for (const b of dailyBurn) burnMap.set(b.date, b.costUsd);
+  const sparkline: Array<{ date: string; costUsd: number }> = [];
+  for (let i = 29; i >= 0; i--) {
+    const ts = nowUnix - i * SECONDS_PER_DAY;
+    const date = new Date(ts * 1000).toISOString().slice(0, 10);
+    sparkline.push({ date, costUsd: burnMap.get(date) ?? 0 });
+  }
+
+  return {
+    totalLast7DaysUsd: totalLast,
+    totalPrev7DaysUsd: totalPrev,
+    deltaPct,
+    byStage: [
+      { stage: "plan", costUsd: num(planSum, "total") },
+      { stage: "migration", costUsd: num(migrationSum, "total") },
+      { stage: "verification", costUsd: num(verificationSum, "total") },
+    ],
+    sparkline,
+    migrationsLast7Days: num(migrationsCountRow, "count"),
+  };
+}
+
+/**
+ * Panel B builder. For each input_basename, attribute the latest verdict
+ * (verifications table) and sum its total cost across plan + migrate +
+ * verify. Inputs that never reached verify get bucketed as
+ * `BLOCKED-BY-VALIDATOR` — they incurred plan/migrate spend but stage 2
+ * validators blocked them before Opus Verify ran.
+ *
+ * "Latest verdict" — we use MAX(created_at) per input_basename in case a
+ * verification was re-run. Earlier rows are not double-counted; the cost
+ * SUM is per-basename, the verdict is per-basename.
+ */
+function buildCostPerOutcome(db: MetricsDB): CostPerOutcomeRow[] {
+  // Sum cost per input_basename across all stages.
+  const costRows = db.query(
+    `SELECT input_basename,
+            COALESCE(SUM(cost_usd), 0) AS total
+     FROM (
+       SELECT input_basename, cost_usd FROM migrations
+       UNION ALL SELECT input_basename, cost_usd FROM plans
+       UNION ALL SELECT input_basename, cost_usd FROM verifications
+     )
+     WHERE cost_usd IS NOT NULL
+     GROUP BY input_basename`,
+  );
+  const costByBasename = new Map<string, number>();
+  for (const r of costRows) {
+    const basename = str(r, "input_basename");
+    if (!basename) continue;
+    costByBasename.set(basename, num(r, "total"));
+  }
+
+  // Latest verdict per input_basename. SQLite has no DISTINCT ON, so we
+  // pull all rows and reduce in JS — cheaper than a correlated subquery
+  // for the small N this dashboard reads.
+  const verdictRows = db.query(
+    `SELECT input_basename, verdict, created_at
+     FROM verifications
+     ORDER BY created_at DESC`,
+  );
+  const verdictByBasename = new Map<string, string>();
+  for (const r of verdictRows) {
+    const basename = str(r, "input_basename");
+    if (!basename || verdictByBasename.has(basename)) continue;
+    verdictByBasename.set(basename, str(r, "verdict"));
+  }
+
+  // Bucket-wise totals.
+  const buckets: Record<CostPerOutcomeRow["outcome"], { count: number; total: number }> = {
+    "SHIP IT": { count: 0, total: 0 },
+    "FIX FIRST": { count: 0, total: 0 },
+    "START OVER": { count: 0, total: 0 },
+    "BLOCKED-BY-VALIDATOR": { count: 0, total: 0 },
+  };
+
+  for (const [basename, costUsd] of costByBasename.entries()) {
+    const verdict = verdictByBasename.get(basename);
+    let bucket: CostPerOutcomeRow["outcome"];
+    if (verdict === "SHIP IT" || verdict === "FIX FIRST" || verdict === "START OVER") {
+      bucket = verdict;
+    } else {
+      bucket = "BLOCKED-BY-VALIDATOR";
+    }
+    buckets[bucket].count += 1;
+    buckets[bucket].total += costUsd;
+  }
+
+  const order: Array<CostPerOutcomeRow["outcome"]> = [
+    "SHIP IT",
+    "FIX FIRST",
+    "START OVER",
+    "BLOCKED-BY-VALIDATOR",
+  ];
+  return order.map((outcome) => {
+    const { count, total } = buckets[outcome];
+    return {
+      outcome,
+      migrationCount: count,
+      totalCostUsd: total,
+      avgCostUsd: count === 0 ? 0 : total / count,
+    };
+  });
+}
+
+/**
+ * Panel C builder. ROI = (humanHoursSaved × humanHourlyRate) / pipelineCost.
+ *
+ * `successfulMigrations` counts verifications with SHIP IT or FIX FIRST —
+ * START OVER means re-roll, no value delivered. Distinct input_basenames so
+ * a re-verified test isn't double-counted.
+ */
+function buildRoi(db: MetricsDB): RoiPanel {
+  const { rate, fromEnv } = readHumanHourlyRate();
+  const hoursPerTest = ROI_DEFAULT_HOURS_PER_TEST;
+
+  const pipelineCostRow = db.query(
+    `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM (
+       SELECT cost_usd FROM migrations
+       UNION ALL SELECT cost_usd FROM plans
+       UNION ALL SELECT cost_usd FROM verifications
+     )`,
+  )[0] ?? {};
+  const pipelineCostUsd = num(pipelineCostRow, "total");
+
+  const successRow = db.query(
+    `SELECT COUNT(DISTINCT input_basename) AS count
+     FROM verifications
+     WHERE verdict IN ('SHIP IT', 'FIX FIRST')`,
+  )[0] ?? {};
+  const successfulMigrations = num(successRow, "count");
+
+  const humanHoursSaved = successfulMigrations * hoursPerTest;
+  const humanCostUsd = humanHoursSaved * rate;
+  const roiMultiplier = pipelineCostUsd > 0 ? humanCostUsd / pipelineCostUsd : null;
+
+  return {
+    pipelineCostUsd,
+    successfulMigrations,
+    humanHoursPerTest: hoursPerTest,
+    humanHourlyRateUsd: rate,
+    humanHoursSaved,
+    humanCostUsd,
+    roiMultiplier,
+    rateFromEnv: fromEnv,
+  };
+}
+
 function buildData(db: MetricsDB): DashboardData {
   const summaryRow = db.query(
     `SELECT
@@ -499,6 +800,10 @@ function buildData(db: MetricsDB): DashboardData {
     }))
     .reverse();
 
+  // Computed once and reused — `weeklyCost` fills its 30-day sparkline from
+  // the same series the standalone "Daily burn rate" panel uses.
+  const dailyBurnRows = buildDailyBurn(db);
+
   return {
     generatedAtUnix: Math.floor(Date.now() / 1000),
     summary: {
@@ -522,7 +827,10 @@ function buildData(db: MetricsDB): DashboardData {
     frameworkQuality: buildFrameworkQuality(db),
     costSummary: buildCostSummary(db),
     costPerRun: buildCostPerRun(db),
-    dailyBurn: buildDailyBurn(db),
+    dailyBurn: dailyBurnRows,
+    weeklyCost: buildWeeklyCost(db, dailyBurnRows),
+    costPerOutcome: buildCostPerOutcome(db),
+    roi: buildRoi(db),
   };
 }
 

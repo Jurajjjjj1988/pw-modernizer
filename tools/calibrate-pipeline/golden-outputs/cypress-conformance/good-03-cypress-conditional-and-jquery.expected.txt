@@ -1,0 +1,7 @@
+# Exit 0. The good conditional-and-jquery fixture pre-seeds the cookies_accepted cookie via the
+# `acceptCookies` auto-fixture (no conditional banner-dismiss), asserts dark-mode via web-first
+# `toHaveAttribute('data-theme', 'dark')` (no jQuery escape), asserts saved profile via a
+# user-visible welcome heading (no Redux store probe), and uses every spec-side rule per qa-master.
+# The validator MUST accept it as clean.
+validate-qa-master-conformance:
+checked — clean.

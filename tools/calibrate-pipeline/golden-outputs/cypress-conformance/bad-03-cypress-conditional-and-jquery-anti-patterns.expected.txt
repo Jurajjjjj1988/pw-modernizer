@@ -1,0 +1,12 @@
+# Exit 1. The bad conditional-and-jquery fixture seeds 4 anti-patterns the validator must reject.
+# Three block-severity rule IDs to anchor on: import-source (spec imports from @playwright/test),
+# page-goto-in-spec (spec drives navigation instead of PageClassSettings.open()), no-hard-waits
+# (page.waitForTimeout carried over from the cypress `cy.wait(1500)`). The fourth violation
+# (W5 locator-priority on the raw `.theme-preview` CSS class) is warn-severity — it shows up under
+# default mode but we do NOT pin on it because the locator-priority detector is heuristic.
+# Summary line carries 5 total / 3 block / 2 warn (the naming-no-prefix on regionThemePreview is
+# the additional warn that appears once the locator is single-line enough for the prefix check).
+qa-master/architecture/import-source
+qa-master/architecture/page-goto-in-spec
+qa-master/runtime/no-hard-waits
+validate-qa-master-conformance: 5 violation(s) (3 block / 2 warn)

@@ -1,0 +1,9 @@
+# Exit 1. The bad fixture seeds four anti-patterns the qa-master conformance validator must reject.
+# We anchor on the three block-severity rule IDs (KB qa-master/architecture/import-source,
+# qa-master/architecture/page-goto-in-spec, qa-master/runtime/no-hard-waits) and the violation-count
+# summary line. The fourth violation (W5 locator-priority) is warn-severity — it appears under
+# --strict but not in default mode, so we do NOT pin on it (the runner invokes default mode).
+qa-master/architecture/import-source
+qa-master/architecture/page-goto-in-spec
+qa-master/runtime/no-hard-waits
+validate-qa-master-conformance: 3 violation(s) (3 block / 0 warn)

@@ -7,6 +7,29 @@
 # Validation cascade: tsc -> eslint --fix -> playwright parse -> AST-diff
 # non-trivial -> evaluate.ts (emits aggregate confidence). If confidence < 0.7,
 # verify.yml is triggered for an Opus second-opinion check.
+#
+# ── Batch multi-input dispatch (ROADMAP item H) ────────────────────────────
+# `workflow_dispatch` accepts EITHER `input_path` (single) OR `input_paths`
+# (JSON array of N paths). The pipeline expands `input_paths` into a parallel
+# matrix — one leg per input. Use the batch form when you want to:
+#   • re-roll Stage 2 for a small set of related inputs in one dispatch
+#     (e.g. all Selenium-Java inputs after a generate.md prompt edit), or
+#   • backfill several abandoned plan PRs without N separate dispatches.
+# When BOTH inputs are provided, `input_paths` wins (single-form is a
+# convenience alias for the 1-element array case).
+#
+# Per-input budget guard: each matrix leg checks its own Claude cost AFTER
+# the generate step + capture-usage runs. If the leg's cost > per_input_budget_usd
+# the guard emits a `::warning::` and `exit 0` — the leg short-circuits all
+# downstream validation, evaluate, PR open, and verify-dispatch steps but
+# does NOT fail the leg or the workflow. Rationale: a single runaway
+# migration should NOT drain budget meant for the rest of the batch, nor
+# should it block the surviving legs from producing useful output.
+#
+# fail-fast=false: a failing migration in one leg does NOT cancel its
+# siblings. Stage 2 confidence is per-input; one bad input shouldn't void
+# the others' validator-wall verdicts.
+# ───────────────────────────────────────────────────────────────────────────
 
 name: Stage 2 — Generate Playwright code
 
@@ -19,15 +42,28 @@ on:
   workflow_dispatch:
     inputs:
       input_path:
-        description: 'Path to input file or directory (repo-relative)'
-        required: true
-        type: string
-      plan_path:
-        description: 'Path to the approved plan markdown (defaults to outputs/plans/<basename>.md)'
+        description: 'Path to ONE input file or directory (repo-relative). Use input_paths for batch.'
         required: false
         type: string
+      input_paths:
+        description: 'JSON array of input paths for batch dispatch, e.g. ["inputs/cypress/foo.cy.js","inputs/selenium-java/Bar.java"]. Wins over input_path when both are set.'
+        required: false
+        type: string
+      plan_path:
+        description: 'Path to the approved plan markdown (single-input form only; defaults to outputs/plans/<basename>.md). Ignored for batch — each leg derives its own.'
+        required: false
+        type: string
+      per_input_budget_usd:
+        description: 'Per-input Claude budget cap in USD (default 1.50). Matrix leg exits early with ::warning:: when its cost exceeds this. Total batch budget = N × per_input_budget_usd.'
+        required: false
+        type: string
+        default: '1.50'
 
 concurrency:
+  # Group key still keyed by PR number for the pull_request trigger; for
+  # workflow_dispatch it collapses to `pwm-migrate-` (empty PR number) and
+  # serialises concurrent dispatches — that's the existing behaviour and
+  # batch mode preserves it (one workflow run owns all matrix legs).
   group: pwm-migrate-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
@@ -35,50 +71,113 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write
+  # createWorkflowDispatch for verify.yml (was on the trigger-verify job,
+  # now folded into a final matrix step) requires actions: write.
+  actions: write
 
 jobs:
-  guard:
+  expand-inputs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
        contains(github.event.pull_request.labels.*.name, 'migrator:plan'))
     outputs:
-      plan_path: ${{ steps.parse.outputs.plan_path }}
-      input_path: ${{ steps.parse.outputs.input_path }}
-      input_basename: ${{ steps.parse.outputs.input_basename }}
+      inputs_json: ${{ steps.expand.outputs.inputs_json }}
+      has_inputs: ${{ steps.expand.outputs.has_inputs }}
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
           ref: main
 
-      - id: parse
+      - id: expand
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          IN_SINGLE: ${{ inputs.input_path }}
+          IN_BATCH: ${{ inputs.input_paths }}
         shell: bash
         run: |
           set -euo pipefail
+          # Resolve the dispatch into a JSON array of input paths.
+          # Precedence: input_paths > input_path > PR body (pull_request trigger).
+          # The matrix below expands across the array; the 1-element case
+          # collapses to the legacy single-input behaviour, preserving
+          # backward compat for every existing caller of this workflow.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            INPUT="${{ inputs.input_path }}"
-            PLAN="${{ inputs.plan_path }}"
-            if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
-              echo "::error::workflow_dispatch input_path '$INPUT' not found"
+            if [ -n "${IN_BATCH:-}" ]; then
+              # Batch form — validate JSON shape + non-empty array.
+              if ! echo "$IN_BATCH" | jq -e 'type == "array" and length > 0' > /dev/null 2>&1; then
+                echo "::error::input_paths is not a non-empty JSON array. Got: $IN_BATCH"
+                exit 1
+              fi
+              JSON="$IN_BATCH"
+            elif [ -n "${IN_SINGLE:-}" ]; then
+              JSON=$(jq -nc --arg p "$IN_SINGLE" '[$p]')
+            else
+              echo "::error::Either input_path or input_paths must be provided."
               exit 1
-            fi
-            BASE=$(basename "$INPUT")
-            if [ -z "$PLAN" ]; then
-              PLAN="outputs/plans/$BASE.md"
             fi
           else
+            # pull_request closed trigger — extract from plan PR body.
             BODY=$(gh pr view "$PR_NUMBER" --json body --jq .body)
             INPUT=$(printf '%s\n' "$BODY" | grep -E '^\*\*Input:\*\*' | sed -E 's/.*`([^`]+)`.*/\1/' | head -n1)
-            # INPUT may be a file or a directory (multi-file unit).
-            if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
-              echo "::error::Could not extract input path from plan PR body, or path missing on main"
+            if [ -z "$INPUT" ]; then
+              echo "::error::Could not extract input path from plan PR body."
               exit 1
             fi
-            BASE=$(basename "$INPUT")
+            JSON=$(jq -nc --arg p "$INPUT" '[$p]')
+          fi
+          # Existence check for every resolved path.
+          while IFS= read -r p; do
+            if [ ! -e "$p" ]; then
+              echo "::error::input '$p' not found on main"
+              exit 1
+            fi
+          done < <(echo "$JSON" | jq -r '.[]')
+          # Single-line compact JSON for matrix expansion.
+          COMPACT=$(echo "$JSON" | jq -c '.')
+          echo "inputs_json=$COMPACT" >> "$GITHUB_OUTPUT"
+          echo "has_inputs=true" >> "$GITHUB_OUTPUT"
+          echo "Resolved $(echo "$COMPACT" | jq 'length') input(s) for Stage 2: $COMPACT"
+
+  generate:
+    needs: expand-inputs
+    if: needs.expand-inputs.outputs.has_inputs == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # ROADMAP item H — fail-fast=false: one bad migration leg must NOT
+      # cancel its siblings. See top-of-file comment for the full rationale.
+      fail-fast: false
+      matrix:
+        input_path: ${{ fromJSON(needs.expand-inputs.outputs.inputs_json) }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          ref: main
+          fetch-depth: 0
+          # peter-evans/create-pull-request below opens the code PR; same
+          # "Duplicate Authorization header" 400 fix as plan.yml.
+          persist-credentials: false
+
+      - name: Guard — parse this leg's input + plan paths
+        id: guard
+        env:
+          INPUT: ${{ matrix.input_path }}
+          PLAN_OVERRIDE: ${{ inputs.plan_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Per-leg version of the old `guard` job. `matrix.input_path` is
+          # already validated (existence + extraction) by expand-inputs; we
+          # just resolve the plan path. plan_path override only applies to
+          # the single-input dispatch form — batch dispatches derive each
+          # leg's plan from its basename.
+          BATCH_COUNT=$(echo '${{ needs.expand-inputs.outputs.inputs_json }}' | jq 'length')
+          BASE=$(basename "$INPUT")
+          if [ "$BATCH_COUNT" = "1" ] && [ -n "${PLAN_OVERRIDE:-}" ]; then
+            PLAN="$PLAN_OVERRIDE"
+          else
             PLAN="outputs/plans/$BASE.md"
           fi
           if [ ! -f "$PLAN" ]; then
@@ -88,20 +187,6 @@ jobs:
           echo "input_path=$INPUT" >> "$GITHUB_OUTPUT"
           echo "input_basename=$BASE" >> "$GITHUB_OUTPUT"
           echo "plan_path=$PLAN" >> "$GITHUB_OUTPUT"
-
-  generate:
-    needs: guard
-    runs-on: ubuntu-latest
-    outputs:
-      confidence: ${{ steps.evaluate.outputs.confidence }}
-    steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-        with:
-          ref: main
-          fetch-depth: 0
-          # peter-evans/create-pull-request below opens the code PR; same
-          # "Duplicate Authorization header" 400 fix as plan.yml.
-          persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -123,8 +208,8 @@ jobs:
           # tells Stage 2 which scenarios MUST appear, which POMs/fixtures
           # MUST be produced, and whether the migration is subtractive.
           # If the envelope is invalid we waste $0 of tokens — bail now.
-          BASE="${{ needs.guard.outputs.input_basename }}"
-          PLAN="${{ needs.guard.outputs.plan_path }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
+          PLAN="${{ steps.guard.outputs.plan_path }}"
           ENV="outputs/plans/${BASE}.envelope.json"
           # Safety net (commits a3a6cc5 + 1d775c3 + 31a2bfa) — derive from
           # markdown when the envelope sidecar is missing. Keeps Stage 2
@@ -183,9 +268,9 @@ jobs:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
           # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).
           RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          INPUT_PATH: ${{ needs.guard.outputs.input_path }}
-          PLAN_PATH: ${{ needs.guard.outputs.plan_path }}
-          INPUT_BASENAME: ${{ needs.guard.outputs.input_basename }}
+          INPUT_PATH: ${{ steps.guard.outputs.input_path }}
+          PLAN_PATH: ${{ steps.guard.outputs.plan_path }}
+          INPUT_BASENAME: ${{ steps.guard.outputs.input_basename }}
           INVENTORY_PATH: ${{ steps.inventory.outputs.inventory_path }}
         run: |
           set -euo pipefail
@@ -398,11 +483,12 @@ jobs:
           # the documented stable pattern for capturing stream-json.
 
       - name: Capture Claude usage stats (cost tracking)
+        id: capture_usage
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           if [ ! -s /tmp/claude-migrate-events.ndjson ]; then
             echo "::warning::No claude events captured — skipping usage extract"
             exit 0
@@ -418,7 +504,65 @@ jobs:
             --out "outputs/.usage/${BASE}-migration.json" \
             --tolerant
 
+      - name: Per-input budget guard (ROADMAP item H)
+        id: budget_guard
+        shell: bash
+        env:
+          # `inputs.per_input_budget_usd` is empty for the pull_request
+          # trigger (not a workflow_dispatch); fall back to the same default
+          # the dispatch declares so the guard is consistent across triggers.
+          PER_INPUT_BUDGET_USD: ${{ inputs.per_input_budget_usd || '1.50' }}
+        run: |
+          set -euo pipefail
+          # ──────────────────────────────────────────────────────────────
+          # Reads the usage JSON written by the previous step (the same
+          # file Stage 2's evaluate.ts later consumes — NOT a separate
+          # tracker) and computes USD cost via scripts/metrics.ts' price
+          # table. If the leg's cost exceeds per_input_budget_usd we
+          # emit a ::warning::, write `over_budget=true` to step output,
+          # and `exit 0`. The fail-fast=false matrix + downstream
+          # `if: steps.budget_guard.outputs.over_budget != 'true'` gates
+          # short-circuit the rest of the leg WITHOUT failing the job.
+          # Sibling legs continue running on their own budgets.
+          # Per-input means each leg has its own cap; total batch
+          # budget = N × PER_INPUT_BUDGET_USD.
+          # ──────────────────────────────────────────────────────────────
+          BASE="${{ steps.guard.outputs.input_basename }}"
+          USAGE_FILE="outputs/.usage/${BASE}-migration.json"
+          echo "over_budget=false" >> "$GITHUB_OUTPUT"
+          if [ ! -f "$USAGE_FILE" ]; then
+            echo "::warning::No usage file at $USAGE_FILE — budget guard cannot evaluate; allowing leg to proceed."
+            exit 0
+          fi
+          # Inline budget evaluator. Imports computeCostUsd from scripts/metrics.ts
+          # so the price table stays single-sourced — if Anthropic re-prices
+          # Sonnet, only metrics.ts changes.
+          COST_JSON=$(npx tsx --eval "
+            import { readFileSync } from 'node:fs';
+            import { computeCostUsd } from './scripts/metrics.ts';
+            const usage = JSON.parse(readFileSync('${USAGE_FILE}', 'utf8'));
+            const cost = computeCostUsd(usage);
+            process.stdout.write(JSON.stringify({ cost, model: usage.model }));
+          ")
+          COST=$(echo "$COST_JSON" | jq -r '.cost // empty')
+          MODEL=$(echo "$COST_JSON" | jq -r '.model // "unknown"')
+          if [ -z "$COST" ] || [ "$COST" = "null" ]; then
+            echo "::warning::Could not compute USD cost for model '$MODEL' (no pricing entry). Budget guard allows leg to proceed."
+            exit 0
+          fi
+          CAP="$PER_INPUT_BUDGET_USD"
+          # bc handles fractional comparison; awk fallback would also work.
+          OVER=$(awk -v c="$COST" -v cap="$CAP" 'BEGIN { print (c > cap) ? "1" : "0" }')
+          printf 'Leg %s: cost=$%.4f USD (model=%s); cap=$%s USD\n' "$BASE" "$COST" "$MODEL" "$CAP"
+          if [ "$OVER" = "1" ]; then
+            echo "::warning::Per-input budget guard tripped for $BASE: cost \$$COST > cap \$$CAP. Short-circuiting downstream steps for this leg (no failure cascade). Sibling legs continue."
+            echo "over_budget=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Per-input budget guard OK for $BASE (cost \$$COST ≤ cap \$$CAP)."
+          fi
+
       - name: Materialize LOW-confidence pins from DOM-probe
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -435,7 +579,7 @@ jobs:
           # exists-check and exits 0). It's safe to run on every migration
           # because the script is idempotent — already-materialised lines
           # are skipped.
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}-dom-probe.json"
           if [ ! -f "$REPORT" ]; then
             echo "No DOM-probe report at $REPORT — LOW-pin materialization skipped (no-op)."
@@ -453,6 +597,7 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Validate generated code (lint+test+parse)
         id: validate
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set +e
@@ -518,13 +663,13 @@ jobs:
           exit 0
 
       - name: Run Claude (fix lint errors)
-        if: steps.validate.outputs.status != '0'
+        if: steps.budget_guard.outputs.over_budget != 'true' && steps.validate.outputs.status != '0'
         env:
           # Same token-prefix routing as the generate step — keep consistent.
           RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          INPUT_PATH: ${{ needs.guard.outputs.input_path }}
-          PLAN_PATH: ${{ needs.guard.outputs.plan_path }}
-          INPUT_BASENAME: ${{ needs.guard.outputs.input_basename }}
+          INPUT_PATH: ${{ steps.guard.outputs.input_path }}
+          PLAN_PATH: ${{ steps.guard.outputs.plan_path }}
+          INPUT_BASENAME: ${{ steps.guard.outputs.input_basename }}
           INVENTORY_PATH: ${{ steps.inventory.outputs.inventory_path }}
         run: |
           set -euo pipefail
@@ -600,7 +745,7 @@ jobs:
             "$PROMPT"
 
       - name: Re-validate after fix retry
-        if: steps.validate.outputs.status != '0'
+        if: steps.budget_guard.outputs.over_budget != 'true' && steps.validate.outputs.status != '0'
         shell: bash
         run: |
           set -euo pipefail
@@ -630,6 +775,7 @@ jobs:
           echo "Validation clean after retry."
 
       - name: AST-diff-not-trivial check
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -638,10 +784,11 @@ jobs:
           # Sonnet may pick a different stem (e.g., EmployeesTest.java →
           # employees.spec.ts) so directory mode is the robust choice.
           npx tsx scripts/ast-diff-trivial-check.ts \
-            --input "${{ needs.guard.outputs.input_path }}" \
+            --input "${{ steps.guard.outputs.input_path }}" \
             --output "outputs/tests"
 
       - name: Plan-vs-code coverage check (LPW contract closure — unified envelope --code mode)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -651,7 +798,7 @@ jobs:
           # gate via plan-envelope-validate.ts --code: schema + scenario pin
           # coverage + requiredPOMs/Fixtures existence + subtractive import
           # discipline, all in one strict call.
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           ENV="outputs/plans/${BASE}.envelope.json"
           OUT_DIR="outputs/tests"
           # Primary gate: unified --code mode (the new --code mode per ROADMAP).
@@ -669,6 +816,7 @@ jobs:
             --output "outputs/tests"
 
       - name: qa-master architecture conformance (v0.2.0 default)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -684,12 +832,13 @@ jobs:
           # Scoped to THIS input — outputs/tests/ accumulates legacy v0.1.x
           # specs from prior runs and the validator would reject those even
           # though they're not this run's responsibility.
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           npx tsx scripts/validate-qa-master-conformance.ts \
             --root outputs \
             --input-basename "$BASE"
 
       - name: Auto-correct report Output line (Bullet 12 pre-flight)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -701,7 +850,7 @@ jobs:
           # The validator still hard-fails the residual cases (LOC mismatch,
           # wholesale paragraph copy-paste) — this pre-flight only fixes the
           # filename + LOC numbers, which are mechanical and unambiguous.
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}.md"
           if [ ! -f "$REPORT" ]; then
             echo "No report at $REPORT yet (evaluate.ts will write it later) — skip."
@@ -729,6 +878,7 @@ jobs:
           echo "Pre-flight: report Output line set to outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)"
 
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -740,9 +890,9 @@ jobs:
           # The pre-flight step above auto-corrects the filename + LOC; this
           # validator still catches deeper inconsistencies (selector counts,
           # web-first rate arithmetic, paragraph copy-paste).
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}.md"
-          INPUT="${{ needs.guard.outputs.input_path }}"
+          INPUT="${{ steps.guard.outputs.input_path }}"
           if [ ! -f "$REPORT" ]; then
             echo "::warning::No report at $REPORT — skipping (evaluate.ts will write it)"
             exit 0
@@ -752,6 +902,7 @@ jobs:
             --input "$INPUT"
 
       - name: Output secret scan (mirror Stage 0)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -789,6 +940,7 @@ jobs:
 
       - name: DOM-ground locators against MIGRATION_TARGET_URL (opt-in, no-op if unset)
         id: dom_ground
+        if: steps.budget_guard.outputs.over_budget != 'true'
         env:
           MIGRATION_TARGET_URL: ${{ secrets.MIGRATION_TARGET_URL }}
           DOM_GROUND_STRICT: ${{ vars.DOM_GROUND_STRICT || '' }}
@@ -802,7 +954,7 @@ jobs:
           fi
           # Install Playwright browser binary (needed only when grounding is on).
           npx playwright install --with-deps chromium
-          BASE="${{ needs.guard.outputs.input_basename }}"
+          BASE="${{ steps.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}-dom-probe.json"
           DG_EXIT=0
           for f in $(find "outputs/tests/${BASE}" -type f -name '*.spec.ts'); do
@@ -840,37 +992,39 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: stage2-failed-output-${{ needs.guard.outputs.input_basename }}
+          name: stage2-failed-output-${{ steps.guard.outputs.input_basename }}
           path: |
             outputs/.lint-errors.md
             outputs/tests/**/*.ts
             outputs/helper/**/*.ts
-            outputs/reports/${{ needs.guard.outputs.input_basename }}.md
+            outputs/reports/${{ steps.guard.outputs.input_basename }}.md
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Evaluate migration (metrics + confidence)
         id: evaluate
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
           # Sonnet may rename input basename on cross-language (Java→TS).
           # Locate the actual generated spec inside outputs/tests/.
           OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' | head -1)
-          USAGE_FILE="outputs/.usage/${{ needs.guard.outputs.input_basename }}-migration.json"
+          USAGE_FILE="outputs/.usage/${{ steps.guard.outputs.input_basename }}-migration.json"
           USAGE_ARG=""
           [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"
           # shellcheck disable=SC2086 # USAGE_ARG intentionally word-split
           CONFIDENCE=$(npx tsx scripts/evaluate.ts \
-            --input "${{ needs.guard.outputs.input_path }}" \
-            --plan "${{ needs.guard.outputs.plan_path }}" \
+            --input "${{ steps.guard.outputs.input_path }}" \
+            --plan "${{ steps.guard.outputs.plan_path }}" \
             --output "$OUT_SPEC" \
-            --report-out "outputs/reports/${{ needs.guard.outputs.input_basename }}.md" \
+            --report-out "outputs/reports/${{ steps.guard.outputs.input_basename }}.md" \
             $USAGE_ARG)
           echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
           echo "Migration confidence: $CONFIDENCE"
 
       - name: Track output variability (Sonnet determinism signal)
+        if: steps.budget_guard.outputs.over_budget != 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -882,15 +1036,16 @@ jobs:
           # (model-side noise dominates — needs calibration). continue-on-error
           # because variability tracking is diagnostic, not a gate.
           npx tsx scripts/track-output-variability.ts \
-            --input "${{ needs.guard.outputs.input_path }}" \
-            --plan "${{ needs.guard.outputs.plan_path }}" \
-            --basename "${{ needs.guard.outputs.input_basename }}" \
+            --input "${{ steps.guard.outputs.input_path }}" \
+            --plan "${{ steps.guard.outputs.plan_path }}" \
+            --basename "${{ steps.guard.outputs.input_basename }}" \
             --run-id "${{ github.run_id }}" \
             --confidence "${{ steps.evaluate.outputs.confidence }}" \
             --attempt "1"
 
       - name: Determine confidence label
         id: clabel
+        if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -902,21 +1057,22 @@ jobs:
           fi
 
       - name: Open code PR
+        if: steps.budget_guard.outputs.over_budget != 'true'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
         with:
-          branch: migrator/code-${{ needs.guard.outputs.input_basename }}
+          branch: migrator/code-${{ steps.guard.outputs.input_basename }}
           base: main
-          commit-message: 'feat(migration): generated code for ${{ needs.guard.outputs.input_path }}'
-          title: '[Migration code] ${{ needs.guard.outputs.input_path }}'
+          commit-message: 'feat(migration): generated code for ${{ steps.guard.outputs.input_path }}'
+          title: '[Migration code] ${{ steps.guard.outputs.input_path }}'
           labels: |
             migrator:code
             ${{ steps.clabel.outputs.label }}
           body: |
             ## Stage 2 — Generated migration
 
-            **Input:** `${{ needs.guard.outputs.input_path }}`
-            **Plan:** `${{ needs.guard.outputs.plan_path }}`${{ github.event_name == 'pull_request' && format(' (merged in #{0})', github.event.pull_request.number) || ' (workflow_dispatch trigger)' }}
-            **Migration report:** `outputs/reports/${{ needs.guard.outputs.input_basename }}.md`
+            **Input:** `${{ steps.guard.outputs.input_path }}`
+            **Plan:** `${{ steps.guard.outputs.plan_path }}`${{ github.event_name == 'pull_request' && format(' (merged in #{0})', github.event.pull_request.number) || ' (workflow_dispatch trigger)' }}
+            **Migration report:** `outputs/reports/${{ steps.guard.outputs.input_basename }}.md`
             **Aggregate confidence:** ${{ steps.evaluate.outputs.confidence }}
             **Triggered by:** `${{ github.event_name }}`
 
@@ -941,19 +1097,18 @@ jobs:
             - Generated tests pass static gates but may flake. Run
               `npx playwright test` against staging before merging.
 
-  trigger-verify:
-    needs: [guard, generate]
-    if: needs.generate.outputs.confidence < '0.7'
-    runs-on: ubuntu-latest
-    permissions:
-      # createWorkflowDispatch requires actions: write — not granted by the
-      # top-level permissions block which is sized for the generate job.
-      actions: write
-      contents: read
-    steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - name: Trigger verify.yml on low confidence (per-leg)
+        if: steps.budget_guard.outputs.over_budget != 'true' && steps.evaluate.outputs.confidence < '0.7'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
+            // Folded into the matrix job (was the standalone `trigger-verify`
+            // job pre-batch). Each leg dispatches its own verify run when its
+            // confidence < 0.7. Pre-batch behaviour: 1 trigger per dispatch;
+            // batch behaviour: up to N triggers per dispatch (one per leg
+            // that fell below the threshold). Sibling legs that passed do
+            // not dispatch verify.
+            //
             // Pass the Stage 2 code branch as pr_branch so verify can read the
             // generated spec + helpers BEFORE they merge to main. Without this,
             // verify checks out main and both subagents return START OVER ("no
@@ -961,7 +1116,7 @@ jobs:
             // since Stage 2 just emitted those files on the PR branch.
             // The branch name is deterministic: peter-evans/create-pull-request
             // builds it as `migrator/code-${INPUT_BASENAME}`.
-            const inputBasename = '${{ needs.guard.outputs.input_basename }}';
+            const inputBasename = '${{ steps.guard.outputs.input_basename }}';
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -969,7 +1124,7 @@ jobs:
               ref: 'main',
               inputs: {
                 input_basename: inputBasename,
-                generate_confidence: '${{ needs.generate.outputs.confidence }}',
+                generate_confidence: '${{ steps.evaluate.outputs.confidence }}',
                 pr_branch: `migrator/code-${inputBasename}`,
               },
             });

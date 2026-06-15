@@ -42,7 +42,8 @@
     "dom:snapshot": "tsx scripts/dom-snapshot.ts",
     "changelog": "tsx scripts/generate-changelog.ts",
     "changelog:write": "tsx scripts/generate-changelog.ts --write",
-    "baseline:selenium-java": "tsx scripts/baseline-compare-selenium-java.ts"
+    "baseline:selenium-java": "tsx scripts/baseline-compare-selenium-java.ts",
+    "validate:plan-dom-grounding": "tsx scripts/validate-plan-dom-grounding.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

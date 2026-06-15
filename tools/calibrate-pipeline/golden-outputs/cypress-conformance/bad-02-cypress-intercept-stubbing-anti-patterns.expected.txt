@@ -1,0 +1,8 @@
+# Exit 1. The bad intercept-stubbing fixture seeds 5 anti-patterns: import from @playwright/test,
+# page.goto in spec, raw `.cart-row` CSS-class locator (warn), page.route() inline in the spec (warn),
+# and a page.waitForTimeout hard-wait. Block rules to anchor on (the 3 errors): import-source,
+# page-goto-in-spec, no-hard-waits. The validator must emit the summary line with 5 total / 3 block.
+qa-master/architecture/import-source
+qa-master/architecture/page-goto-in-spec
+qa-master/runtime/no-hard-waits
+validate-qa-master-conformance: 5 violation(s) (3 block / 2 warn)

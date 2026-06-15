@@ -1,0 +1,10 @@
+# Exit 1. The bad selenium-python login fixture seeds 4 anti-patterns the validator must reject.
+# Three of them are block-severity rule IDs we pin on: import-source (spec imports from
+# @playwright/test), page-goto-in-spec (spec drives navigation instead of PageClassLogin.open()),
+# no-hard-waits (page.waitForTimeout(2000) carried over from the selenium time.sleep(2)). The
+# fourth (W5 locator-priority on .kpi-card) is warn-severity in default mode — we do NOT pin on
+# it because the runner invokes the validator in default (non-strict) mode.
+qa-master/architecture/import-source
+qa-master/architecture/page-goto-in-spec
+qa-master/runtime/no-hard-waits
+validate-qa-master-conformance: 3 violation(s) (3 block / 0 warn)

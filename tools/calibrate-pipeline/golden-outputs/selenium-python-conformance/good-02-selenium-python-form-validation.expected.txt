@@ -1,0 +1,7 @@
+# Exit 0. The good form-validation fixture models the invite-user modal as a single dialog
+# locator chained off getByRole('dialog'), uses the visible button name 'Send invite' instead of
+# positional indexing, relies on web-first auto-waiting assertions instead of time.sleep, and
+# obeys every import-source + page-goto + locator-priority rule. The validator MUST accept it as
+# clean.
+validate-qa-master-conformance:
+checked — clean.

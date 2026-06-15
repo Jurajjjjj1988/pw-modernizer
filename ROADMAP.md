@@ -1,5 +1,40 @@
 # PWmodernizer Roadmap
 
+## v0.3 — current (shipped 2026-06-15)
+
+> 17 PRs landed across one push to close out the v0.5 + v1.0 backlog and stand up the conformance-validator calibration corpus. Grouped by theme:
+
+### Pipeline robustness
+
+- ✅ PR #87 — `/verify` slash command on code PRs (manual single-PR re-verify without a workflow_dispatch trip)
+- ✅ PR #89 — plan-PR dedup now skips only OPEN or MERGED PRs, not CLOSED-UNMERGED (re-roll after a rejection no longer silently no-ops)
+- ✅ PR #91 — Stage 0 input pre-flight: size / encoding / sanity gates reject empty / massive / binary inputs BEFORE Claude burns tokens
+- ✅ PR #92 — Selenium-Java output-vs-golden quality signal: every Selenium-Java migration now writes `outputs/reports/baseline-selenium-java.md` so quality drift is observable run-over-run
+
+### Calibration corpus
+
+- ✅ PR #90 — first `cypress-conformance` fixture pair (good + bad anti-patterns; runner wired so `npm run calibrate` exercises qa-master conformance against a Cypress-origin tree)
+- ✅ PR #93 — first `selenium-python-conformance` fixture pair (mirror shape; closes the cross-framework conformance calibration symmetry gap)
+- ✅ PR #102 — conformance fixture pair #02 (cypress intercept + sel-py form-validation); validates the conformance gate against the harder modal / intercept anti-patterns
+
+### Architecture / Stage 2
+
+- ✅ PR #96 — Stage 2 materializes LOW-confidence DOM pins as runtime fallback rewrites with mandatory `// WHY: …` comments (closes the v1.0 LOW-confidence pin-rule item)
+- ✅ PR #100 — HIGH-confidence locators must resolve against the dom-ground report before emission; unresolved / ambiguous probes block instead of warn (closes the v1.0 HIGH-confidence additional-DOM-check item)
+- ✅ PR #101 — `migrate.yml` now batches multi-input runs with a per-input budget guard so a single massive file can't starve the whole batch's token budget
+
+### Operations
+
+- ✅ PR #88 — snippet inventory auto-prunes oldest entries by mtime to fit Sonnet's context window (prevents context-overflow rejection on large repos)
+- ✅ PR #94 — CHANGELOG auto-generation from merged PRs via scheduled workflow (the AUTOGEN sentinel block in CHANGELOG.md is owned by this job; human prose lives below)
+- ✅ PR #95 — dashboard static-mode rendering + GH Pages deploy workflow (dashboard now ships as a static artifact instead of needing the local server)
+
+### DOM grounding
+
+- ✅ PR #97 — Phase 6 LLM ingestion + locator-table validator: `analyze.md` reads the `@playwright/mcp` accessibility-tree snapshot before emitting the plan, and the locator-table gate enforces every row's accessible name resolves against the captured tree
+
+---
+
 ## v0.4 — current (shipped 2026-06-04)
 
 ### Proven end-to-end
@@ -58,7 +93,7 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 - [x] `inputs/selenium-java/` corpus prepared (`EmployeesTest.java` 40 LOC + `pages/EmployeesPage.java` 66 LOC + `helpers/DriverFactory.java` 34 LOC = 140 LOC across 3 files). Ready for Stage 1 → Stage 2.
 - [x] Trigger first multi-file Stage 1 → Stage 2 pipeline run — **Stage 1 SHIPPED** as PR #3 (commit `2a6ccc7` auto-merged the plan envelope + markdown for `EmployeesTest.java`); Stage 2 trigger fired on merge. First real cross-file Selenium plan landed.
-- [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline (post-Stage-2-merge)
+- [x] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline (post-Stage-2-merge) — PR #92 lands `outputs/reports/baseline-selenium-java.md` + the output-vs-golden comparison runner, giving every Selenium-Java migration a fixed quality signal.
 - [x] Tune ts-morph fallback — tree-sitter-java + tree-sitter-python landed in Batch 1 (commit `666332a`); calibration 6/6 → 10/10. `.java` and `.py` get native Zhang-Shasha now.
 
 ### Semantic regression workflow
@@ -91,12 +126,12 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [x] Phase 1-3 of brief — `scripts/dom-ground.ts` contract surface (CLI, report shape, exit codes), ts-morph locator parser (8 method families), mock probe driver with `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing. `npm run check:dom-ground` smoke.
 - [x] Phase 4 — live probe driver via `chromium.launch` (direct Playwright; MCP layer not needed for server-side CI gate)
 - [x] Phase 5 — wire dom-ground into migrate.yml as opt-in step (soft gate, persists `outputs/reports/*-dom-probe.json` for verify)
-- [~] Phase 6 — `@playwright/mcp` Stage 1 enrichment: **stub shipped** as `scripts/dom-snapshot.ts` (commit `f2bdd95` — accessibility tree capture via `@playwright/mcp`); real LLM-side ingestion in analyze.md prompt + locator-table annotation pending
+- [x] Phase 6 — `@playwright/mcp` Stage 1 enrichment: **LLM ingestion shipped** in PR #97 (analyze.md reads the DOM snapshot before plan emission; locator-table annotation gate enforces every locator row's accessible-name resolves against the captured tree). Original stub `scripts/dom-snapshot.ts` (commit `f2bdd95`) remains the capture layer.
 - [x] Phase 7a — calibration fixtures (3 good + 3 bad mock URLs in `tools/calibrate-pipeline/fixtures/dom-ground/`; integrated into `npm run calibrate`, currently 6/6 passing). Mock-mode proves gate logic without needing a real SUT.
 - [x] Phase 7b — hard-gate flag: `DOM_GROUND_STRICT=true` repo var promotes the migrate.yml step from soft (warn) to hard (fail). Default soft until SUT calibration in place.
 - [x] Phase 7c — 6 live calibration fixtures (3 good + 3 bad) in `tools/calibrate-pipeline/fixtures/dom-ground-live/` targeting saucedemo.com, conduit.bondaracademy.com, practicetestautomation.com; runner `scripts/dom-ground-live-calibrate.ts` + `npm run check:dom-ground:live`. Catalog at [`docs/dom-ground-public-suts.md`](docs/dom-ground-public-suts.md). **6/6 GREEN** (commit `7d4746d` — bad-02 reslotted from demoqa-ambiguous-checkbox → saucedemo-ambiguous-textbox after demoqa proved unstable). `DOM_GROUND_STRICT=true` set as repo var.
-- [~] HIGH-confidence locators get an additional DOM check before emission — scaffolded via dom-ground step in migrate.yml (mock + live both wired); full HIGH-strict integration pending
-- [~] LOW-confidence pin rules — scaffolded: DOM-probe report annotates LOW pins; auto-fallback + WHY-comment materialization pending
+- [x] HIGH-confidence locators get an additional DOM check before emission — PR #100 promotes the dom-ground gate to hard for every HIGH-confidence locator: unresolved or ambiguous probes block emission instead of warning, closing the "Sonnet hallucinates a clean role/name that doesn't exist on the SUT" failure mode.
+- [x] LOW-confidence pin rules — PR #96 materializes LOW-confidence DOM pins as runtime fallback rewrites with mandatory `// WHY: …` comments above each fallback locator, so a future human reviewer can see why Sonnet chose the secondary selector and the spec still runs against a moving SUT.
 
 ### Plan envelope enforcement
 

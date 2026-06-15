@@ -47,7 +47,10 @@
     "baseline:selenium-java": "tsx scripts/baseline-compare-selenium-java.ts",
     "validate:plan-dom-grounding": "tsx scripts/validate-plan-dom-grounding.ts",
     "cache:report": "tsx scripts/measure-cache-hit-rate.ts",
-    "cache:dry-run": "tsx scripts/claude-cached-call.ts --lens sdet --input-basename smoke --dry-run"
+    "cache:dry-run": "tsx scripts/claude-cached-call.ts --lens sdet --input-basename smoke --dry-run",
+    "rag:index": "tsx scripts/index-plans.ts",
+    "rag:retrieve": "tsx scripts/retrieval-bm25.ts",
+    "rag:render": "tsx scripts/rag-context-render.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

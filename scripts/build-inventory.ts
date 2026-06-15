@@ -27,6 +27,7 @@
  *
  * CLI:
  *   npx tsx scripts/build-inventory.ts [--out <path>] [--validate] [--force]
+ *                                      [--max-poms N] [--max-fixtures N] [--max-helpers N]
  *
  * --out (default: outputs/.snippets-inventory.md)
  *   Destination markdown file.
@@ -35,6 +36,13 @@
  *   Exit 0 on success, 1 on any parse error.
  * --force
  *   Ignore the SHA-256 source-hash cache and always rebuild.
+ * --max-poms N (default 60), --max-fixtures N (default 25), --max-helpers N (default 60)
+ *   Per-category caps. When a category has more files than its cap, the
+ *   inventory keeps the N most-recently-modified files (by mtime) and
+ *   emits a `(M older entries pruned by mtime; cap=N)` footer so the
+ *   prompt reader knows the surface was truncated. Cap of 0 = no limit.
+ *   Sonnet's context window degrades once the inventory grows past
+ *   ~150 lines; the defaults keep healthy mid-size suites under that.
  *
  * Source-hash caching: the rendered markdown embeds an HTML comment
  * `<!-- source-sha256: <hash> -->` in the header. On a subsequent run we
@@ -82,7 +90,30 @@ interface Args {
   out: string;
   validate: boolean;
   force: boolean;
+  maxPoms: number;
+  maxFixtures: number;
+  maxHelpers: number;
 }
+
+/**
+ * Auto-prune caps. Inventory rendered into the Stage 2 system prompt: every
+ * line costs tokens AND shifts Sonnet's attention budget. Past ~150 lines
+ * Sonnet starts ignoring entries; past ~250 it can drop entries silently.
+ *
+ * Per-category caps keep the prune boundary obvious (operator can bump the
+ * one they want without inflating the others). When a category exceeds its
+ * cap we keep the N most-recently-modified files (by mtime) and emit a
+ * `(N older entries pruned by mtime)` footer so the prompt reader knows
+ * the inventory was truncated and can reach for older helpers explicitly
+ * via grep if needed.
+ *
+ * Defaults are tuned to fit a healthy mid-size suite without triggering
+ * the prune at all on day one; the operator sees the prune note when the
+ * suite outgrows comfort.
+ */
+const DEFAULT_MAX_POMS = 60;
+const DEFAULT_MAX_FIXTURES = 25;
+const DEFAULT_MAX_HELPERS = 60;
 
 interface ParseError {
   file: string;
@@ -95,13 +126,43 @@ function parseCliArgs(): Args {
       out: { type: "string" },
       validate: { type: "boolean", default: false },
       force: { type: "boolean", default: false },
+      "max-poms": { type: "string" },
+      "max-fixtures": { type: "string" },
+      "max-helpers": { type: "string" },
     },
   });
   return {
     out: values.out ?? DEFAULT_OUT,
     validate: values.validate === true,
     force: values.force === true,
+    maxPoms: parseCap(values["max-poms"], DEFAULT_MAX_POMS, "--max-poms"),
+    maxFixtures: parseCap(
+      values["max-fixtures"],
+      DEFAULT_MAX_FIXTURES,
+      "--max-fixtures",
+    ),
+    maxHelpers: parseCap(
+      values["max-helpers"],
+      DEFAULT_MAX_HELPERS,
+      "--max-helpers",
+    ),
   };
+}
+
+/**
+ * Parse a CLI cap value. Accepts a positive integer string; 0 means
+ * "include all" (no prune). Anything else is a usage error — better to
+ * exit loud than silently default and leave the operator wondering why
+ * the prune did not run.
+ */
+function parseCap(raw: string | undefined, defaultValue: number, flag: string): number {
+  if (raw === undefined) return defaultValue;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0 || String(n) !== raw) {
+    process.stderr.write(`${flag} must be a non-negative integer, got '${raw}'\n`);
+    process.exit(2);
+  }
+  return n;
 }
 
 /**
@@ -132,6 +193,37 @@ function findFiles(dir: string, suffix: string): string[] {
     }
   }
   return out.sort();
+}
+
+/**
+ * Cap a sorted file list at `cap` entries, keeping the N most-recently-
+ * modified (by mtime). Returns the kept list (re-sorted alphabetically so
+ * downstream rendering stays stable across runs that share the same mtime
+ * profile) and the count of entries pruned. `cap === 0` is treated as "no
+ * limit" — useful for operators who want full inventories for debugging
+ * Sonnet's selection behaviour.
+ */
+function capByMtime(files: string[], cap: number): { kept: string[]; prunedCount: number } {
+  if (cap === 0 || files.length <= cap) {
+    return { kept: files, prunedCount: 0 };
+  }
+  const withMtime = files.map((file) => {
+    let mtimeMs = 0;
+    try {
+      mtimeMs = statSync(file).mtimeMs;
+    } catch {
+      // Treat unreadable mtime as oldest possible — that file will get
+      // pruned first, which is the correct conservative default.
+      mtimeMs = 0;
+    }
+    return { file, mtimeMs };
+  });
+  withMtime.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const kept = withMtime
+    .slice(0, cap)
+    .map((e) => e.file)
+    .sort((a, b) => a.localeCompare(b));
+  return { kept, prunedCount: files.length - cap };
 }
 
 /**
@@ -401,11 +493,53 @@ function readCachedHash(out: string): string | null {
   return head.slice(start + HASH_MARKER_PREFIX.length, end).trim();
 }
 
-function buildInventory(): InventoryResult {
-  const poms = findFiles(POMS_DIR, ".page.ts");
-  const fixtures = findFiles(FIXTURES_DIR, ".fixture.ts");
-  const helpers = findFiles(HELPERS_DIR, ".ts");
+interface CategorySpec {
+  title: string;
+  files: string[];
+  prunedCount: number;
+  cap: number;
+  renderLine: (file: string, sf: SourceFile) => string;
+}
 
+function renderCategory(
+  spec: CategorySpec,
+  project: Project,
+  errors: ParseError[],
+): string[] {
+  if (spec.files.length === 0) return [];
+  const out: string[] = [`### ${spec.title}`];
+  for (const file of spec.files) {
+    const sf = safeAddSourceFile(project, file, errors);
+    if (sf === null) continue;
+    out.push(spec.renderLine(file, sf));
+  }
+  if (spec.prunedCount > 0) {
+    out.push(prunedFooter(spec.prunedCount, spec.cap));
+  }
+  out.push("");
+  return out;
+}
+
+function buildInventory(caps: {
+  maxPoms: number;
+  maxFixtures: number;
+  maxHelpers: number;
+}): InventoryResult {
+  const { kept: poms, prunedCount: prunedPoms } = capByMtime(
+    findFiles(POMS_DIR, ".page.ts"),
+    caps.maxPoms,
+  );
+  const { kept: fixtures, prunedCount: prunedFixtures } = capByMtime(
+    findFiles(FIXTURES_DIR, ".fixture.ts"),
+    caps.maxFixtures,
+  );
+  const { kept: helpers, prunedCount: prunedHelpers } = capByMtime(
+    findFiles(HELPERS_DIR, ".ts"),
+    caps.maxHelpers,
+  );
+
+  // Hash kept files only — when the prune boundary moves (e.g. a new file
+  // bumps an older one out), the hash changes and the cache invalidates.
   const sourceHash = computeSourceHash([...poms, ...fixtures, ...helpers]);
   const header = `${HASH_MARKER_PREFIX}${sourceHash}${HASH_MARKER_SUFFIX}\n`;
 
@@ -417,43 +551,45 @@ function buildInventory(): InventoryResult {
   const errors: ParseError[] = [];
   const project = makeProject();
 
+  const categories: CategorySpec[] = [
+    {
+      title: "POMs",
+      files: poms,
+      prunedCount: prunedPoms,
+      cap: caps.maxPoms,
+      renderLine: (file, sf) => renderPomLine(file, extractPom(sf)),
+    },
+    {
+      title: "Fixtures",
+      files: fixtures,
+      prunedCount: prunedFixtures,
+      cap: caps.maxFixtures,
+      renderLine: (file, sf) => renderFixtureLine(file, extractFixture(sf)),
+    },
+    {
+      title: "Helpers",
+      files: helpers,
+      prunedCount: prunedHelpers,
+      cap: caps.maxHelpers,
+      renderLine: (file, sf) => renderHelperLine(file, extractHelper(sf)),
+    },
+  ];
+
   const lines: string[] = [
     `${HASH_MARKER_PREFIX}${sourceHash}${HASH_MARKER_SUFFIX}`,
     "## Existing POMs / fixtures / helpers Claude MUST consider for reuse:",
     "",
   ];
-
-  if (poms.length > 0) {
-    lines.push("### POMs");
-    for (const file of poms) {
-      const sf = safeAddSourceFile(project, file, errors);
-      if (sf === null) continue;
-      lines.push(renderPomLine(file, extractPom(sf)));
-    }
-    lines.push("");
-  }
-
-  if (fixtures.length > 0) {
-    lines.push("### Fixtures");
-    for (const file of fixtures) {
-      const sf = safeAddSourceFile(project, file, errors);
-      if (sf === null) continue;
-      lines.push(renderFixtureLine(file, extractFixture(sf)));
-    }
-    lines.push("");
-  }
-
-  if (helpers.length > 0) {
-    lines.push("### Helpers");
-    for (const file of helpers) {
-      const sf = safeAddSourceFile(project, file, errors);
-      if (sf === null) continue;
-      lines.push(renderHelperLine(file, extractHelper(sf)));
-    }
-    lines.push("");
+  for (const category of categories) {
+    lines.push(...renderCategory(category, project, errors));
   }
 
   return { markdown: lines.join("\n"), totalFiles, errors, sourceHash };
+}
+
+function prunedFooter(prunedCount: number, cap: number): string {
+  const plural = prunedCount === 1 ? "entry" : "entries";
+  return `_(${prunedCount} older ${plural} pruned by mtime; cap=${cap}. Bump --max-* on the inventory build step to surface more.)_`;
 }
 
 /* --------------------------------- Main --------------------------------- */
@@ -471,10 +607,17 @@ function main(): void {
   // ts-morph parse. --validate and --force both bypass the cache —
   // --validate so pre-commit still surfaces parse errors, --force so the
   // operator can force a rebuild without deleting the output file.
+  //
+  // The cache hash must include only the KEPT files (the prune boundary
+  // shifts the digest); otherwise an older helper getting pruned out
+  // wouldn't invalidate the cache.
   if (!args.validate && !args.force) {
-    const poms = findFiles(POMS_DIR, ".page.ts");
-    const fixtures = findFiles(FIXTURES_DIR, ".fixture.ts");
-    const helpers = findFiles(HELPERS_DIR, ".ts");
+    const allPoms = findFiles(POMS_DIR, ".page.ts");
+    const allFixtures = findFiles(FIXTURES_DIR, ".fixture.ts");
+    const allHelpers = findFiles(HELPERS_DIR, ".ts");
+    const { kept: poms } = capByMtime(allPoms, args.maxPoms);
+    const { kept: fixtures } = capByMtime(allFixtures, args.maxFixtures);
+    const { kept: helpers } = capByMtime(allHelpers, args.maxHelpers);
     const currentHash = computeSourceHash([...poms, ...fixtures, ...helpers]);
     const cachedHash = readCachedHash(args.out);
     if (cachedHash !== null && cachedHash === currentHash) {
@@ -483,7 +626,11 @@ function main(): void {
     }
   }
 
-  const { markdown, totalFiles, errors } = buildInventory();
+  const { markdown, totalFiles, errors } = buildInventory({
+    maxPoms: args.maxPoms,
+    maxFixtures: args.maxFixtures,
+    maxHelpers: args.maxHelpers,
+  });
 
   if (errors.length > 0) {
     reportErrors(errors);

@@ -18,6 +18,29 @@
 | [`baselines.md`](baselines.md) | Measured smoke + calibrate + per-validator wall-clock timings. Use to spot regressions. |
 | [`dom-ground-public-suts.md`](dom-ground-public-suts.md) | Curated catalog of public demo sites for Phase 7c calibration. |
 
+## Metrics dashboard
+
+`scripts/dashboard.ts` renders an HTML dashboard over the metrics SQLite cache
+(`outputs/.metrics.db`) — per-framework counts, verdict distribution, confidence
+trends, KB-citation rankings, cost + token totals, and a per-run cost table.
+
+- **Live (deployed)** — every push to `main` runs `.github/workflows/dashboard-deploy.yml`,
+  which renders a self-contained `index.html` via `--static` mode and publishes
+  it to GitHub Pages. URL after one-time enablement (Settings → Pages → Source =
+  "GitHub Actions"): `https://<owner>.github.io/<repo>/`. No secrets beyond the
+  default `GITHUB_TOKEN`.
+- **Local server** — `npm run dashboard` boots a tiny Node http server on
+  `:8000` with a live `/api/data` endpoint reading the SQLite cache directly.
+  Use this when iterating on the dashboard HTML or chart code.
+- **Local static** — `npm run dashboard -- --static /tmp/dash/` writes one
+  self-contained `index.html` with the aggregate JSON inlined. Same output the
+  Pages workflow uploads — useful for reproducing what reviewers will see.
+
+The dashboard renders cleanly even when the SQLite cache is empty (the
+`MetricsDB` constructor creates a fresh DB with the schema applied) — all
+counters and tables surface zero/empty-state placeholders until the pipeline
+writes its first row.
+
 ## Where things live (cross-reference)
 
 - Knowledge base — [`../config/knowledge-base.md`](../config/knowledge-base.md) (125 KB IDs across pw 25 / cy 50 / sel-java 24 / sel-py 26)

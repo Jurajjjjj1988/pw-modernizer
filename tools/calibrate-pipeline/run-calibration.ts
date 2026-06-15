@@ -40,13 +40,13 @@ type ValidatorName =
   | "kb-validate" | "plan-envelope-validate"
   | "ast-diff-trivial-check" | "validate-examples"
   | "plan-code-coverage" | "dom-ground" | "verify-tally"
-  | "danger-policy";
+  | "danger-policy" | "cypress-conformance";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
   "ast-diff-trivial-check", "validate-examples",
   "plan-code-coverage", "dom-ground", "verify-tally",
-  "danger-policy",
+  "danger-policy", "cypress-conformance",
 ];
 
 interface FixtureResult {
@@ -80,6 +80,25 @@ function expectedExitFromName(name: string): number {
 function listFixtureNames(validator: ValidatorName): string[] {
   const dir = join(FIXTURES_ROOT, validator);
   if (!existsSync(dir)) return [];
+  // cypress-conformance uses a nested layout — fixtures live under `good/<scenario>/`
+  // and `bad/<scenario>/` because each fixture is a multi-file qa-master tree
+  // (spec + page object + fixture). We synthesise flat names `good-<scenario>` /
+  // `bad-<scenario>` so the rest of the runner (expectedExitFromName, golden
+  // lookup, printReport) stays agnostic of the on-disk shape.
+  if (validator === "cypress-conformance") {
+    const out: string[] = [];
+    for (const polarity of ["good", "bad"] as const) {
+      const subdir = join(dir, polarity);
+      if (!existsSync(subdir)) continue;
+      const scenarios = readdirSync(subdir).sort((a, b) => a.localeCompare(b));
+      for (const scenario of scenarios) {
+        const scenarioPath = join(subdir, scenario);
+        if (!statSync(scenarioPath).isDirectory()) continue;
+        out.push(`${polarity}-${scenario}`);
+      }
+    }
+    return out;
+  }
   return readdirSync(dir)
     .filter((n) => n.startsWith("good-") || n.startsWith("bad-"))
     .sort();
@@ -312,6 +331,28 @@ function runDangerPolicy(fixtureName: string): FixtureResult {
   };
 }
 
+/**
+ * cypress-conformance fixtures are nested `{good,bad}/<scenario>/` qa-master
+ * trees (spec + page object + base fixture). Each fixture is invoked by
+ * pointing `validate-qa-master-conformance.ts --root <scenario-dir>` at the
+ * scenario root and asserting exit code matches the polarity (good → 0,
+ * bad → 1) plus the golden substring set.
+ *
+ * The synthetic fixture name `good-<scenario>` / `bad-<scenario>` is split
+ * back into polarity + scenario to resolve the on-disk path.
+ */
+function runCypressConformance(fixtureName: string): FixtureResult {
+  const sepIdx = fixtureName.indexOf("-");
+  const polarity = fixtureName.slice(0, sepIdx);
+  const scenario = fixtureName.slice(sepIdx + 1);
+  const fixtureRoot = join(FIXTURES_ROOT, "cypress-conformance", polarity, scenario);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-qa-master-conformance.ts"),
+    "--root", fixtureRoot,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("cypress-conformance", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -321,6 +362,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "dom-ground": runDomGround,
   "verify-tally": runVerifyTally,
   "danger-policy": runDangerPolicy,
+  "cypress-conformance": runCypressConformance,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

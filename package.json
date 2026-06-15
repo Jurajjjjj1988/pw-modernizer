@@ -41,7 +41,8 @@
     "quickstart": "tsx scripts/quickstart-check.ts",
     "dom:snapshot": "tsx scripts/dom-snapshot.ts",
     "changelog": "tsx scripts/generate-changelog.ts",
-    "changelog:write": "tsx scripts/generate-changelog.ts --write"
+    "changelog:write": "tsx scripts/generate-changelog.ts --write",
+    "baseline:selenium-java": "tsx scripts/baseline-compare-selenium-java.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

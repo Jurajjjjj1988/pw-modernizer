@@ -38,7 +38,8 @@
     "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:envelope:code && npm run check:derive && npm run check:coverage && npm run calibrate",
     "smoke": "npm run typecheck:all && npm run validate:all && npm run lint",
     "quickstart": "tsx scripts/quickstart-check.ts",
-    "dom:snapshot": "tsx scripts/dom-snapshot.ts"
+    "dom:snapshot": "tsx scripts/dom-snapshot.ts",
+    "validate:plan-dom-grounding": "tsx scripts/validate-plan-dom-grounding.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

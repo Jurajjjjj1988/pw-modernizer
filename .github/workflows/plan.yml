@@ -462,6 +462,33 @@ jobs:
           fi
           echo "Plan validated."
 
+      - name: Validate plan DOM grounding
+        if: steps.dedup.outputs.skip == 'false'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Phase 6 DOM grounding (per docs/playwright-mcp-integration.md §3.1):
+          # when an accessibility snapshot exists for this input at
+          # outputs/dom-snapshots/<basename>.yaml, every locator pin in the
+          # plan markdown must be annotated with `// dom-snapshot:role=...|name=...`
+          # AND the cited role/name must be present in the snapshot. When no
+          # snapshot exists (current default for offline migrations), the
+          # validator exits 0 silently. Soft mode — `continue-on-error: true`
+          # surfaces hallucination candidates as warnings without blocking the
+          # plan PR until Phase 6 calibration is complete. Promote to hard mode
+          # after sufficient SUT calibration coverage (parallels DOM_GROUND_STRICT
+          # promotion path for the Stage 2 validator).
+          BASE="${{ steps.idempotency.outputs.input_basename }}"
+          PLAN="outputs/plans/${BASE}.md"
+          SNAPSHOT="outputs/dom-snapshots/${BASE}.yaml"
+          if [ ! -f "$SNAPSHOT" ]; then
+            echo "validate-plan-dom-grounding: no snapshot at $SNAPSHOT — skipping (offline migration mode)."
+            exit 0
+          fi
+          npx tsx scripts/validate-plan-dom-grounding.ts --plan "$PLAN" --snapshot "$SNAPSHOT" || \
+            echo "::warning::Plan DOM grounding has unresolved pins — see ::error:: annotations above. Soft mode: not failing the workflow."
+
       - name: Validate plan envelope JSON (LPW/Routine contract — Stage 1 dual-output mandate)
         if: steps.dedup.outputs.skip == 'false'
         shell: bash

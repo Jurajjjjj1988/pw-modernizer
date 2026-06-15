@@ -144,6 +144,47 @@ For every locator in the source (every `cy.get()`, `By.id()`, `By.cssSelector()`
 
 Every MED and LOW row must produce a corresponding entry in the **Open questions** section (Step 6).
 
+### Step 4b — DOM grounding (if snapshot present)
+
+Phase 6 of the playwright-mcp integration (`docs/playwright-mcp-integration.md` §3.1) ships `scripts/dom-snapshot.ts` — when the operator (or CI) has captured an accessibility snapshot of the SUT, it lives at:
+
+```
+outputs/dom-snapshots/<input-basename>.yaml
+```
+
+**Before emitting the locator translation table, check whether that path exists.** It is your structural ground truth — if the snapshot shows the SUT does NOT contain `heading "Welcome back"`, then proposing `getByRole('heading', { name: /welcome back/i })` is a hallucination the validator catches.
+
+**Snapshot format.** `dom-snapshot.ts` writes the output of `Locator.ariaSnapshot()` — a YAML-ish accessibility tree. Each accessible node renders as one line:
+
+```
+- heading "Welcome back, Jane" [level=1]
+- button "Sign in"
+- textbox "Email"
+- textbox "Password"
+- alert "Invalid credentials"
+- link "Forgot password?"
+```
+
+The shape is `- <role> "<accessible-name>" [optional attrs]`. Indentation expresses parent/child relationships; you may ignore nesting for grounding purposes — role + name is sufficient to verify a `getByRole(role, { name })` proposal.
+
+**Grounding contract — what your plan must do when the snapshot is present:**
+
+1. **Derive every `getByRole`/`getByLabel`/`getByText`/`getByPlaceholder`/`getByTestId` proposal ONLY from accessible nodes that appear in the snapshot.** If the snapshot has no `button "Sign in"`, your proposal cannot be `getByRole('button', { name: 'Sign in' })`. Either pick a different proposal that matches a real node, OR demote to `locator(<css>)` with a LOW-confidence row and an open question.
+2. **Annotate every locator pin in the locator translation table with a `// dom-snapshot:role=<role>|name=<accessible-name>` comment** beside the proposed target. The comment cites the snapshot entry that grounds the proposal. Place it in the **Notes** column of the locator translation table, exactly in this form:
+
+   ```
+   | `page.locator('#email')` | `page.getByLabel(/email/i)` | high | // dom-snapshot:role=textbox|name=Email — node present in snapshot |
+   ```
+
+3. **Cover EVERY proposed target locator in the table** (column "New"). Missing annotations get caught by `scripts/validate-plan-dom-grounding.ts` and emit `::error::Plan ... pins locator '...' not in DOM snapshot. Hallucination candidate.`
+4. **Hallucination-defense pins** (next section) inherit the same grounding requirement: each pin's "assumed `<target locator>`" must also carry the `// dom-snapshot:role=...|name=...` annotation, OR explicitly state in the pin body that DOM evidence is absent and the pin documents the fallback path.
+
+**When the snapshot is ABSENT** (no file at `outputs/dom-snapshots/<input-basename>.yaml`): proceed as today — your locator translation table relies on inferred evidence (source variable names, KB IDs, prior Playwright conventions). The validator exits 0 when no snapshot exists; this is the documented fallback for offline migrations.
+
+**Role/name canonicalisation.** Trim whitespace and compare case-insensitively. The snapshot's accessible name is the canonical form; if your proposal uses a regex (e.g. `name: /welcome back/i`), the annotation must cite the literal name from the snapshot (e.g. `name=Welcome back, Jane`), not the regex.
+
+The annotation is not cosmetic — it is the join key Stage 2 and the post-generation gate use to verify the chain of evidence from snapshot → plan → code.
+
 **After completing the locator table, emit the `## Hallucination-defense pins` section** (mandatory per `migration-rules.md` §9 when any MED/LOW row exists). One numbered pin per MED/LOW locator with this exact shape:
 
 > N. **{element description}** — assumed `{target locator}`. If DOM contradicts: keep `{source locator}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`.

@@ -264,7 +264,16 @@ jobs:
             echo "Forced regeneration via /regenerate — bypassing dedup."
             exit 0
           fi
-          EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json number --jq 'length')
+          # Risk 3 (abandon migration flow): the dedup must NOT block a fresh
+          # Stage 1 run when the only PR with this hash label was closed-
+          # unmerged. Reviewer closed it because the plan was wrong, and the
+          # next push of the same input should produce a new plan PR.
+          #
+          # We keep the dedup for OPEN PRs (the new push is concurrent with a
+          # plan still in review — opening another would be noise) and for
+          # MERGED PRs (the plan was accepted; re-opening would create churn).
+          # Only CLOSED-unmerged is "abandoned" and allowed to fall through.
+          EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json state --jq '[.[] | select(.state == "OPEN" or .state == "MERGED")] | length')
           if [ "$EXISTING" -gt 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else

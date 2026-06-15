@@ -22,7 +22,7 @@
  * journal means workflow writers are never blocked by a dashboard read.
  */
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,13 @@ import { MetricsDB, normalizeSourceFramework, type QueryRow, type SourceFramewor
 interface CliArgs {
   port: number;
   db: string;
+  /**
+   * When set, render ONE self-contained `index.html` (data inlined) into the
+   * named directory and exit instead of starting the HTTP server. Used by the
+   * `dashboard-deploy.yml` workflow to publish to GitHub Pages — Pages serves
+   * static files only, so the runtime `/api/data` endpoint can't ship.
+   */
+  staticOutDir: string | null;
 }
 
 interface FrameworkAgg {
@@ -144,6 +151,7 @@ function parseCliArgs(): CliArgs {
     options: {
       port: { type: "string", default: "8000" },
       db: { type: "string", default: "outputs/.metrics.db" },
+      static: { type: "string" },
     },
   });
   const portStr = typeof values.port === "string" ? values.port : "8000";
@@ -151,9 +159,11 @@ function parseCliArgs(): CliArgs {
   if (!Number.isFinite(port) || port <= 0 || port > 65535) {
     throw new Error(`--port must be a valid TCP port, got "${portStr}"`);
   }
+  const staticOutDir = typeof values.static === "string" && values.static.length > 0 ? values.static : null;
   return {
     port,
     db: typeof values.db === "string" ? values.db : "outputs/.metrics.db",
+    staticOutDir,
   };
 }
 
@@ -557,8 +567,64 @@ function handleRequest(dbPath: string, req: IncomingMessage, res: ServerResponse
   }
 }
 
+/**
+ * Inline the aggregate JSON into the HTML shell so the rendered page works
+ * without an HTTP server. Two surgical patches:
+ *
+ *   1. Inject a `<script>window.__DASHBOARD_DATA__ = {...}</script>` just
+ *      before the existing IIFE.
+ *   2. Replace the `fetch('/api/data') + res.json()` lines in the IIFE with
+ *      a sync read from the injected global.
+ *
+ * `</` inside JSON strings is escaped to `<\/` so a malicious model name or
+ * input basename can't break out of the script tag. JSON.stringify itself
+ * doesn't escape `</script>` — we do it post-hoc.
+ */
+function renderStaticHtml(shell: string, data: DashboardData): string {
+  const safeJson = JSON.stringify(data).replaceAll("</", String.raw`<\/`);
+  const dataScript = `<script>window.__DASHBOARD_DATA__ = ${safeJson};</script>\n`;
+  // The IIFE is identified by its opening line. Insert the data script
+  // immediately before it so the global is set before the IIFE reads it.
+  const iifeMarker = "<script>\n(async () => {";
+  if (!shell.includes(iifeMarker)) {
+    throw new Error(
+      `dashboard.html shape changed — static mode can't find the IIFE marker '${iifeMarker}'. ` +
+        `Update renderStaticHtml() to match the new template.`,
+    );
+  }
+  let patched = shell.replace(iifeMarker, `${dataScript}${iifeMarker}`);
+  // Replace the live fetch with a sync read from the injected global. Keep
+  // the surrounding `const data = ...` shape so the rest of the IIFE is
+  // unchanged.
+  const fetchBlock =
+    "  const res = await fetch('/api/data');\n  const data = await res.json();";
+  const inlineBlock = "  const data = window.__DASHBOARD_DATA__;";
+  if (!patched.includes(fetchBlock)) {
+    throw new Error(
+      "dashboard.html shape changed — static mode can't find the fetch('/api/data') block. " +
+        "Update renderStaticHtml() to match the new template.",
+    );
+  }
+  patched = patched.replace(fetchBlock, inlineBlock);
+  return patched;
+}
+
+function runStatic(args: CliArgs, outDir: string): void {
+  const data = readData(args.db);
+  const html = renderStaticHtml(HTML_CACHE, data);
+  mkdirSync(outDir, { recursive: true });
+  const outPath = resolve(outDir, "index.html");
+  writeFileSync(outPath, html, "utf8");
+  process.stdout.write(`Static dashboard written to ${outPath}\n`);
+  process.stdout.write(`  reading DB: ${args.db}\n`);
+}
+
 function main(): void {
   const args = parseCliArgs();
+  if (args.staticOutDir !== null) {
+    runStatic(args, args.staticOutDir);
+    return;
+  }
   const server = createServer((req, res) => {
     handleRequest(args.db, req, res);
   });

@@ -45,6 +45,11 @@ on:
         required: false
         type: string
         default: 'main'
+      verify_attempt:
+        description: 'Retry counter. 1 = first run (the dispatcher default). 2 = retry after a transient START OVER. On attempt 2 the START OVER branch fires auto-regen normally; on attempt 1 it tries one retry first to absorb parser bugs and Opus verdict hallucinations.'
+        required: false
+        type: string
+        default: '1'
 
 permissions:
   # contents:write — needed by `gh api repos/.../dispatches` in the
@@ -606,6 +611,42 @@ jobs:
               | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
           case "$VERDICT" in
             "START OVER")
+              # ---------------------------------------------------------------
+              # Transient-START-OVER retry gate.
+              #
+              # Opus subagents occasionally produce unparseable or hallucinated
+              # verdicts that the tally conservatively treats as START OVER
+              # even when the Sonnet output is fine. Auto-regen on that signal
+              # would burn a regen budget for no reason. We give verify one
+              # cheap second pass before deciding to spin Stage 2 again.
+              #
+              # On verify_attempt == 1: fire the same workflow again with
+              # verify_attempt=2 and the same pr_branch. Exit 0 — the retry
+              # run will produce its own check that supersedes this one. If
+              # the dispatch itself fails to fire, fall through to the normal
+              # auto-regen flow so we don't drop the signal silently.
+              #
+              # On verify_attempt == 2: the retry already happened, so the
+              # original auto-regen flow runs. This caps the absorption at
+              # ONE retry per Stage 2 output (the regen-attempt counter
+              # caps Stage 2 regens separately).
+              # ---------------------------------------------------------------
+              VERIFY_ATTEMPT="${{ inputs.verify_attempt }}"
+              if [ "$VERIFY_ATTEMPT" = "1" ]; then
+                gh pr edit "$PR_NUMBER" --add-label "verify:start-over-attempt-1" 2>/dev/null || true
+                echo "::notice::START OVER on attempt 1 — firing verify retry (attempt 2) on same pr_branch before auto-regen."
+                if gh workflow run verify.yml \
+                    -f input_basename="${INPUT_BASENAME}" \
+                    -f generate_confidence="${{ inputs.generate_confidence }}" \
+                    -f pr_branch="${{ inputs.pr_branch }}" \
+                    -f verify_attempt="2"; then
+                  echo "::notice::Verify retry dispatched. This run defers final verdict to the retry's check."
+                  exit 0
+                fi
+                echo "::warning::Failed to dispatch verify retry. Falling through to auto-regen."
+              else
+                gh pr edit "$PR_NUMBER" --remove-label "verify:start-over-attempt-1" 2>/dev/null || true
+              fi
               # ---------------------------------------------------------------
               # Auto-regen on START OVER (closes the manual /regenerate loop).
               #

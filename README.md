@@ -8,6 +8,42 @@
 
 **Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. As of **v0.2.0** every migration produces a markdown plan + JSON envelope + a **multi-file qa-master layered output** (spec + `PageClass` + `base.fixture` extension + optional blocks/api/actions/utilities/test-data/types) + a metrics report + a verify verdict. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before promoting Cypress/Selenium beyond example status.
 
+## Try in 5 minutes
+
+One command, one demo spec, a real Stage 1 plan — no real SUT, no GitHub setup. Need a Claude token (`claude setup-token` or `ANTHROPIC_API_KEY`). No token? Append `-- --mock` for the canned plan.
+
+```bash
+git clone https://github.com/Jurajjjjj1988/PWmodernizer.git && cd PWmodernizer
+npm install && npm run try-it     # ~90s total, writes outputs/plans/bad-test.spec.ts.md
+```
+
+Full operator-direct walk-through: [`docs/quickstart.md`](docs/quickstart.md). Recorded run:
+
+<details><summary>Animated demo (ASCII)</summary>
+
+```
+$ npm run try-it
+
+PWmodernizer try-it — 5-minute first migration
+
+  Input: examples/sample-suite/bad-test.spec.ts
+  Mode:  real (Stage 1 call)
+
+  [step] assemble prompt fragments ... ok (0.4s)
+  [step] call Claude (Stage 1, model claude-sonnet-4-6) ... ok (38.2s)
+
+  Plan written: outputs/plans/bad-test.spec.ts.md
+  Sections present: 8/8
+  Total runtime: 38.6s
+
+  next: read outputs/plans/bad-test.spec.ts.md
+  then: docs/quickstart.md explains how to run your own migration
+```
+
+Full transcript in [`docs/assets/quickstart-demo.txt`](docs/assets/quickstart-demo.txt).
+
+</details>
+
 ## What you get (v0.2.0 qa-master)
 
 The Stage 2 default output is the **qa-master layered architecture** — a real-company production-grade tree, not a single bare `.spec.ts`:

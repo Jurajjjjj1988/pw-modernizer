@@ -1,0 +1,32 @@
+$ git clone https://github.com/Jurajjjjj1988/PWmodernizer.git
+$ cd PWmodernizer
+$ npm install
+  added 312 packages in 43s
+
+$ npm run try-it
+
+PWmodernizer try-it — 5-minute first migration
+
+  Input: examples/sample-suite/bad-test.spec.ts
+  Mode:  real (Stage 1 call)
+
+  [step] assemble prompt fragments ... ok (0.4s)
+  [step] call Claude (Stage 1, model claude-sonnet-4-6) ... ok (38.2s)
+
+  Plan written: outputs/plans/bad-test.spec.ts.md
+  Sections present: 8/8
+  Total runtime: 38.6s
+
+  What just happened
+  ------------------
+  Stage 1 read the demo spec, the knowledge base, and the qa-master
+  style anchor; it produced a structured migration plan with:
+    - a table of detected anti-patterns (severity + KB-ID)
+    - a locator translation table with HIGH/MED/LOW confidence
+    - open questions for the reviewer
+    - risk callouts the reviewer must resolve before Stage 2
+
+  This is the same prompt + KB that plan.yml runs in CI.
+
+  next: read outputs/plans/bad-test.spec.ts.md
+  then: docs/quickstart.md explains how to run your own migration

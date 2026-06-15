@@ -129,6 +129,11 @@ jobs:
           MISSING=0
           for dir in examples/*/; do
             if [[ "$dir" == "examples/reference/" ]]; then continue; fi
+            # sample-suite is the onboarding demo (npm run try-it) and is NOT
+            # a calibration example; it intentionally lacks expected-output /
+            # expected-plan so it doesn't get enumerated by validate-examples
+            # or regression-semantic.
+            if [[ "$dir" == "examples/sample-suite/" ]]; then continue; fi
             BASENAME=$(basename "$dir")
             # input: either a single input.* file OR an input/ directory
             # (multi-file examples like selenium-*-03-multifile-login).

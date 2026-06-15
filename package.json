@@ -44,7 +44,9 @@
     "changelog": "tsx scripts/generate-changelog.ts",
     "changelog:write": "tsx scripts/generate-changelog.ts --write",
     "baseline:selenium-java": "tsx scripts/baseline-compare-selenium-java.ts",
-    "validate:plan-dom-grounding": "tsx scripts/validate-plan-dom-grounding.ts"
+    "validate:plan-dom-grounding": "tsx scripts/validate-plan-dom-grounding.ts",
+    "cache:report": "tsx scripts/measure-cache-hit-rate.ts",
+    "cache:dry-run": "tsx scripts/claude-cached-call.ts --lens sdet --input-basename smoke --dry-run"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

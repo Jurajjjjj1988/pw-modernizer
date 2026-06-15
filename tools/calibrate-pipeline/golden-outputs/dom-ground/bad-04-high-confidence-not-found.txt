@@ -1,0 +1,7 @@
+# bad-04-high-confidence-not-found: 3 HIGH-confidence locators, mock://always-fail.
+# The HIGH-strict gate must fire and produce a distinct error message naming the offending pins.
+# Expected exit 1 (same as the legacy not-found gate, but via the new HIGH-specific code path).
+dom-ground: 3 locator(s) probed
+not-found: 3
+HIGH-strict gate FAILED
+HIGH-confidence pin(s) did not resolve uniquely

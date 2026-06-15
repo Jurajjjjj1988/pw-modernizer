@@ -22,10 +22,12 @@
  *     --url $MIGRATION_TARGET_URL \
  *     --probe outputs/tests/<basename>.spec.ts \
  *     --report outputs/reports/<basename>-dom-probe.json \
- *     [--mode mock|live]
+ *     [--mode mock|live] \
+ *     [--high-strict-only true|false]
  *
  * Exit codes (per docs/playwright-mcp-integration.md §4):
- *   0 — every probed locator resolved uniquely
+ *   0 — every probed locator resolved uniquely (and no HIGH-confidence pin
+ *       went unresolved — see HIGH-strict gate below)
  *   1 — at least one locator failed (downstream demote/fail decisions)
  *   2 — could not reach the SUT (live mode) or MCP unavailable
  *
@@ -33,6 +35,32 @@
  *   mock://always-resolve   — every probed locator returns 1 match
  *   mock://always-fail      — every probed locator returns 0 matches
  *   mock://ambiguous-N      — every probed locator returns N matches (N >= 2)
+ *
+ * HIGH-strict default gate (v1.0):
+ *   A pin annotated `// confidence: high` is one Stage 2 claims it can ship
+ *   "as-is". The lesson from PR #96 (low-confidence materialization): silent
+ *   not-found on a HIGH pin is the worst failure mode — it slips past CI and
+ *   surfaces as a flake in production. So when ANY HIGH-confidence pin has a
+ *   probe verdict of `not-found` or `resolved-multiple` (ambiguous), this
+ *   script exits 1 with a distinct error message naming the offending pins.
+ *
+ *   Two escape hatches:
+ *     1. Operator-level: `DOM_GROUND_STRICT` repo var still promotes the
+ *        migrate.yml step from soft to hard for ALL failure classes. Setting
+ *        it has no effect on this gate — HIGH-fail is hard regardless. The
+ *        env var only widens the hard-fail surface to MED/unknown pins.
+ *     2. Script-level: `--high-strict-only=false` flag opts OUT of the
+ *        HIGH-specific hard fail. Reserved for the 2-week calibration
+ *        window — when the live SUT probe driver lands and we discover the
+ *        false-positive rate in the wild, we may need a quick rollback that
+ *        does not require redeploying the runner image. The flag defaults
+ *        to `true` (gate ENABLED).
+ *
+ *   Why a separate gate (and not just "STRICT=true")? STRICT is owned by
+ *   the operator (repo var). HIGH-strict is owned by the contract: Stage 2
+ *   promised this pin would resolve. We never want Stage 2 lies to ship
+ *   silently, even when the operator has explicitly chosen soft mode for
+ *   the rest of the pipeline.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -73,6 +101,7 @@ interface CliArgs {
   probe: string;
   report: string;
   mode: "live" | "mock";
+  highStrictOnly: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -82,17 +111,30 @@ function parseCliArgs(): CliArgs {
       probe: { type: "string" },
       report: { type: "string" },
       mode: { type: "string", default: "mock" },
+      // String + parsed-to-bool rather than `type: "boolean"` because the
+      // contract is "default ENABLED, opt-out via =false". A bare flag would
+      // make it impossible to express the disable case on the CLI.
+      "high-strict-only": { type: "string", default: "true" },
     },
     strict: true,
   });
   if (!values.url || !values.probe || !values.report) {
     process.stderr.write(
-      "Usage: dom-ground --url <url> --probe <spec.ts> --report <out.json> [--mode mock|live]\n",
+      "Usage: dom-ground --url <url> --probe <spec.ts> --report <out.json> " +
+        "[--mode mock|live] [--high-strict-only true|false]\n",
     );
     process.exit(2);
   }
   const mode = values.mode === "live" ? "live" : "mock";
-  return { url: values.url, probe: values.probe, report: values.report, mode };
+  const rawHigh = String(values["high-strict-only"] ?? "true").toLowerCase();
+  if (rawHigh !== "true" && rawHigh !== "false") {
+    process.stderr.write(
+      `::error::dom-ground: --high-strict-only must be 'true' or 'false' (got '${rawHigh}')\n`,
+    );
+    process.exit(2);
+  }
+  const highStrictOnly = rawHigh === "true";
+  return { url: values.url, probe: values.probe, report: values.report, mode, highStrictOnly };
 }
 
 const LOCATOR_METHODS = new Set([
@@ -284,6 +326,29 @@ function decideExit(report: ProbeReport): number {
   return 0;
 }
 
+/**
+ * HIGH-confidence pins that did not resolve uniquely are a contract
+ * violation by Stage 2: the LLM claimed the locator was "ship-ready" but
+ * the DOM disagrees. We treat this as the worst failure mode (silent flake
+ * in prod) and hard-fail regardless of operator-level STRICT setting.
+ *
+ * Returns the offending pins so the caller can name them in the error
+ * message — operator needs to know WHICH HIGH pin to demote / re-prompt.
+ */
+function findHighConfidenceFailures(results: readonly ProbedLocator[]): ProbedLocator[] {
+  return results.filter(
+    (r) =>
+      r.claimedConfidence === "high" &&
+      (r.domVerdict === "not-found" || r.domVerdict === "resolved-multiple"),
+  );
+}
+
+function formatHighFailureList(failures: readonly ProbedLocator[]): string {
+  return failures
+    .map((f) => `  - ${f.file}:${f.line}  [${f.domVerdict}]  ${f.locator}`)
+    .join("\n");
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   const locators = extractLocators(args.probe);
@@ -310,6 +375,28 @@ async function main(): Promise<void> {
       `  skipped: ${report.skipped}\n` +
       `  report: ${args.report}\n`,
   );
+
+  // HIGH-strict gate: even when the operator-level STRICT escape hatch is
+  // off, HIGH-confidence pins that did not resolve uniquely must NOT slip
+  // through silently. This is independent of decideExit() so that the gate
+  // fires distinctly — operators reading CI logs see exactly which Stage 2
+  // claim was contradicted by the DOM.
+  const highFailures = findHighConfidenceFailures(probed);
+  if (args.highStrictOnly && highFailures.length > 0) {
+    process.stderr.write(
+      `::error::dom-ground: HIGH-strict gate FAILED — ${highFailures.length} HIGH-confidence pin(s) ` +
+        `did not resolve uniquely. Stage 2 claimed these were ship-ready; the DOM disagrees. ` +
+        `Demote, re-prompt, or pass --high-strict-only=false to override (rollback escape hatch).\n` +
+        `${formatHighFailureList(highFailures)}\n`,
+    );
+    process.exit(1);
+  }
+  if (!args.highStrictOnly && highFailures.length > 0) {
+    process.stderr.write(
+      `::warning::dom-ground: --high-strict-only=false suppressed ${highFailures.length} HIGH-confidence ` +
+        `pin failure(s). They are recorded in the probe report but did NOT fail this run.\n`,
+    );
+  }
   process.exit(decideExit(report));
 }
 

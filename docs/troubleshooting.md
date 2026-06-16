@@ -136,3 +136,53 @@ The mock-mode smoke (`mock://always-resolve`) doesn't actually launch a browser,
 3. Re-run `npm run check:envelope:code`.
 
 For a long-term fix, edit the source plan markdown so it uses explicit scenario IDs that survive derivation cleanly.
+
+---
+
+### Symptom: Code PR opened by `github-actions[bot]` (#122, #126, …) has lint-output + danger checks stuck `action_required` forever
+
+```
+gh pr view 122 --json statusCheckRollup
+# ↳ both checks: { conclusion: "action_required", run_attempt: 1, status: "completed" }
+
+gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve
+# ↳ "This run is not from a fork pull request" — HTTP 403
+```
+
+The check runs are *created* but never run any job (jobs array empty). PR sits at `mergeStateStatus: UNSTABLE` indefinitely.
+
+**Cause:** `peter-evans/create-pull-request@v7` (and similar PR-creating actions) authenticate with `GITHUB_TOKEN` by default. Per the [GHA security model](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow), **workflows triggered by `GITHUB_TOKEN` do NOT trigger downstream `pull_request` workflows** — this prevents bot-creates-bot infinite loops. So when migrate.yml opens a code PR via `peter-evans/create-pull-request`, the resulting PR is owned by `github-actions[bot]`, and lint-output.yml + danger.yml (both `on: pull_request`) get marked `action_required` and never run jobs. There is no API or repo setting that bypasses this for internal PRs — the `/approve` endpoint is for fork PRs only.
+
+**Fix (canonical, 2026):** Use a **GitHub App installation token** to mint the PR. App-installation tokens count as a separate identity (`<your-app>[bot]`) and downstream `pull_request` workflows *do* fire from them.
+
+1. Create a minimal GitHub App on your account (Settings → Developer settings → GitHub Apps → New).
+   - Permissions: Contents `Read & write`, Pull requests `Read & write`, Workflows `Read & write`.
+   - Install it on this repo only.
+   - Download the App's private key (`.pem`) — keep it offline.
+2. Store as repo secrets: `PWM_APP_ID` (the App ID number) + `PWM_APP_PRIVATE_KEY` (paste the `.pem` contents).
+3. Edit migrate.yml + plan.yml: before each `peter-evans/create-pull-request` step, mint an installation token:
+   ```yaml
+   - uses: actions/create-github-app-token@v1
+     id: app-token
+     with:
+       app-id: ${{ secrets.PWM_APP_ID }}
+       private-key: ${{ secrets.PWM_APP_PRIVATE_KEY }}
+   - uses: peter-evans/create-pull-request@v7
+     with:
+       token: ${{ steps.app-token.outputs.token }}
+       …
+   ```
+4. After merge, the next code PR opens under `<your-app>[bot]` identity; lint-output + danger run automatically.
+
+**Alternatives + tradeoffs:**
+
+- **Personal Access Token (PAT):** Works but inherits user identity (PRs show as you), and PAT scope spans every repo you can access. Rotation requires updating every workflow that uses it. Acceptable for solo experiments; not recommended for repos you publish.
+- **`pull_request_target` instead of `pull_request`:** Lets the workflow run with write-scoped token regardless of trigger source — but checks out the *base* ref with write access, and reading PR-supplied code in that context is a known supply-chain footgun. Especially bad for LLM-generated PRs whose contents are untrusted by definition. **Don't.**
+
+**Workaround while you set up the App:** Push an empty commit to the affected branch:
+
+```bash
+git checkout <branch> && git commit --allow-empty -m "trigger ci" && git push
+```
+
+The `synchronize` event is attributed to your user identity, not the bot, and the gated workflows fire on the resulting head SHA.

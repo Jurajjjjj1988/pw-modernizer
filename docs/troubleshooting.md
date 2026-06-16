@@ -54,6 +54,65 @@ fatal: unable to access 'https://github.com/.../': The requested URL returned er
 
 ---
 
+### Symptom: A Claude step exits with `code 1` and no log output between step start and exit
+
+```
+##[error]Process completed with exit code 1.
+```
+
+You see the bash command echo'd, then nothing, then the exit line. Three minutes of wall time, zero LLM activity in the log. The `Capture Claude usage stats` step that runs next warns `No claude events captured`.
+
+**Cause:** Claude CLI runs with `--output-format stream-json` redirected to `/tmp/claude-*-events.ndjson`. stdout goes to the file, stderr is mostly silent for Claude CLI. When the process dies before emitting any event (auth failure, Anthropic 503, OAuth rate limit, ndjson SIGPIPE) the workflow log shows nothing because the file capture and the silent stderr conspire to hide the failure mode.
+
+**Diagnosis:** look for the `Diagnose Claude crash` group in the run log (PR #128 + #129 added it on `if: failure()`). It dumps:
+- ndjson byte size + line count
+- last 5 events captured
+- type of the final event
+
+Three cases:
+- **File does not exist or 0 bytes** → Claude died before opening stdout. Almost always auth (check the `RAW_TOKEN` env, recently rotated OAuth) or a network 503 at the Anthropic edge.
+- **Final event type `init`** → handshake landed but no LLM activity started. Usually rate-limit at the model layer; rerun.
+- **Final event type `assistant` / `tool_use`** → mid-stream death. Most often SIGPIPE from `--verbose` stream backpressure; verify the redirect is `>` not `| tee` (the documented stable pattern, see verify.yml header comment).
+
+**Fix:** transient failures recover on rerun; the verify workflow auto-retries on attempt 1 (PR #127 + #131). For other workflows, `gh run rerun <id>` from a clean main is the right move. If a specific input crashes reproducibly across reruns, the input is the root cause — check `inputs/<framework>/<file>` for binary content or BOM bytes that Stage 0 pre-flight missed.
+
+---
+
+### Symptom: Verify tally step warns `Failed to dispatch verify retry. Falling through to auto-regen.`
+
+```
+##[notice]START OVER on attempt 1 — firing verify retry (attempt 2) on same pr_branch before auto-regen.
+could not create workflow dispatch event: HTTP 403: Resource not accessible by integration
+##[warning]Failed to dispatch verify retry. Falling through to auto-regen.
+```
+
+The cheap retry safety net silently 403s and a full auto-regen cycle runs in its place — ~10× the cost.
+
+**Cause:** `gh workflow run verify.yml -f verify_attempt=2` hits `POST /repos/{owner}/{repo}/actions/workflows/{id}/dispatches`, which requires `actions: write` on the GITHUB_TOKEN. The verify.yml `permissions:` block originally granted only `contents: write` (for `repository_dispatch`) and `pull-requests: write`.
+
+**Fix shipped (PR #127):** `actions: write` added to verify.yml top-level permissions.
+
+If the symptom returns: somebody dropped `actions: write` from the permissions block — restore it. Cross-check against `verify-on-comment.yml` which has always had the right grant.
+
+---
+
+### Symptom: A Claude step is canceled at `Process completed with exit code 124` (or `The job running on runner ... has exceeded the maximum execution time`)
+
+```
+##[error]The action has timed out.
+##[error]Process completed with exit code 124.
+```
+
+**Cause:** PR #130 added per-step `timeout-minutes` caps to every Claude LLM call. The step exceeded its cap (verify 15m, plan 20m, migrate-generate 30m, migrate-fix-lint 10m, regression-semantic 20m). Either a genuine hang at the model layer, or a healthy long-tail run that pushed past the cap.
+
+**Diagnosis:** open the `Diagnose Claude crash` group — same observability as the crash-code-1 case above. Last event type tells you what the model was doing when the timeout fired.
+
+**Fix:**
+- **Genuine hang (no progress in last 5 minutes of events):** rerun. If reproducible, the underlying issue is Anthropic-side (open a status ticket); the timeout is doing its job.
+- **Healthy long-tail (events progressing right up to the cap):** the cap is too tight for the workload. Bump the `timeout-minutes` value in the offending workflow file. The original caps were sized at 2-3× observed typical runtime — if median runtime grew (heavier fixtures, more KB context), bump proportionally. Don't bump above 60 minutes without changing the budget guard in lockstep.
+
+---
+
 ### Symptom: `npm run smoke` fails with `validate-examples: ... KB-ID 'cy/foo/bar' not defined`
 
 **Cause:** A plan in `examples/*/expected-plan.md` cites a new-format KB ID (`cy/foo/bar`) that is documented in `config/kb-id-migration.md` as an alias but not yet rewritten as a new-format header in `config/knowledge-base.md`. The headers are still old-format (`#### 1.2.X`), so the validator only resolves `KB-1.2.X` references.

@@ -60,11 +60,19 @@ on:
         default: '1.50'
 
 concurrency:
-  # Group key still keyed by PR number for the pull_request trigger; for
-  # workflow_dispatch it collapses to `pwm-migrate-` (empty PR number) and
-  # serialises concurrent dispatches — that's the existing behaviour and
-  # batch mode preserves it (one workflow run owns all matrix legs).
-  group: pwm-migrate-${{ github.event.pull_request.number }}
+  # Per-input concurrency on workflow_dispatch so parallel re-runs across
+  # DIFFERENT inputs don't collapse into queue-depth-1 cancels. Mirrors
+  # PR #139's fix for plan.yml. Observed 2026-06-16: 4 parallel
+  # `gh workflow run migrate.yml -f input_path=X` → 2 cancelled before
+  # starting because all four shared `pwm-migrate-` group (empty PR
+  # number under workflow_dispatch). cancel-in-progress: false only
+  # protects in-progress; queued runs get LIFO-bumped.
+  #
+  # Precedence: pull_request → group by PR number (one PR → one matrix);
+  # workflow_dispatch with input_path → per-input lane;
+  # workflow_dispatch with input_paths (batch) → group by the JSON array
+  # string (whole batch is one matrix; serializing two batches is fine).
+  group: pwm-migrate-${{ github.event.pull_request.number || inputs.input_path || inputs.input_paths || github.ref }}
   cancel-in-progress: false
 
 permissions:

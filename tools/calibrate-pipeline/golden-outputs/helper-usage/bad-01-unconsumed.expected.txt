@@ -1,0 +1,7 @@
+# Exit 1 under --strict. The api file exports a teardown helper that the spec
+# never references. Models the PR #126 SDET finding on cypress wishlist
+# (teardown helper present but afterEach hook missing). Validator must
+# emit a ::error::-prefixed annotation naming the dead export.
+::error
+Exported function `clearWishlist` is never referenced outside its declaration file
+validate-helper-usage: 1 unused export(s) found

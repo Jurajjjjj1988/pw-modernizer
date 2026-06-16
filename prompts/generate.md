@@ -155,19 +155,19 @@ Additional generator-specific rules (not covered by the forbidden-patterns list)
 
 - **All imports correct (v0.2.0 qa-master, two scopes).** SPECS (`outputs/tests/*.spec.ts`) import `test` + `expect` from `@fixtures/base.fixture` — NEVER `@playwright/test`. HELPERS (`outputs/helper/**`) may import `expect` and types (`type Page`, `type Locator`) from `@playwright/test` (PageClass methods use `expect` for `[LABEL]`-prefixed page-level assertions — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1) — but only `outputs/helper/fixtures/base.fixture.ts` may import `test`. Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
-- **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
+- **Test titles use the `[TICKET-ID] - Check that <outcome>` form** (e.g. `[CHK-1] - Check that checkout opens when the cart has items`) — a user-perceivable outcome, never "should..." (per §1 and `migration-rules.md` §"Test titles").
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
 - **No `!` non-null assertions on locators** — use `await expect(locator).toBeVisible()` to assert presence then act.
 - **Every test block carries a `// plan:scenario=<id>` pin (MANDATORY — ROADMAP v1.0 enforcement).** Place the comment on the line immediately above each `test(...)` call. The `<id>` must exactly match an envelope `scenarios[].id` — typically `1.1`, `1.2`, `1.3`, ... in the order scenarios were declared in the envelope. Every envelope scenario MUST receive exactly one pin; orphan pins (referring to ids not in the envelope) and duplicate pins are rejected. `scripts/plan-envelope-validate.ts --code` runs after generation and annotates each violation inline on the code PR. Example:
 
   ```ts
   // plan:scenario=1.1
-  test('signs in with valid credentials @positive', async ({ page }) => {
+  test('[ACME-1] - Check that valid credentials sign the user in @positive', async ({ page }) => {
     // ...
   });
 
   // plan:scenario=1.2
-  test('rejects an invalid password @negative', async ({ page }) => {
+  test('[ACME-2] - Check that an invalid password is rejected @negative', async ({ page }) => {
     // ...
   });
   ```
@@ -273,7 +273,7 @@ These will get your output rejected on PR review (or worse, merged and break tru
 <!-- include-end: web-first-assertions -->
 
 9. **Leaving `// TODO`s without plan Q-id reference.** If a TODO doesn't tie back to a specific plan open question or risk callout, it's noise and someone has to investigate from scratch.
-10. **Test titles starting with "should".** Verb phrase ("opens checkout when cart has items"), per `migration-rules.md` and `test-organization`.
+10. **Test titles starting with "should" or missing the `[TICKET-ID] - Check that` prefix.** Use `[CHK-1] - Check that checkout opens when the cart has items`, per `migration-rules.md` §"Test titles" (validator W10 hard-checks the `^\[…\] - Check ` shape).
 11. **Missing or wrong `// plan:scenario=<id>` pins on test blocks.** Per ROADMAP v1.0 "Plan envelope enforcement", every generated `test(...)` block needs a `// plan:scenario=<id>` comment immediately above it, with `<id>` matching exactly one envelope `scenarios[].id`. Missing pins, duplicate pins, and orphan pins (id not in envelope) all fail the `plan-envelope-validate.ts --code` gate in `migrate.yml`. This is the LPW contract closure (arXiv 2411.14503) — the envelope says what scenarios must exist; the pins prove they were generated.
 
 12. **Report metrics paraphrased from the plan instead of counted from your emitted code.** When you write the `## Metrics` section, you MUST count selectors, assertions, and locator-quality buckets **from the `.spec.ts` you just wrote**, not copy the plan's estimates. Verify-CR lens flags this specifically (PR #15 FluentWait FIX FIRST: report claimed "1 canonical / 1 fragile = 50%" for a spec with exactly 1 locator — arithmetic impossible). Concrete rules:
@@ -337,7 +337,7 @@ These will get your output rejected on PR review (or worse, merged and break tru
     // ❌ WRONG — KB qa-master/architecture/import-source — block-severity fail
     import { test, expect } from "@playwright/test";
 
-    test("opens prompt dialog", async ({ page }) => {
+    test("[CHK-7] - Check that the prompt dialog opens", async ({ page }) => {
       await page.goto("/jupiter/prompt");      // ❌ ALSO WRONG — see (b)
       const heading = page.getByRole("heading", { name: /prompt/i });
       await expect(heading).toBeVisible();
@@ -348,7 +348,7 @@ These will get your output rejected on PR review (or worse, merged and break tru
     // ✅ CORRECT — qa-master compliant, validator-clean
     import { test, expect } from "@fixtures/base.fixture";
 
-    test("opens prompt dialog", async ({ promptDialogPage }) => {
+    test("[CHK-7] - Check that the prompt dialog opens", async ({ promptDialogPage }) => {
       await test.step("open the prompt dialog page", async () => {
         await promptDialogPage.open();         // navigation owned by the Page
       });

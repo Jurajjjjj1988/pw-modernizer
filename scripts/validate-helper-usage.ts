@@ -68,8 +68,14 @@ interface UnusedExport {
 }
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const API_DIR = join(REPO_ROOT, "outputs/helper/api");
-const CONSUMER_ROOT = join(REPO_ROOT, "outputs");
+const DEFAULT_API_DIR = join(REPO_ROOT, "outputs/helper/api");
+const DEFAULT_CONSUMER_ROOT = join(REPO_ROOT, "outputs");
+
+function parseCliFlag(name: string): string | undefined {
+  const idx = process.argv.indexOf(name);
+  if (idx === -1 || idx === process.argv.length - 1) return undefined;
+  return process.argv[idx + 1];
+}
 
 /**
  * Extract all top-level exported function names from a TypeScript file.
@@ -134,14 +140,16 @@ function findUnusedInFile(apiFile: string, consumerFiles: readonly string[]): Un
 
 function main(): void {
   const strict = process.argv.includes("--strict");
+  const apiDir = parseCliFlag("--api-dir") ?? DEFAULT_API_DIR;
+  const consumerRoot = parseCliFlag("--consumer-root") ?? DEFAULT_CONSUMER_ROOT;
 
-  const apiFiles = walkTs(API_DIR);
+  const apiFiles = walkTs(apiDir);
   if (apiFiles.length === 0) {
-    console.log("validate-helper-usage: no API helpers under outputs/helper/api/ — nothing to check.");
+    console.log(`validate-helper-usage: no API helpers under ${apiDir} — nothing to check.`);
     process.exit(0);
   }
 
-  const consumerFiles = walkTs(CONSUMER_ROOT, (p) => !p.includes("/_legacy-v0.1.x/"));
+  const consumerFiles = walkTs(consumerRoot, (p) => !p.includes("/_legacy-v0.1.x/"));
 
   const unused: UnusedExport[] = apiFiles.flatMap((f) => findUnusedInFile(f, consumerFiles));
 

@@ -1,0 +1,156 @@
+{
+  "inputBasename": "test_employees.py",
+  "sourceFramework": "selenium-python",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "[EMP-1.1] - Check that filtering by Engineering department shows matching rows and preserves department context on the detail page @positive @e2e",
+      "userAction": "Navigate to the employees list, type 'Engineering' in the search box and trigger the filter, verify at least one row appears, click the first row, and confirm the detail page shows 'Department: Engineering'.",
+      "expectedAssertions": [
+        "after typing 'Engineering' and triggering search: table rows locator has count > 0 (not.toHaveCount(0))",
+        "after clicking the first filtered row: detail page visible text contains /Department:\\s*Engineering/i"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "[EMP-1.2] - Check that the add-employee form surfaces a validation error on empty submission @negative @e2e",
+      "userAction": "Navigate to /employees/new and click the submit button without filling any fields.",
+      "expectedAssertions": [
+        "after empty form submit: form validation error element is visible",
+        "form validation error contains text /first name is required/i"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/employees-list.page.ts",
+    "outputs/helper/page-object/pages/employees-detail.page.ts",
+    "outputs/helper/page-object/pages/employees-new.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "page.search_box (EmployeesPage attr)",
+      "target": "page.getByRole('searchbox')",
+      "confidence": "low",
+      "notes": "EmployeesPage source unavailable; name inferred from Python attribute 'search_box'. Fallback: page.getByPlaceholder(/search|filter/i). See pin 1."
+    },
+    {
+      "original": "page.search_button (EmployeesPage attr)",
+      "target": "page.getByRole('button', { name: /search|filter/i })",
+      "confidence": "low",
+      "notes": "EmployeesPage source unavailable; accessible name unknown. See pin 2."
+    },
+    {
+      "original": "By.XPATH, \"//table[@class='employees-table']//tbody//tr\"",
+      "target": "page.locator('table.employees-table tbody tr')",
+      "confidence": "low",
+      "notes": "XPath uses CSS-class condition; CSS fallback preserves specificity. Upgrade to getByRole('row') if reviewer confirms semantic <table>. See pin 3."
+    },
+    {
+      "original": "rows[0] (snapshot index 0)",
+      "target": "page.locator('table.employees-table tbody tr').first()",
+      "confidence": "med",
+      "notes": "first() targets live locator; fragile on unstable sort order. Filter by employee name if stable test data available. See pin 4."
+    },
+    {
+      "original": "\"Department: Engineering\" in driver.page_source",
+      "target": "page.getByText(/Department:\\s*Engineering/i)",
+      "confidence": "low",
+      "notes": "page_source matches hidden nodes; getByText targets visible text only. Detail page DOM unknown — text may be split across label+value elements. See pin 5."
+    },
+    {
+      "original": "driver.find_element(By.CSS_SELECTOR, \"form button[type='submit']\")",
+      "target": "page.getByRole('button', { name: /add employee|save|submit/i })",
+      "confidence": "med",
+      "notes": "button[type='submit'] confirms ARIA role=button; accessible name guessed from common add-form patterns. See pin 6."
+    },
+    {
+      "original": "driver.find_element(By.CSS_SELECTOR, \".form-error\")",
+      "target": "page.getByRole('alert')",
+      "confidence": "low",
+      "notes": ".form-error is a CSS class; role='alert' assumed but unverified. Fallback: page.locator('.form-error'). See pin 7."
+    },
+    {
+      "original": "\"First name is required\" in driver.page_source",
+      "target": "page.getByRole('alert').filter({ hasText: /first name is required/i })",
+      "confidence": "med",
+      "notes": "Exact error text known from source; chained on same alert locator as pin 7. If role='alert' absent, use page.locator('.form-error').filter({ hasText: /first name is required/i })."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Search input (inputSearch)",
+      "assumedLocator": "page.getByRole('searchbox')",
+      "sourceLocator": "EmployeesPage.search_box (implementation unknown)",
+      "whyComment": "Q1 unresolved: search_box locator from pages/employees_page.py unavailable — assumed role=searchbox or <input type='search'>",
+      "reviewerFallback": "Read pages/employees_page.py in the source repo; supply the actual Selenium By strategy and map to the highest-priority Playwright locator (getByLabel if labeled, getByPlaceholder if placeholder only, locator('#id') if id-based)."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Search/filter button (buttonSearch)",
+      "assumedLocator": "page.getByRole('button', { name: /search|filter/i })",
+      "sourceLocator": "EmployeesPage.search_button (implementation unknown)",
+      "whyComment": "Q2 unresolved: search_button accessible name from pages/employees_page.py unavailable",
+      "reviewerFallback": "Inspect the search button in the SUT. If no accessible name exists, request aria-label='Search employees' from the FE team before Stage 2 runs."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Employee table rows (tableRows)",
+      "assumedLocator": "page.locator('table.employees-table tbody tr')",
+      "sourceLocator": "driver.find_elements(By.XPATH, \"//table[@class='employees-table']//tbody//tr\")",
+      "whyComment": "Q3 unresolved: table class selector may be fragile — prefer getByRole('row') if semantic <table> confirmed",
+      "reviewerFallback": "Confirm table class name in production DOM. If the table uses a design-system component, request data-testid='employee-row' on each row for a stable hook."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "First filtered employee row",
+      "assumedLocator": "page.locator('table.employees-table tbody tr').first()",
+      "sourceLocator": "rows[0]",
+      "whyComment": "Q4: using first() because no stable row accessible name is known; sort order may be indeterminate",
+      "reviewerFallback": "If Engineering employees are seeded with known names, filter by content: page.getByRole('row').filter({ hasText: /expected name/i }).first(). Supply the constant name in test-data."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Department text on employee detail page",
+      "assumedLocator": "page.getByText(/Department:\\s*Engineering/i)",
+      "sourceLocator": "\"Department: Engineering\" in driver.page_source",
+      "whyComment": "Q5 unresolved: employee detail page DOM structure unknown — text may be split across label/value elements",
+      "reviewerFallback": "Navigate to an employee detail page in the SUT and inspect how 'Department: Engineering' is rendered. If split into <dt>/<dd> or label/value pair, scope locator to the value element specifically."
+    },
+    {
+      "pinId": 6,
+      "elementDescription": "Form submit button (buttonSubmit)",
+      "assumedLocator": "page.getByRole('button', { name: /add employee|save|submit/i })",
+      "sourceLocator": "driver.find_element(By.CSS_SELECTOR, \"form button[type='submit']\")",
+      "whyComment": "Q6: submit button accessible name unverified — guessed from common add-form label patterns",
+      "reviewerFallback": "Inspect the submit button in DevTools. If icon-only with no accessible name, request aria-label from FE team. If label differs from the regex, update the name pattern in the plan before Stage 2."
+    },
+    {
+      "pinId": 7,
+      "elementDescription": "Form validation error element (alertFormError)",
+      "assumedLocator": "page.getByRole('alert')",
+      "sourceLocator": "driver.find_element(By.CSS_SELECTOR, \".form-error\")",
+      "whyComment": "Q7 unresolved: .form-error ARIA role unconfirmed — role='alert' is convention for live validation errors but not verified",
+      "reviewerFallback": "Inspect .form-error element in DevTools. If role='alert' is absent, fall back to page.locator('.form-error') and ask FE team to add role='alert' (also improves screen-reader accessibility)."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.60,
+    "smellCountDelta": -15,
+    "locDelta": 210,
+    "antiPatternCoverage": "15/15"
+  }
+}

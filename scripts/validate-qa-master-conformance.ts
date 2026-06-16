@@ -156,6 +156,12 @@ function walk(dir: string, predicate: (path: string) => boolean): string[] {
       for (const entry of readdirSync(current)) {
         if (entry.startsWith(".")) continue;
         if (entry === "node_modules") continue;
+        // Skip the v0.1.x archive — specs there carry pre-qa-master imports
+        // (`@playwright/test` + `page.goto`) by construction. Scoping by
+        // basename alone (isScopedSpec) isn't enough when a new emission
+        // shares its name candidate with a legacy file. Mirrors the same
+        // fix shipped in PR #147 for plan-envelope-validate + coverage.
+        if (entry === "_legacy-v0.1.x") continue;
         stack.push(join(current, entry));
       }
     } else if (predicate(current)) {

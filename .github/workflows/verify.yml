@@ -60,6 +60,16 @@ permissions:
   # downstream `repository_dispatch` listeners (this is documented
   # behavior — `push` listeners are the special case that DOESN'T fire).
   contents: write
+  # actions:write — needed by the transient-START-OVER retry branch
+  # (`gh workflow run verify.yml -f verify_attempt=2 ...`). That call
+  # hits POST /repos/{owner}/{repo}/actions/workflows/{id}/dispatches
+  # which requires `actions: write` on the GITHUB_TOKEN. Without it,
+  # the retry silently 403s and falls through to auto-regen — losing
+  # the cheap recovery path for transient sub-agent crashes. Observed
+  # on PR #126 run 27603341982 where CR sub-agent crashed at t=3min,
+  # retry should have fired but hit "HTTP 403: Resource not accessible
+  # by integration" and fell through to a needless auto-regen cycle.
+  actions: write
   pull-requests: write
   id-token: write
 

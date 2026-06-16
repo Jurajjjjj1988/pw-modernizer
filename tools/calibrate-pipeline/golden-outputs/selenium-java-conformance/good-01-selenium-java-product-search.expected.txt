@@ -1,0 +1,3 @@
+# Exit 0. The good fixture is qa-master clean - validator must report no violations.
+validate-qa-master-conformance:
+checked — clean.

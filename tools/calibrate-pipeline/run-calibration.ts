@@ -42,6 +42,7 @@ type ValidatorName =
   | "plan-code-coverage" | "dom-ground" | "verify-tally"
   | "danger-policy"
   | "cypress-conformance" | "selenium-python-conformance"
+  | "selenium-java-conformance"
   | "rag-bm25";
 
 const VALIDATORS: readonly ValidatorName[] = [
@@ -50,6 +51,7 @@ const VALIDATORS: readonly ValidatorName[] = [
   "plan-code-coverage", "dom-ground", "verify-tally",
   "danger-policy",
   "cypress-conformance", "selenium-python-conformance",
+  "selenium-java-conformance",
   "rag-bm25",
 ];
 
@@ -61,6 +63,7 @@ const VALIDATORS: readonly ValidatorName[] = [
 const NESTED_CONFORMANCE_VALIDATORS: readonly ValidatorName[] = [
   "cypress-conformance",
   "selenium-python-conformance",
+  "selenium-java-conformance",
 ];
 
 interface FixtureResult {
@@ -360,7 +363,7 @@ function runDangerPolicy(fixtureName: string): FixtureResult {
  * `01-selenium-python-pytest-login`).
  */
 function runConformance(
-  validator: "cypress-conformance" | "selenium-python-conformance",
+  validator: "cypress-conformance" | "selenium-python-conformance" | "selenium-java-conformance",
   fixtureName: string,
 ): FixtureResult {
   const sepIdx = fixtureName.indexOf("-");
@@ -380,6 +383,10 @@ function runCypressConformance(fixtureName: string): FixtureResult {
 
 function runSeleniumPythonConformance(fixtureName: string): FixtureResult {
   return runConformance("selenium-python-conformance", fixtureName);
+}
+
+function runSeleniumJavaConformance(fixtureName: string): FixtureResult {
+  return runConformance("selenium-java-conformance", fixtureName);
 }
 
 // rag-bm25 fixtures live under fixtures/rag-bm25/<name>/ with a pre-built
@@ -419,6 +426,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "danger-policy": runDangerPolicy,
   "cypress-conformance": runCypressConformance,
   "selenium-python-conformance": runSeleniumPythonConformance,
+  "selenium-java-conformance": runSeleniumJavaConformance,
   "rag-bm25": runRagBm25,
 };
 

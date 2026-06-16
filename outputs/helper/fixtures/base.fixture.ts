@@ -1,5 +1,7 @@
 import { test as base, expect } from "@playwright/test";
 
+import { PageClassWebForm } from "@page-object/pages/web-form.page";
+
 /**
  * Single import source for `test` + `expect` in every spec.
  *
@@ -11,8 +13,12 @@ import { test as base, expect } from "@playwright/test";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = Record<string, never>;
+type Fixtures = {
+  webFormPage: PageClassWebForm;
+};
 
-const test = base.extend<Fixtures>({});
+const test = base.extend<Fixtures>({
+  webFormPage: async ({ page }, use) => use(new PageClassWebForm(page)),
+});
 
 export { test, expect };

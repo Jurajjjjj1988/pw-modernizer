@@ -2,12 +2,12 @@
 
 ## Source → Target
 - Source: `inputs/selenium-python/using_selenium_tests.py` (32 LOC)
-- Output: `outputs/tests/using_selenium_tests.spec.ts` (29 LOC)
-- LOC delta: -3
+- Output: `outputs/tests/using-selenium-tests.spec.ts` (28 LOC)
+- LOC delta: -4
 
 ## Quality scores
-- **Aggregate confidence:** 0.76
-- Selector quality: 67% canonical (2 canonical / 1 fragile)
+- **Aggregate confidence:** 0.84
+- Selector quality: 100% canonical (0 canonical / 0 fragile)
 - Web-first assertion rate: 100%
 - Plan confidence: 1 high / 1 med / 1 low → avg 0.60
 
@@ -15,7 +15,7 @@
 | Signal | Value | Weight | Contribution |
 |---|---|---|---|
 | Plan confidence | 0.60 | 0.40 | 0.240 |
-| Selector quality | 0.67 | 0.25 | 0.167 |
+| Selector quality | 1.00 | 0.25 | 0.250 |
 | Web-first rate | 1.00 | 0.10 | 0.100 |
 | Smell removal rate | 1.00 | 0.15 | — |
 | Forbidden absence | 1.00 | 0.10 | 0.100 |

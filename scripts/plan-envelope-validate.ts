@@ -152,8 +152,19 @@ function expectedSpecBasenames(inputBasename: string): string[] {
   const out = new Set<string>([`${kebab}.spec.ts`]);
   // Drop redundant trailing `-test` / `-tests` — Sonnet's observed rename
   // when the .spec.ts extension already implies test-ness.
-  const dropTest = kebab.replace(/-tests?$/, "");
-  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  const dropTrailingTest = kebab.replace(/-tests?$/, "");
+  if (dropTrailingTest !== kebab) out.add(`${dropTrailingTest}.spec.ts`);
+  // Drop leading `test-` — Python's pytest convention is `test_<thing>.py`,
+  // but Playwright's convention is `<thing>.spec.ts` (the test-ness is in
+  // the `.spec.ts` extension). Sonnet correctly applies this rename:
+  //   test_employees.py → employees.spec.ts (observed 2026-06-16 run 27623843129)
+  //   test_login.py     → login.spec.ts
+  // Without this, the filterCodePathsByInput fallback runs over ALL specs
+  // in outputs/tests/ and accumulates pin counts across unrelated migrations
+  // (every spec legitimately starts numbering at 1.1, so the count for any
+  // shared scenario id explodes).
+  const dropLeadingTest = kebab.replace(/^test-/, "");
+  if (dropLeadingTest !== kebab) out.add(`${dropLeadingTest}.spec.ts`);
   return Array.from(out);
 }
 

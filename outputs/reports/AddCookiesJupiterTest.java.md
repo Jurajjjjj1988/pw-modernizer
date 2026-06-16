@@ -2,22 +2,22 @@
 
 ## Source → Target
 - Source: `inputs/selenium-java/AddCookiesJupiterTest.java` (73 LOC)
-- Output: `outputs/tests/add-cookies-jupiter-test.spec.ts` (49 LOC)
-- LOC delta: -24
+- Output: `outputs/tests/add-cookies-jupiter-test.spec.ts` (35 LOC)
+- LOC delta: -38
 
 ## Quality scores
-- **Aggregate confidence:** 0.78
-- Selector quality: 75% canonical (3 canonical / 1 fragile)
-- Web-first assertion rate: 100%
+- **Aggregate confidence:** 0.59
+- Selector quality: 100% canonical (0 canonical / 0 fragile)
+- Web-first assertion rate: 0%
 - Plan confidence: 1 high / 0 med / 1 low → avg 0.60
 
 ### Confidence breakdown
 | Signal | Value | Weight | Contribution |
 |---|---|---|---|
 | Plan confidence | 0.60 | 0.40 | 0.240 |
-| Selector quality | 0.75 | 0.25 | 0.188 |
-| Web-first rate | 1.00 | 0.10 | 0.100 |
-| Smell removal rate | 1.00 | 0.15 | — |
+| Selector quality | 1.00 | 0.25 | 0.250 |
+| Web-first rate | 0.00 | 0.10 | 0.000 |
+| Smell removal rate | 0.00 | 0.15 | — |
 | Forbidden absence | 1.00 | 0.10 | 0.100 |
 
 ## Smell count (source → output → delta)
@@ -33,7 +33,7 @@
 | testSkip | 0 | 0 | +0 |
 | anyType | 0 | 0 | +0 |
 | consoleLog | 0 | 0 | +0 |
-| nonWebFirstAsserts | 0 | 0 | +0 |
+| nonWebFirstAsserts | 0 | 1 | +1 |
 | conditionalInTest | 0 | 0 | +0 |
 
 ## Forbidden patterns in output

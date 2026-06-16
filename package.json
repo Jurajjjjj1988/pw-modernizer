@@ -51,6 +51,7 @@
     "rag:index": "tsx scripts/index-plans.ts",
     "rag:retrieve": "tsx scripts/retrieval-bm25.ts",
     "rag:render": "tsx scripts/rag-context-render.ts",
+    "rag:variance": "tsx scripts/rag-variance-report.ts",
     "pilot:dry-run": "tsx scripts/pilot-dry-run.ts"
   },
   "devDependencies": {

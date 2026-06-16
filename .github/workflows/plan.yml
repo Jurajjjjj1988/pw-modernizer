@@ -833,8 +833,19 @@ jobs:
           USAGE_FILE="outputs/.usage/${BASE}.json"
           USAGE_ARG=""
           [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"
-          # shellcheck disable=SC2086 # USAGE_ARG intentionally word-split
-          npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" $USAGE_ARG || \
+          # Phase 1 RAG telemetry (ADR-0001). When STAGE1_RAG is anything
+          # other than empty/off the Stage 0.5 step wrote a sidecar JSON to
+          # outputs/reports/<base>-rag.json. Pass both the mode + the sidecar
+          # so persist-plan-metrics writes rag_mode + rag_retrieved_ids +
+          # rag_top_score onto the plans row.
+          RAG_MODE="${{ vars.STAGE1_RAG || 'off' }}"
+          RAG_REPORT="outputs/reports/${BASE}-rag.json"
+          RAG_ARGS="--rag-mode $RAG_MODE"
+          if [ -f "$RAG_REPORT" ]; then
+            RAG_ARGS="$RAG_ARGS --rag-report $RAG_REPORT"
+          fi
+          # shellcheck disable=SC2086 # *_ARG intentionally word-split
+          npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" $USAGE_ARG $RAG_ARGS || \
             echo "::warning::persist-plan-metrics failed (non-fatal)"
 
       - name: Open plan PR

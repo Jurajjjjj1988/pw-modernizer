@@ -30,12 +30,16 @@
 import { readFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
-import { MetricsDB, type UsageStats } from "./metrics.js";
+import { MetricsDB, type RagPlanColumns, type UsageStats } from "./metrics.js";
 
 interface CliArgs {
   envelope: string;
   /** Optional path to a UsageStats JSON file (output of extract-claude-usage.ts). */
   usage: string | null;
+  /** Optional path to the Phase 1 RAG retrieval JSON sidecar produced by Stage 0.5. */
+  ragReport: string | null;
+  /** STAGE1_RAG mode the workflow ran under (off | shadow | on). null when pre-Phase-1. */
+  ragMode: "off" | "shadow" | "on" | null;
 }
 
 interface LocatorRow {
@@ -70,15 +74,64 @@ function parseCliArgs(): CliArgs {
     options: {
       envelope: { type: "string" },
       usage: { type: "string" },
+      "rag-report": { type: "string" },
+      "rag-mode": { type: "string" },
     },
   });
   if (typeof values.envelope !== "string" || values.envelope.length === 0) {
     throw new Error("--envelope is required");
   }
+  let ragMode: CliArgs["ragMode"] = null;
+  if (typeof values["rag-mode"] === "string" && values["rag-mode"].length > 0) {
+    const m = values["rag-mode"];
+    if (m !== "off" && m !== "shadow" && m !== "on") {
+      throw new Error(`--rag-mode must be off|shadow|on, got '${m}'`);
+    }
+    ragMode = m;
+  }
   return {
     envelope: values.envelope,
     usage: typeof values.usage === "string" && values.usage.length > 0 ? values.usage : null,
+    ragReport: typeof values["rag-report"] === "string" && values["rag-report"].length > 0 ? values["rag-report"] : null,
+    ragMode,
   };
+}
+
+interface RagSidecarEntry {
+  id: string;
+  score: number;
+}
+
+/**
+ * Read the Phase 1 RAG retrieval sidecar (outputs/reports/<basename>-rag.json)
+ * written by `scripts/retrieval-bm25.ts`. Returns a normalised RagPlanColumns
+ * suitable for MetricsDB.recordPlan(). Missing file or unreadable JSON →
+ * null (workflow treated as untracked); empty array → mode-only row with
+ * null ids + score.
+ */
+function loadRag(report: string | null, mode: CliArgs["ragMode"]): RagPlanColumns | null {
+  if (mode === null) return null;
+  if (mode === "off") {
+    return { mode, retrieved_ids: null, top_score: null };
+  }
+  if (report === null || !existsSync(report)) {
+    // Mode is shadow/on but no sidecar reached this step - persist mode
+    // with NULL ids + score so the dashboard shows "Stage 0.5 ran but did
+    // not write a sidecar" as a distinct state from "pre-Phase-1".
+    return { mode, retrieved_ids: null, top_score: null };
+  }
+  try {
+    const raw: unknown = JSON.parse(readFileSync(report, "utf8"));
+    if (!Array.isArray(raw)) {
+      return { mode, retrieved_ids: null, top_score: null };
+    }
+    const rows = raw as RagSidecarEntry[];
+    const ids = rows.map((r) => r.id);
+    const top = rows.length > 0 ? (rows[0]?.score ?? null) : null;
+    return { mode, retrieved_ids: ids, top_score: top };
+  } catch {
+    return { mode, retrieved_ids: null, top_score: null };
+  }
 }
 
 /**
@@ -140,6 +193,7 @@ function main(): void {
   const commitSha = process.env["GITHUB_SHA"] ?? "local";
 
   const usage = loadUsage(args.usage);
+  const rag = loadRag(args.ragReport, args.ragMode);
 
   const db = new MetricsDB(dbPath);
   try {
@@ -153,16 +207,22 @@ function main(): void {
       kb_ids_cited: collectCitedKbIds(envelope),
       commit_sha: commitSha,
       usage,
+      rag,
     });
   } finally {
     db.close();
   }
   const usageNote = usage ? ` [model=${usage.model}, in=${usage.input_tokens}, out=${usage.output_tokens}]` : " [usage:untracked]";
+  let ragNote = "";
+  if (rag) {
+    const countSuffix = rag.retrieved_ids === null ? "" : `,n=${rag.retrieved_ids.length}`;
+    ragNote = ` [rag:${rag.mode}${countSuffix}]`;
+  }
   process.stdout.write(
     `persist-plan-metrics: recorded ${envelope.inputBasename} (` +
       `${envelope.scenarios.length} scenario(s), ` +
       `${envelope.locatorTable.length} locator(s), ` +
-      `${envelope.hallucinationDefensePins.length} pin(s))${usageNote}\n`,
+      `${envelope.hallucinationDefensePins.length} pin(s))${usageNote}${ragNote}\n`,
   );
 }
 

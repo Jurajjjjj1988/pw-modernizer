@@ -221,6 +221,24 @@ export interface PlanRow {
   commit_sha: string;
   /** Claude usage captured from `--output-format json`; optional for back-compat. */
   usage?: UsageStats | null;
+  /** Phase 1 RAG telemetry (ADR-0001). null when STAGE1_RAG=off / pre-Phase-1. */
+  rag?: RagPlanColumns | null;
+}
+
+/**
+ * Phase 1 RAG telemetry for a single plan row. All fields nullable per the
+ * schema migration in MetricsDB - the dashboard reads `rag_mode IS NULL` as
+ * "pre-Phase-1 / untracked", `rag_mode = 'off'` as "Phase 1 deployed but
+ * default", `rag_mode = 'shadow'` as "measurement mode", `rag_mode = 'on'`
+ * as "retrieval injected into the analyze prompt prefix".
+ */
+export interface RagPlanColumns {
+  /** Mode under which Stage 1 ran: off | shadow | on. */
+  mode: "off" | "shadow" | "on";
+  /** Retrieved doc IDs (top-K) - null when mode=off and no retrieval ran. */
+  retrieved_ids: string[] | null;
+  /** Top-1 BM25 score - null when mode=off or no candidates returned. */
+  top_score: number | null;
 }
 
 export interface VerificationRow {
@@ -317,6 +335,7 @@ export class MetricsDB {
     for (const table of ["migrations", "plans", "verifications"] as const) {
       this.ensureUsageColumns(table);
     }
+    this.ensureRagColumns();
   }
 
   private ensureSourceFrameworkColumn(table: "migrations" | "plans"): void {
@@ -336,6 +355,29 @@ export class MetricsDB {
    * USD cost. All NULLABLE — legacy rows + steps that skip usage capture stay
    * valid. Dashboard treats `cost_usd IS NULL` as "untracked", not "free".
    */
+  /**
+   * Phase 1 RAG telemetry columns (added 2026-06, ADR-0001) on the plans
+   * table. All NULLABLE — pre-Phase-1 rows + off-mode rows stay valid. The
+   * dashboard treats `rag_mode IS NULL` as "untracked / pre-Phase-1" and
+   * `rag_mode = 'off'` as "Phase 1 deployed but default-off"; these read
+   * differently in the trend panel because the former is historical and the
+   * latter is current behaviour.
+   */
+  private ensureRagColumns(): void {
+    const cols = this.db.prepare("PRAGMA table_info(plans)").all() as Array<{ name: string }>;
+    const names = new Set(cols.map((c) => c.name));
+    const additions: Array<[string, string]> = [
+      ["rag_retrieved_ids", "TEXT"], // JSON array of doc ids
+      ["rag_top_score", "REAL"],
+      ["rag_mode", "TEXT"],
+    ];
+    for (const [name, type] of additions) {
+      if (!names.has(name)) {
+        this.db.exec(`ALTER TABLE plans ADD COLUMN ${name} ${type}`);
+      }
+    }
+  }
+
   private ensureUsageColumns(table: "migrations" | "plans" | "verifications"): void {
     const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     const names = new Set(cols.map((c) => c.name));
@@ -386,10 +428,12 @@ export class MetricsDB {
       `INSERT INTO plans (
         created_at, input_basename, source_framework, subtractive,
         locator_count, pin_count, scenario_count, kb_ids_cited, commit_sha,
-        model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
+        rag_retrieved_ids, rag_top_score, rag_mode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const u = projectUsage(row.usage);
+    const r = projectRag(row.rag);
     stmt.run(
       nowUnix(),
       row.input_basename,
@@ -401,6 +445,7 @@ export class MetricsDB {
       JSON.stringify(row.kb_ids_cited),
       row.commit_sha,
       u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_creation_tokens, u.cost_usd,
+      r.rag_retrieved_ids, r.rag_top_score, r.rag_mode,
     );
   }
 
@@ -475,5 +520,31 @@ function projectUsage(usage: UsageStats | null | undefined): UsageColumns {
     cache_read_tokens: usage.cache_read_tokens ?? null,
     cache_creation_tokens: usage.cache_creation_tokens ?? null,
     cost_usd: computeCostUsd(usage),
+  };
+}
+
+interface RagProjection {
+  rag_retrieved_ids: string | null; // JSON-encoded array, or NULL
+  rag_top_score: number | null;
+  rag_mode: string | null;
+}
+
+/**
+ * Project a RagPlanColumns into the 3 nullable DB columns. Pre-Phase-1
+ * callers that pass `undefined` or `null` write all-NULL columns; off-mode
+ * writes `rag_mode = 'off'` with the other two NULL (no retrieval ran);
+ * shadow/on mode writes the actual ids + score.
+ */
+function projectRag(rag: RagPlanColumns | null | undefined): RagProjection {
+  if (!rag) {
+    return { rag_retrieved_ids: null, rag_top_score: null, rag_mode: null };
+  }
+  if (rag.mode === "off") {
+    return { rag_retrieved_ids: null, rag_top_score: null, rag_mode: "off" };
+  }
+  return {
+    rag_retrieved_ids: rag.retrieved_ids === null ? null : JSON.stringify(rag.retrieved_ids),
+    rag_top_score: rag.top_score,
+    rag_mode: rag.mode,
   };
 }

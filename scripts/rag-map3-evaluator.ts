@@ -42,6 +42,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -305,7 +306,18 @@ interface MapReport {
   perQuery: QueryResult[];
 }
 
-function deriveVerdict(map: number, count: number, args: CliArgs): { verdict: MapReport["verdict"]; rationale: string } {
+/**
+ * Decide the Phase 1 retrieval-quality verdict from the held-out MAP score.
+ * Insufficient data wins over everything: when `count < args.minQueries` the
+ * verdict is `INSUFFICIENT-DATA` regardless of the MAP value. Otherwise a MAP
+ * at or above {@link MAP_PASS_THRESHOLD} is `PASS`, below it is `HOLD`.
+ *
+ * @param map mean average precision @k, in [0, 1].
+ * @param count number of queries actually evaluated.
+ * @param args parsed CLI args (uses `k` for messaging, `minQueries` as the floor).
+ * @returns the verdict plus a human-readable rationale string.
+ */
+export function deriveVerdict(map: number, count: number, args: CliArgs): { verdict: MapReport["verdict"]; rationale: string } {
   if (count < args.minQueries) {
     return {
       verdict: "INSUFFICIENT-DATA",
@@ -377,4 +389,7 @@ function main(): void {
   }
 }
 
-main();
+// Only run the CLI when invoked directly — importing for tests must not scan.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

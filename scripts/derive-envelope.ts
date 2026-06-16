@@ -28,6 +28,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 interface LocatorRow {
@@ -148,7 +149,16 @@ function parseMarkdownTable(body: string): string[][] {
   return rows;
 }
 
-function normaliseConfidence(s: string): "high" | "med" | "low" {
+/**
+ * Normalise a free-form confidence cell to the canonical `high`/`med`/`low`.
+ * Accepts full words, common variants (`medium`), and single-letter `H`/`M`/`L`
+ * case-insensitively. Throws on anything unrecognised so a malformed plan
+ * fails loudly rather than silently defaulting.
+ *
+ * @param s raw cell text, e.g. `"M"`, `"High"`, `" medium "`.
+ * @returns one of `"high" | "med" | "low"`.
+ */
+export function normaliseConfidence(s: string): "high" | "med" | "low" {
   const c = s.toLowerCase().trim();
   if (c === "high" || c === "h") return "high";
   if (c === "med" || c === "medium" || c === "m") return "med";
@@ -156,7 +166,17 @@ function normaliseConfidence(s: string): "high" | "med" | "low" {
   throw new Error(`Unknown confidence value: "${s}"`);
 }
 
-function parseLocatorTable(body: string): LocatorRow[] {
+/**
+ * Parse the locator translation table. The first two locator-shaped cells
+ * (matching `page.`/`locator(`/`By.`/`cy.`) are taken as `original` then
+ * `target` in source-column order (never swapped); the H/M/L cell is the
+ * confidence and the longest remaining cell is `notes`. Rows without two
+ * locator cells are skipped.
+ *
+ * @param body markdown body of the `## Locator translation table` section.
+ * @returns the parsed locator rows.
+ */
+export function parseLocatorTable(body: string): LocatorRow[] {
   const rows = parseMarkdownTable(body);
   return rows.map((row) => {
     // Heuristic: original is column with locator-like syntax, target is similar,
@@ -201,7 +221,17 @@ function parseStructuralChanges(body: string): { requiredPOMs: string[]; require
   return { requiredPOMs, requiredFixtures };
 }
 
-function parseExpectedMetrics(body: string): Envelope["expectedMetrics"] {
+/**
+ * Parse the `## Expected metrics` bullets into the envelope's numeric block.
+ * `Selector quality score: X/5` is normalised to a 0..1 ratio (so `4.5/5`
+ * becomes `0.9`); a bare number is taken as-is. Smell-count and LOC deltas are
+ * parsed as signed integers; anti-pattern coverage stays as the raw `n/m`
+ * string. Missing fields default (score 0, deltas 0, coverage `"0/0"`).
+ *
+ * @param body markdown body of the `## Expected metrics` section.
+ * @returns the normalised expected-metrics object.
+ */
+export function parseExpectedMetrics(body: string): Envelope["expectedMetrics"] {
   const get = (label: RegExp): string | null => {
     for (const line of body.split("\n")) {
       const m = label.exec(line);
@@ -320,7 +350,18 @@ function parseScenarios(summaryBody: string): ScenarioEntry[] {
   return assertions.length === 0 ? placeholderScenario() : groupAssertionsIntoScenarios(assertions);
 }
 
-function deriveEnvelope(md: string, inputBasename: string): Envelope {
+/**
+ * Derive a complete plan envelope from a markdown plan and its input basename.
+ * Splits the markdown into h2 sections, then delegates to the section parsers
+ * (source framework, locator table, structural changes, expected metrics,
+ * hallucination pins, scenarios). `subtractive` is true only for the
+ * bad-playwright lens.
+ *
+ * @param md full markdown plan text.
+ * @param inputBasename the source file basename recorded in the envelope.
+ * @returns the assembled {@link Envelope}.
+ */
+export function deriveEnvelope(md: string, inputBasename: string): Envelope {
   const sections = splitSections(md);
   const get = (key: string): string => sections.get(key) ?? "";
   // Source framework: prefer dedicated section, but multi-file plans use
@@ -372,4 +413,7 @@ function main(): void {
   console.log(`  scenarios: ${envelope.scenarios.length}, locators: ${envelope.locatorTable.length}, pins: ${envelope.hallucinationDefensePins.length}`);
 }
 
-main();
+// Only run the CLI when invoked directly — importing for tests must not write.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

@@ -175,6 +175,39 @@ interface RoiPanel {
   rateFromEnv: boolean;
 }
 
+/**
+ * Phase 1 RAG telemetry panel (ADR-0001). Reads the rag_* columns added in
+ * PR #113 from the plans table. A null mode means pre-Phase-1; the panel
+ * buckets them separately from `off` rows so the trend tells "what changed
+ * after we shipped Phase 1" vs "what's happening today".
+ */
+interface RagPanel {
+  /** Plan rows where rag_mode is not null (Phase 1 has touched them). */
+  trackedPlans: number;
+  /** Distribution of plans across rag_mode values (off / shadow / on / pre-Phase-1). */
+  modeDistribution: Array<{ mode: string; count: number }>;
+  /**
+   * Stats on the top-1 BM25 score across plans that actually ran retrieval
+   * (shadow or on, with a non-null score). Pre-Phase-1 + off rows excluded.
+   */
+  scoreStats: {
+    sampleSize: number;
+    avg: number | null;
+    median: number | null;
+    p90: number | null;
+  };
+  /** Most-retrieved doc ids across all shadow + on rows (top 10). */
+  topRetrievedIds: Array<{ id: string; count: number }>;
+  /** Last 20 plan rows with rag telemetry, newest first. */
+  recent: Array<{
+    inputBasename: string;
+    ragMode: string;
+    ragTopScore: number | null;
+    retrievedCount: number;
+    createdAtUnix: number;
+  }>;
+}
+
 /** Top-level cost rollup shown above the per-run table. */
 interface CostSummary {
   trackedRuns: number;
@@ -214,6 +247,8 @@ interface DashboardData {
   costPerOutcome: CostPerOutcomeRow[];
   /** Panel C — "ROI vs hand-migration". */
   roi: RoiPanel;
+  /** Phase 1 RAG telemetry panel (ADR-0001). */
+  rag: RagPanel;
 }
 
 function parseCliArgs(): CliArgs {
@@ -831,6 +866,114 @@ function buildData(db: MetricsDB): DashboardData {
     weeklyCost: buildWeeklyCost(db, dailyBurnRows),
     costPerOutcome: buildCostPerOutcome(db),
     roi: buildRoi(db),
+    rag: buildRag(db),
+  };
+}
+
+/**
+ * Phase 1 RAG panel builder. Reads rag_mode / rag_top_score / rag_retrieved_ids
+ * from plans. The retrieved-ids field is JSON-encoded in the DB so we parse
+ * defensively - any malformed row gets treated as "no retrieval" rather than
+ * blowing up the dashboard render.
+ */
+function buildRag(db: MetricsDB): RagPanel {
+  const trackedRow = db.query(
+    "SELECT COUNT(*) AS n FROM plans WHERE rag_mode IS NOT NULL",
+  )[0] ?? {};
+  const trackedPlans = num(trackedRow, "n");
+
+  // Mode distribution. Pre-Phase-1 rows (rag_mode IS NULL) bucket separately
+  // so the trend reflects "what changed after Phase 1 shipped" rather than
+  // mixing them with current default-off behaviour.
+  const modeRows = db.query(
+    `SELECT COALESCE(rag_mode, 'pre-phase-1') AS mode, COUNT(*) AS n
+     FROM plans GROUP BY rag_mode`,
+  );
+  const modeDistribution = modeRows.map((r) => ({
+    mode: str(r, "mode"),
+    count: num(r, "n"),
+  }));
+
+  // Score stats only over shadow + on rows that produced a numeric top score.
+  const scoreRows = db.query(
+    `SELECT rag_top_score FROM plans
+     WHERE rag_mode IN ('shadow','on') AND rag_top_score IS NOT NULL
+     ORDER BY rag_top_score ASC`,
+  );
+  const scores = scoreRows.map((r) => num(r, "rag_top_score"));
+  const scoreStats = computeScoreStats(scores);
+
+  // Aggregate retrieved IDs - parse JSON defensively, dedupe per row, count
+  // occurrences across all rows.
+  const idRows = db.query(
+    `SELECT rag_retrieved_ids FROM plans
+     WHERE rag_mode IN ('shadow','on') AND rag_retrieved_ids IS NOT NULL`,
+  );
+  const idCounts = new Map<string, number>();
+  for (const row of idRows) {
+    const raw = str(row, "rag_retrieved_ids");
+    if (raw === "") continue;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      for (const id of new Set(parsed.filter((v): v is string => typeof v === "string"))) {
+        idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+      }
+    } catch {
+      // Skip malformed rows.
+    }
+  }
+  const topRetrievedIds = [...idCounts.entries()]
+    .map(([id, count]) => ({ id, count }))
+    .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
+    .slice(0, 10);
+
+  // Recent retrievals table - newest 20 plans with rag telemetry. Retrieved
+  // count comes from the JSON length when present, 0 when off / NULL.
+  const recentRows = db.query(
+    `SELECT input_basename, rag_mode, rag_top_score, rag_retrieved_ids, created_at
+     FROM plans WHERE rag_mode IS NOT NULL
+     ORDER BY created_at DESC LIMIT 20`,
+  );
+  const recent = recentRows.map((r) => {
+    const idsRaw = r["rag_retrieved_ids"];
+    let retrievedCount = 0;
+    if (typeof idsRaw === "string" && idsRaw.length > 0) {
+      try {
+        const parsed: unknown = JSON.parse(idsRaw);
+        if (Array.isArray(parsed)) retrievedCount = parsed.length;
+      } catch {
+        // ignore
+      }
+    }
+    const topScoreRaw = r["rag_top_score"];
+    return {
+      inputBasename: str(r, "input_basename"),
+      ragMode: str(r, "rag_mode"),
+      ragTopScore: typeof topScoreRaw === "number" ? topScoreRaw : null,
+      retrievedCount,
+      createdAtUnix: num(r, "created_at"),
+    };
+  });
+
+  return { trackedPlans, modeDistribution, scoreStats, topRetrievedIds, recent };
+}
+
+function computeScoreStats(scores: number[]): RagPanel["scoreStats"] {
+  const n = scores.length;
+  if (n === 0) {
+    return { sampleSize: 0, avg: null, median: null, p90: null };
+  }
+  // scores are already ASC-sorted by the SQL query
+  const sum = scores.reduce((acc, s) => acc + s, 0);
+  const median = scores[Math.floor(n / 2)] ?? null;
+  const p90Index = Math.max(0, Math.min(n - 1, Math.floor(n * 0.9)));
+  const p90 = scores[p90Index] ?? null;
+  return {
+    sampleSize: n,
+    avg: Math.round((sum / n) * 1000) / 1000,
+    median,
+    p90,
   };
 }
 

@@ -98,6 +98,12 @@ jobs:
           npx tsx scripts/assemble-prompts.ts --write
 
       - name: Run Claude (verify stage, Opus, ${{ matrix.lens }} lens)
+        # Verify sub-agents typically finish in 3-5 min (Read 3-5 files +
+        # write 1 verdict markdown). 15 min is a 3x headroom that catches
+        # an actually-hung Opus call without aborting healthy long-tail
+        # runs. Without this cap a stuck inference would burn until GHA's
+        # 6h job limit, racking up runner cost + the Opus session itself.
+        timeout-minutes: 15
         env:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
           # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).

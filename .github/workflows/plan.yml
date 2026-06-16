@@ -600,6 +600,12 @@ jobs:
           npx tsx scripts/assemble-prompts.ts --write
 
       - name: Run Claude (analyze stage)
+        # Stage 1 typically finishes in 5-10 min (Read input + KB + rules +
+        # examples; write plan markdown + envelope sidecar). 20 min is a 2x
+        # headroom that catches a hung Sonnet call without aborting healthy
+        # long-tail runs (multi-file Selenium plans push 12 min). Without
+        # this cap a stuck inference would burn until GHA's 6h job limit.
+        timeout-minutes: 20
         if: steps.dedup.outputs.skip == 'false'
         env:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key

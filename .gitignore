@@ -41,3 +41,8 @@ outputs/.trajectories/
 # Compiled-at-runtime sidecar for danger-rules.ts (created by danger.yml)
 scripts/lib/danger-rules.js
 .claude/
+
+# Captured failing-PR artifacts (local-only, managed by scripts/capture-failure.ts).
+# Promote a case into fixtures/<validator>/{good,bad}-NN/ to make it a permanent
+# regression fixture; the raw scratch capture stays out of git.
+tools/calibrate-pipeline/fixtures/_captured/

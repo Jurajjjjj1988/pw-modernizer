@@ -22,6 +22,7 @@
     "metrics:export": "tsx scripts/metrics-export.ts",
     "dashboard": "tsx scripts/dashboard.ts",
     "cost:report": "tsx scripts/cost-report.ts",
+    "triage": "tsx scripts/capture-failure.ts",
     "stress:test-stage0": "tsx scripts/test-stage0.ts",
     "stage1:replay": "tsx scripts/stage1-replay.ts",
     "trajectory:trace": "tsx scripts/trajectory-trace.ts",

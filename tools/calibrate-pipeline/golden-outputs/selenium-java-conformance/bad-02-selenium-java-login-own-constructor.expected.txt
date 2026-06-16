@@ -1,0 +1,4 @@
+# Exit 1. Single block-severity violation: the PageClass declares its own
+# constructor. We pin the rule id + violation-count line.
+qa-master/architecture/no-constructor
+validate-qa-master-conformance: 1 violation(s) (1 block / 0 warn)

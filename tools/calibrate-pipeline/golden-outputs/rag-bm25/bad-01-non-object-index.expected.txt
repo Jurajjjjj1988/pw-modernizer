@@ -1,0 +1,2 @@
+# Non-object index (JSON string) → readIndex throws → exit 1
+index is not an object

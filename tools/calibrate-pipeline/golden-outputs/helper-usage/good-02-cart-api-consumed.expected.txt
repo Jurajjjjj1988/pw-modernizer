@@ -1,0 +1,3 @@
+# Exit 0. Both cart helpers (addToCart + emptyCart) are consumed by the spec,
+# so the validator stays clean under --strict. We anchor on the "clean" line.
+validate-helper-usage: clean

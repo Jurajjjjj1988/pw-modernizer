@@ -59,7 +59,7 @@ Key gates: PR-based human approval after Stage 1, validator wall after Stage 2, 
 ```bash
 npm run triage <pr#>           # ZERO-TOKEN: freeze a failing migrator PR + print triage digest
 npm run smoke                  # typecheck:all + validate:all + lint — run before any commit
-npm run calibrate              # run 53-fixture corpus (8 validators) locally
+npm run calibrate              # run 100-fixture corpus (15 validators) locally
 npm run validate:all           # kb + examples + assemble + envelope (×2) + derive + coverage + calibrate
 npm run check:kb               # verify all KB IDs referenced in prompts/examples resolve
 npm run check:examples         # strict mode — examples must be plan/output coherent

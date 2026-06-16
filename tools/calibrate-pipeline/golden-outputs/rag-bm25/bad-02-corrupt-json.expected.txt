@@ -1,0 +1,2 @@
+# Corrupt/truncated JSON → JSON.parse throws (message is Node-version-specific, assert only the stable wrapper) → exit 1
+failed to read index at

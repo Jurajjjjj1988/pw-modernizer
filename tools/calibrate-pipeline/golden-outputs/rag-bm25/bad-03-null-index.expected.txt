@@ -1,0 +1,2 @@
+# null index → readIndex throws → exit 1
+index is not an object

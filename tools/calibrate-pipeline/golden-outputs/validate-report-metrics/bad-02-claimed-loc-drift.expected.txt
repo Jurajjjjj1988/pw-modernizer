@@ -1,0 +1,6 @@
+# Exit 1. Basename derives correctly and the spec exists, but the report
+# claims Output LOC = 99 while the emitted spec is 20 lines. ONLY the
+# claimed-LOC drift fires.
+::error
+report claims Output LOC = 99 but the actually-emitted spec (employees.spec.ts) is 20 lines
+validate-report-metrics: 1 contract violation(s)

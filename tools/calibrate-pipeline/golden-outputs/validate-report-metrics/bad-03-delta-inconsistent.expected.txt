@@ -1,0 +1,5 @@
+# Exit 1. Basename + claimed 23 LOC are both consistent, so only the LOC
+# delta self-check fires: claimed -5 but output(23) - source(60) computes -37.
+::error
+LOC delta claimed -5 but source(60) → output(23) computes -37
+validate-report-metrics: 1 contract violation(s)

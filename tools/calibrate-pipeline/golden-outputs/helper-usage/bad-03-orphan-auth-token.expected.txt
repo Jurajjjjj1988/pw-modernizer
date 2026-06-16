@@ -1,0 +1,6 @@
+# Exit 1 under --strict. The api file exports an auth-token setup wrapper the
+# spec never references. Validator must emit a ::error::-prefixed annotation
+# naming the dead export.
+::error
+Exported function `seedAuthToken` is never referenced outside its declaration file
+validate-helper-usage: 1 unused export(s) found

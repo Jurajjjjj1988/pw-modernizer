@@ -1,0 +1,6 @@
+# Exit 1. `// HACK: clean up` — marker with a colon but a free-text
+# justification that matches no allowlist form. One bare marker reported.
+::error
+bare TODO/FIXME without recognized justification
+Found: 'clean up'
+validate-todo-discipline: 1 bare TODO(s) across 1 file(s)

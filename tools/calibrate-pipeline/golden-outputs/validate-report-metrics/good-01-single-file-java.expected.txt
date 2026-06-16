@@ -1,0 +1,5 @@
+# Exit 0. EmployeesTest.java -> employees.spec.ts derives correctly, claimed
+# 29 LOC matches wc -l, and delta (-11) = output(29) - source(40). Clean.
+validate-report-metrics:
+report.md
+clean.

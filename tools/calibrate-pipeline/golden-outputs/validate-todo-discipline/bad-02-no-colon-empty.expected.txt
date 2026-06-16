@@ -1,0 +1,6 @@
+# Exit 1. Bare `// TODO` with no colon and no text — empty-justification
+# rejection mode. The scanner must annotate and report one bare marker.
+::error
+bare TODO/FIXME without recognized justification
+Found: ''
+validate-todo-discipline: 1 bare TODO(s) across 1 file(s)

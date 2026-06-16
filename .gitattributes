@@ -1,0 +1,38 @@
+# Force LF line endings on text files so Windows checkouts don't break
+# shell scripts / workflow YAML / TS sources / Markdown anchors.
+* text=auto eol=lf
+
+# Lockfiles + machine-generated diff noise — collapse from the PR view by
+# default. The `linguist-generated` attribute tells GitHub to hide these
+# unless the reviewer expands them; `merge=union` reduces conflict noise
+# (both sides apply, semantic-equivalent on a strict lockfile).
+package-lock.json   linguist-generated  merge=union
+yarn.lock           linguist-generated  merge=union
+pnpm-lock.yaml      linguist-generated  merge=union
+
+# qa-master reference snapshot — vendor code, owner-permitted. Mark as
+# vendored so GitHub language stats don't double-count it.
+examples/reference/qa-master/** linguist-vendored
+
+# Auto-generated documentation block in CHANGELOG.md sits between
+# AUTOGEN sentinels. The file as a whole is human-edited above the
+# block, so don't mark it generated — just signal that the segment
+# is overwritten by scripts/generate-changelog.ts.
+# (No attribute change here — comment for future contributors.)
+
+# Pipeline outputs that get diffed but aren't human-authored. Same
+# generated-hint as lockfiles so reviewers can focus on the spec/
+# helper deltas first.
+outputs/.usage/**.json          linguist-generated
+outputs/reports/baseline-*.md   linguist-generated
+
+# Binary assets — explicit so cross-platform checkouts don't try to
+# normalize line endings.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.svg   text eol=lf
+*.pdf   binary
+*.db    binary
+*.sqlite binary

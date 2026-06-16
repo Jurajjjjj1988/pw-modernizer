@@ -278,26 +278,44 @@ function validatePomFixturePaths(
 ): Violation[] {
   const out: Violation[] = [];
   for (const p of envelope.requiredPOMs) {
-    const abs = resolve(repoRoot, p);
-    if (!existsSync(abs)) {
-      out.push({
-        file: envelopePath,
-        line: 1,
-        message: `requiredPOMs path missing on disk: '${p}' (envelope mandates Stage 2 produce it)`,
-      });
-    }
+    if (existsSync(resolve(repoRoot, p))) continue;
+    if (existsAtQaMasterFallback(p, repoRoot)) continue;
+    out.push({
+      file: envelopePath,
+      line: 1,
+      message: `requiredPOMs path missing on disk: '${p}' (envelope mandates Stage 2 produce it)`,
+    });
   }
   for (const p of envelope.requiredFixtures) {
-    const abs = resolve(repoRoot, p);
-    if (!existsSync(abs)) {
-      out.push({
-        file: envelopePath,
-        line: 1,
-        message: `requiredFixtures path missing on disk: '${p}' (envelope mandates Stage 2 produce it)`,
-      });
-    }
+    if (existsSync(resolve(repoRoot, p))) continue;
+    if (existsAtQaMasterFallback(p, repoRoot)) continue;
+    out.push({
+      file: envelopePath,
+      line: 1,
+      message: `requiredFixtures path missing on disk: '${p}' (envelope mandates Stage 2 produce it)`,
+    });
   }
   return out;
+}
+
+// Mirror of plan-envelope-validate.ts:existsAtQaMasterFallback (PR #156).
+// Legacy v0.1.x envelopes declare POMs at `outputs/tests/{pages,blocks,
+// fixtures}/`; qa-master v0.2.0 emits at `outputs/helper/{page-object/
+// pages,page-object/blocks,fixtures}/`. Accept either form on disk.
+// Tracked in same dedup-refactor followup.
+const QA_MASTER_PATH_FALLBACKS: ReadonlyArray<readonly [string, string]> = [
+  ["outputs/tests/pages/", "outputs/helper/page-object/pages/"],
+  ["outputs/tests/blocks/", "outputs/helper/page-object/blocks/"],
+  ["outputs/tests/fixtures/", "outputs/helper/fixtures/"],
+];
+
+function existsAtQaMasterFallback(legacyPath: string, repoRoot: string): boolean {
+  for (const [oldPrefix, newPrefix] of QA_MASTER_PATH_FALLBACKS) {
+    if (!legacyPath.startsWith(oldPrefix)) continue;
+    const candidate = newPrefix + legacyPath.slice(oldPrefix.length);
+    if (existsSync(resolve(repoRoot, candidate))) return true;
+  }
+  return false;
 }
 
 /**

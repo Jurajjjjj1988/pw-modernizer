@@ -96,6 +96,8 @@ jobs:
             name: Verify verdict ladder consistency
           - check: regenerate-dispatch
             name: Regenerate-dispatch flow wired end-to-end
+          - check: rag-map3-gate
+            name: RAG MAP@3 retrieval quality (Phase 1 exit gate)
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -381,3 +383,50 @@ jobs:
             exit 1
           fi
           echo "Regenerate-dispatch flow wired end-to-end."
+
+      # ----- ADR-0001 Phase 1 retrieval-quality gate -----
+      - name: RAG MAP@3 retrieval quality
+        if: matrix.check == 'rag-map3-gate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ADR-0001 §6 Phase 1 exit criterion: held-out MAP@3 >= 0.6 over
+          # the golden corpus. The rag-map3-evaluator script reads
+          # examples/<dir>/expected-plan.md pairs and computes the metric.
+          # We trigger the script in --json mode + parse the verdict so any
+          # KB-ID or corpus change that drops retrieval quality below the
+          # threshold fails CI loudly. The script exits 0 even on HOLD
+          # (signal, not gate) - we re-derive the verdict from JSON so we
+          # can hard-fail.
+          OUTPUT=$(npx tsx scripts/rag-map3-evaluator.ts --json --quiet)
+          echo "$OUTPUT" | tee /tmp/rag-map3.json
+          MAP=$(echo "$OUTPUT" | jq -r '.meanAveragePrecision')
+          VERDICT=$(echo "$OUTPUT" | jq -r '.verdict')
+          THRESHOLD=$(echo "$OUTPUT" | jq -r '.threshold')
+          {
+            echo "## RAG MAP@3 gate"
+            echo ""
+            echo "- MAP@3: \`$MAP\`"
+            echo "- Threshold: \`$THRESHOLD\`"
+            echo "- Verdict: \`$VERDICT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$VERDICT" in
+            PASS)
+              echo "::notice::MAP@3 $MAP >= $THRESHOLD - retrieval-quality gate green."
+              ;;
+            HOLD)
+              echo "::error::MAP@3 $MAP below threshold $THRESHOLD - retrieval-quality regression. Either fix the change that lowered MAP or grow the corpus."
+              exit 1
+              ;;
+            INSUFFICIENT-DATA)
+              # 5+ goldens required (per script default). If the corpus is
+              # smaller than that, the gate cannot run meaningfully; we
+              # treat it as a warning rather than a hard failure so a
+              # green-field repo isn't blocked.
+              echo "::warning::MAP@3 gate INSUFFICIENT-DATA - corpus too small for the verdict. Grow examples/."
+              ;;
+            *)
+              echo "::error::unexpected verdict '$VERDICT' from rag-map3-evaluator"
+              exit 1
+              ;;
+          esac

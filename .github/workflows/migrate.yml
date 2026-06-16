@@ -468,9 +468,18 @@ jobs:
           # See plan.yml for the stream-json + tee + extract-claude-usage
           # rationale. usage.json is consumed by evaluate.ts later.
           mkdir -p outputs/.usage
+          # max-turns history:
+          #   20 (initial) -> hit consistently on 5-file Selenium migrations
+          #   40 (June 2026) -> covered bad-Playwright + simple Selenium
+          #   50 (research-backed bump, 2026-06-16) - cypress wishlist
+          #     migration with API extraction + Block + Page split + spec +
+          #     report + envelope = 12-14 file writes; with 6+ Read tool calls
+          #     for context (KB / rules / qa-master ref / plan / inventory /
+          #     baseline) the 40-turn budget was tight, and a single retry of
+          #     a malformed file pushed it over. Observed in run 27601093922.
           claude \
             --model claude-sonnet-4-6 \
-            --max-turns 40 \
+            --max-turns 50 \
             --print \
             --output-format stream-json \
             --verbose \

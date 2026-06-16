@@ -103,6 +103,18 @@ The following files exist in the repo and are committed to main as the v0.2.0 fr
 - `outputs/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`. **EXTEND** this file (add per-Page fixture entries via `test = base.extend<{...}>({...})`) — never recreate.
 - `outputs/helper/utilities/logger.ts` — default-export `logger` with info/warn/error/debug. Import via `@logger`.
 
+### Concurrent-migration safety (PR #185 root cause, 2026-06-18)
+
+BEFORE writing ANY file under `outputs/helper/page-object/pages/`, `outputs/helper/page-object/blocks/`, `outputs/helper/actions/`, `outputs/helper/api/`, `outputs/helper/test-data/`, or `outputs/helper/utilities/`: **check if it already exists on main**. Two parallel migrations can both want the same shared file (e.g. `cart.page.ts` from checkout-flow AND force-clicks). When both Stage 2 runs blindly CREATE the file, the second PR hits an `add/add` conflict on merge and the confidence:high content is lost.
+
+Procedure for every helper file you intend to write:
+
+1. Read the file path with the Read tool (relative to repo root).
+2. If Read succeeds: the file ALREADY exists on main. **EXTEND** it — preserve every existing locator field, method, and import, then APPEND your additions in topical order. Do not delete or reorder existing entries.
+3. If Read fails with "file not found": the file is new. Create it fresh per qa-master conventions.
+
+This rule mirrors `base.fixture.ts` "EXTEND, never recreate" but generalizes to every shared helper. The only files exempt are per-migration outputs (`outputs/tests/<feature>.spec.ts`, `outputs/reports/<input>.md`) and the migration's own scenario-specific page (when the page name is unique to this input).
+
 ### Trivial-migration minimum (per-migration files Sonnet writes)
 
 For SMALL inputs (a single test that touches one Page, no data prep, no parsing), Sonnet's per-migration output is:

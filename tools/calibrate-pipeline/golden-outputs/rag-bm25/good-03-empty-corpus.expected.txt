@@ -1,0 +1,3 @@
+# Empty corpus must return an empty JSON array. Notice line for transparency.
+[]
+no eligible candidates in index

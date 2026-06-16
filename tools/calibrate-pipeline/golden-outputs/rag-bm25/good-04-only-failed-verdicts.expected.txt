@@ -1,0 +1,4 @@
+# All documents in corpus have non-SHIP-IT verdicts and source=outputs (no
+# golden examples). Filter rejects all; retrieval returns empty.
+[]
+no eligible candidates in index

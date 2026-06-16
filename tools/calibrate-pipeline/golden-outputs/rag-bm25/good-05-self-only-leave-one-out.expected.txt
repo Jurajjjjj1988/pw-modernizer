@@ -1,0 +1,5 @@
+# Index contains exactly one document whose id matches the input basename
+# (`input.spec.ts`). The leave-one-out guard must exclude it, leaving zero
+# eligible candidates.
+[]
+no eligible candidates in index

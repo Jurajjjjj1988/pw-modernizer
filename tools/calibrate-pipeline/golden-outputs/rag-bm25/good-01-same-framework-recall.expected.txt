@@ -1,0 +1,5 @@
+# Top result must be a selenium-java plan (framework match wins).
+"framework": "selenium-java"
+"id": "fixture-selenium-java-login"
+"verdict": "SHIP IT"
+"KB-1.3.1"

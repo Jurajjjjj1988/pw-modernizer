@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-16T00:00:00.000Z",
+  "sourceHash": "fixture-bad-01-only-failed",
+  "documents": [
+    {
+      "id": "fixture-failed-1",
+      "source": "outputs",
+      "sourceFramework": "bad-playwright",
+      "verdict": "START OVER",
+      "kbIds": ["KB-1.1.1"],
+      "locatorConfidence": {"HIGH": 0, "MED": 0, "LOW": 3},
+      "planBody": "# Bad plan 1\n\n## Source framework\n\n**bad-playwright**\n\nPlan was rejected by verify - START OVER.\n",
+      "planPath": "fixtures/rag-bm25/synthetic/failed-1.md"
+    },
+    {
+      "id": "fixture-failed-2",
+      "source": "outputs",
+      "sourceFramework": "bad-playwright",
+      "verdict": "FIX FIRST",
+      "kbIds": ["KB-1.1.5"],
+      "locatorConfidence": {"HIGH": 0, "MED": 1, "LOW": 2},
+      "planBody": "# Bad plan 2\n\n## Source framework\n\n**bad-playwright**\n\nPlan needs fixes - FIX FIRST.\n",
+      "planPath": "fixtures/rag-bm25/synthetic/failed-2.md"
+    }
+  ]
+}

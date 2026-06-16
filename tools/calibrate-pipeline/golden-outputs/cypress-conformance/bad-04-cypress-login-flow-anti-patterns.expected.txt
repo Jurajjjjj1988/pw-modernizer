@@ -1,0 +1,6 @@
+# Exit 1. Bad fixture seeds 3 block-severity violations the validator must flag.
+# The fourth (W5 locator-priority) is warn-severity, not pinned (runner uses default mode).
+qa-master/architecture/import-source
+qa-master/architecture/page-goto-in-spec
+qa-master/runtime/no-hard-waits
+validate-qa-master-conformance: 3 violation(s) (3 block / 0 warn)

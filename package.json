@@ -50,7 +50,8 @@
     "cache:dry-run": "tsx scripts/claude-cached-call.ts --lens sdet --input-basename smoke --dry-run",
     "rag:index": "tsx scripts/index-plans.ts",
     "rag:retrieve": "tsx scripts/retrieval-bm25.ts",
-    "rag:render": "tsx scripts/rag-context-render.ts"
+    "rag:render": "tsx scripts/rag-context-render.ts",
+    "pilot:dry-run": "tsx scripts/pilot-dry-run.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

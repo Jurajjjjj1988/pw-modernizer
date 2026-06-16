@@ -1,0 +1,78 @@
+# actions/labeler config — auto-applies area labels to PRs by changed file path.
+#
+# Existing pipeline-emitted labels (migrator:plan, migrator:code, confidence:*,
+# verify:*, regen-attempt:*) are NOT defined here — those are set by workflows
+# at PR-open time and reflect runtime state, not source area. This file only
+# handles area-of-change tags so the human PR queue is filterable.
+#
+# Triggered by .github/workflows/labeler.yml on pull_request_target.
+
+workflow:verify:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/verify.yml'
+          - '.github/workflows/verify-on-comment.yml'
+          - 'prompts/verify-*.md'
+
+workflow:plan:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/plan.yml'
+          - 'prompts/analyze.md'
+          - 'prompts/_fragments/**'
+          - 'prompts/_assembled/**'
+
+workflow:migrate:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/migrate.yml'
+          - '.github/workflows/regenerate-dispatch.yml'
+          - 'prompts/generate.md'
+
+workflow:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/regression-*.yml'
+          - '.github/workflows/lint-output.yml'
+          - '.github/workflows/danger.yml'
+          - '.github/workflows/changelog-update.yml'
+          - '.github/workflows/dashboard-deploy.yml'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - 'README.md'
+          - 'CHANGELOG.md'
+          - 'ROADMAP.md'
+          - '**/CLAUDE.md'
+
+scripts:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+
+calibration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tools/calibrate-pipeline/**'
+
+knowledge-base:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'config/knowledge-base.md'
+          - 'config/kb-id-migration.md'
+          - 'config/migration-rules.md'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'package-lock.json'
+
+dangerfile:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'dangerfile.ts'
+          - 'scripts/lib/danger-rules.ts'
+          - 'scripts/danger-calibrate.ts'

@@ -1,0 +1,5 @@
+# Exit 0. Every exported helper in the api file is referenced by the spec
+# (addProductToWishlist + clearWishlist both wired). Validator must stay silent
+# under --strict. We anchor on the "clean" log line so any drift toward
+# emitting a false-positive flag breaks the calibration.
+validate-helper-usage: clean

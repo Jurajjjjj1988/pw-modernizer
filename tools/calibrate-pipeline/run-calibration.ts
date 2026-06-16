@@ -43,7 +43,8 @@ type ValidatorName =
   | "danger-policy"
   | "cypress-conformance" | "selenium-python-conformance"
   | "selenium-java-conformance"
-  | "rag-bm25";
+  | "rag-bm25"
+  | "helper-usage";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
@@ -53,17 +54,20 @@ const VALIDATORS: readonly ValidatorName[] = [
   "cypress-conformance", "selenium-python-conformance",
   "selenium-java-conformance",
   "rag-bm25",
+  "helper-usage",
 ];
 
 /**
- * Both conformance validators share a nested `{good,bad}/<scenario>/` layout
- * (multi-file qa-master trees per fixture). We list them here so the
- * synthetic-name flattening and runner dispatch can branch on a single set.
+ * Validators that share the nested `{good,bad}/<scenario>/` fixture layout.
+ * Conformance validators land qa-master trees per scenario; helper-usage
+ * follows the same shape with `<scenario>/helper/api/*.ts` + `<scenario>/
+ * tests/*.ts` so the runner branches on a single set.
  */
 const NESTED_CONFORMANCE_VALIDATORS: readonly ValidatorName[] = [
   "cypress-conformance",
   "selenium-python-conformance",
   "selenium-java-conformance",
+  "helper-usage",
 ];
 
 interface FixtureResult {
@@ -389,6 +393,26 @@ function runSeleniumJavaConformance(fixtureName: string): FixtureResult {
   return runConformance("selenium-java-conformance", fixtureName);
 }
 
+// helper-usage fixtures use the same nested `{good,bad}/<scenario>/` layout as
+// the conformance trees but invoke a different validator. Each scenario root
+// contains `helper/api/*.ts` (the exports) and `tests/*.ts` (consumers); we
+// point the validator at both via its `--api-dir` and `--consumer-root` flags.
+// Good fixtures: every exported helper is consumed → exit 0.
+// Bad fixtures: at least one exported helper is dead → exit 1 (under --strict).
+function runHelperUsage(fixtureName: string): FixtureResult {
+  const sepIdx = fixtureName.indexOf("-");
+  const polarity = fixtureName.slice(0, sepIdx);
+  const scenario = fixtureName.slice(sepIdx + 1);
+  const fixtureRoot = join(FIXTURES_ROOT, "helper-usage", polarity, scenario);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-helper-usage.ts"),
+    "--strict",
+    "--api-dir", join(fixtureRoot, "helper", "api"),
+    "--consumer-root", fixtureRoot,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("helper-usage", fixtureName)));
+}
+
 // rag-bm25 fixtures live under fixtures/rag-bm25/<name>/ with a pre-built
 // `index.json` + an `input.<ext>` query file. The runner spawns
 // `scripts/retrieval-bm25.ts` against the fixture index and verifies the
@@ -428,6 +452,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "selenium-python-conformance": runSeleniumPythonConformance,
   "selenium-java-conformance": runSeleniumJavaConformance,
   "rag-bm25": runRagBm25,
+  "helper-usage": runHelperUsage,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

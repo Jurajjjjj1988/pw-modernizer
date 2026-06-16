@@ -124,7 +124,12 @@ function resolveOutputFiles(arg: string): string[] {
   if (statSync(abs).isFile()) return [abs];
   const proj = new Project({ useInMemoryFileSystem: false });
   proj.addSourceFilesAtPaths(join(abs, "**/*.{ts,tsx}"));
-  return proj.getSourceFiles().map((sf) => sf.getFilePath());
+  // Exclude `_legacy-v0.1.x/` — see plan-envelope-validate.ts for the
+  // same fix. Mirror change to keep behaviour identical between the two
+  // sibling validators (also tracked as a follow-up dedup refactor).
+  return proj.getSourceFiles()
+    .map((sf) => sf.getFilePath())
+    .filter((p) => !p.includes("/_legacy-v0.1.x/"));
 }
 
 /**

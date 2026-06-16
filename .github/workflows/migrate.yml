@@ -491,6 +491,32 @@ jobs:
           # keep up. Same root cause as verify.yml. Direct redirect is
           # the documented stable pattern for capturing stream-json.
 
+      - name: Diagnose Claude crash (on failure)
+        if: failure()
+        shell: bash
+        run: |
+          # When Claude exits non-zero (transient Anthropic outage, OAuth
+          # 401, max-turns hit, SIGPIPE) the workflow log only shows the
+          # bash command echo'd and then "exit code 1" — stdout went to
+          # the ndjson file and stderr is mostly silent for Claude CLI.
+          # This step dumps ndjson size + last 5 events + final event
+          # type so the failure mode is attributable in one pass.
+          # See verify.yml for the same pattern + PR #126 motivation.
+          EVENTS=/tmp/claude-migrate-events.ndjson
+          echo "::group::Stage 2 (migrate) crash diagnostics"
+          if [ ! -e "$EVENTS" ]; then
+            echo "ndjson file does not exist — Claude CLI never wrote stdout"
+          elif [ ! -s "$EVENTS" ]; then
+            echo "ndjson file exists but is empty — Claude exited before first event"
+          else
+            echo "ndjson: $(wc -c < "$EVENTS" | tr -d ' ') bytes, $(wc -l < "$EVENTS" | tr -d ' ') events"
+            echo "--- LAST 5 EVENTS ---"
+            tail -5 "$EVENTS" || true
+            echo "--- FINAL EVENT TYPE ---"
+            tail -1 "$EVENTS" | jq -r '.type // "unknown"' 2>/dev/null || echo "could not parse final event as JSON"
+          fi
+          echo "::endgroup::"
+
       - name: Capture Claude usage stats (cost tracking)
         id: capture_usage
         continue-on-error: true

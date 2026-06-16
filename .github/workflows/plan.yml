@@ -683,6 +683,32 @@ jobs:
           # up. Direct redirect is the stable pattern for stream-json
           # capture. Same fix as migrate.yml + verify.yml.
 
+      - name: Diagnose Claude crash (on failure)
+        if: failure() && steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          # When Claude exits non-zero (transient Anthropic outage, OAuth
+          # 401, max-turns, SIGPIPE) the workflow log only shows the bash
+          # command echo'd and then "exit code 1" — stdout went to the
+          # ndjson file and stderr is mostly silent for Claude CLI. This
+          # step dumps ndjson size + last 5 events + final event type so
+          # the failure mode is attributable in one pass.
+          # See verify.yml for the same pattern + PR #126 motivation.
+          EVENTS=/tmp/claude-events.ndjson
+          echo "::group::Stage 1 (plan) crash diagnostics"
+          if [ ! -e "$EVENTS" ]; then
+            echo "ndjson file does not exist — Claude CLI never wrote stdout"
+          elif [ ! -s "$EVENTS" ]; then
+            echo "ndjson file exists but is empty — Claude exited before first event"
+          else
+            echo "ndjson: $(wc -c < "$EVENTS" | tr -d ' ') bytes, $(wc -l < "$EVENTS" | tr -d ' ') events"
+            echo "--- LAST 5 EVENTS ---"
+            tail -5 "$EVENTS" || true
+            echo "--- FINAL EVENT TYPE ---"
+            tail -1 "$EVENTS" | jq -r '.type // "unknown"' 2>/dev/null || echo "could not parse final event as JSON"
+          fi
+          echo "::endgroup::"
+
       - name: Capture Claude usage stats (cost tracking)
         if: steps.dedup.outputs.skip == 'false'
         continue-on-error: true

@@ -124,7 +124,15 @@ function resolveCodeFiles(codeArg: string): string[] {
   if (st.isFile()) return [abs];
   const proj = new Project({ useInMemoryFileSystem: false });
   proj.addSourceFilesAtPaths(join(abs, "**/*.spec.ts"));
-  return proj.getSourceFiles().map((sf) => sf.getFilePath());
+  // Exclude `_legacy-v0.1.x/` archive — those specs were emitted by past
+  // migrations and carry their own scenario pins. Including them double-
+  // counts pins when the new emission's basename matches a legacy file
+  // (e.g. ExplicitWaitJupiterTest.java → explicit-wait-jupiter-test.spec.ts
+  // exists in both _legacy/ and tests/ root → '1.1 pinned 2 times' false
+  // positive). Observed 2026-06-16 run 27627784309.
+  return proj.getSourceFiles()
+    .map((sf) => sf.getFilePath())
+    .filter((p) => !p.includes("/_legacy-v0.1.x/"));
 }
 
 /**

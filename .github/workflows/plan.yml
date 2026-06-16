@@ -27,7 +27,16 @@ on:
     types: [regenerate-plan]
 
 concurrency:
-  group: pwm-plan-${{ github.ref }}
+  # Per-input concurrency on workflow_dispatch so parallel dispatches with
+  # DIFFERENT input_paths don't get GitHub's queue-depth-1 collapse (newer
+  # dispatches push older queued ones into 'cancelled'). Push events still
+  # group by ref because they batch all changed inputs in a single matrix
+  # job and per-input grouping would be a no-op there.
+  #
+  # Observed 2026-06-16: 4 parallel `gh workflow run plan.yml -f input_path=X`
+  # → 2 cancelled before starting (queue collapse). Per-input grouping fixes
+  # it: each input_path becomes its own concurrency lane.
+  group: pwm-plan-${{ github.event_name == 'workflow_dispatch' && inputs.input_path || github.ref }}
   cancel-in-progress: false
 
 permissions:

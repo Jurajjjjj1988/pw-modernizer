@@ -141,8 +141,16 @@ function expectedSpecBasenames(inputBasename: string): string[] {
     .replaceAll("_", "-")
     .toLowerCase();
   const out = new Set<string>([`${kebab}.spec.ts`]);
-  const dropTest = kebab.replace(/-tests?$/, "");
-  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  // Drop redundant trailing `-test` / `-tests` — Sonnet's observed rename.
+  const dropTrailingTest = kebab.replace(/-tests?$/, "");
+  if (dropTrailingTest !== kebab) out.add(`${dropTrailingTest}.spec.ts`);
+  // Drop leading `test-` — pytest convention `test_<thing>.py` → Playwright
+  // `<thing>.spec.ts`. Mirrors plan-envelope-validate.ts (PR #142 fix).
+  // Observed 2026-06-16: test_employees.py → employees.spec.ts; without
+  // this, filterByInput falls back to ALL specs in outputs/tests/ and
+  // counts pins across legacy migrations (each legitimately starts at 1.1).
+  const dropLeadingTest = kebab.replace(/^test-/, "");
+  if (dropLeadingTest !== kebab) out.add(`${dropLeadingTest}.spec.ts`);
   return Array.from(out);
 }
 

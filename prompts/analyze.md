@@ -20,6 +20,20 @@ Before doing anything else, read these files end-to-end:
 
 If any of these files is missing, **stop and emit a plan that says "BLOCKED: missing config/knowledge-base.md"** etc. Do not proceed with assumptions.
 
+## Reference anchors (always present)
+
+{{include:_fragments/few-shot-canonical.md}}
+
+## RAG context (Phase 1, ADR-0001)
+
+The block below is empty when `STAGE1_RAG=off` (default) or when no past
+similar migrations were retrieved. When present, treat each retrieved plan
+as a style anchor for plan structure, KB-ID citation style, and
+hallucination-defense pin shape - do NOT copy scenario IDs or locator pins
+verbatim.
+
+{{include:_fragments/rag-context.md}}
+
 ## Your task
 
 Produce **TWO files** — both are mandatory deliverables. The pipeline FAILS at Stage 2 if either is missing or malformed (plan.yml's "Validate plan envelope JSON" step is the gate). This is the v1.0 ROADMAP "Plan envelope enforcement" contract:

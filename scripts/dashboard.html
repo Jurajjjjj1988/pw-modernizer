@@ -86,6 +86,72 @@
     </div>
   </section>
 
+  <!-- Phase 1 RAG retrieval panel (ADR-0001) -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">RAG retrieval (Phase 1)</h2>
+    <p class="text-xs text-slate-500 mb-3">
+      Read from the <code>rag_mode</code> / <code>rag_top_score</code> / <code>rag_retrieved_ids</code>
+      columns on the <code>plans</code> table. <em>pre-phase-1</em> bucket is historical;
+      <em>off</em> is the current Phase 1 default. Shadow + on rows feed the score stats and the
+      most-retrieved list - those are the measurement signal for the ADR-0001 exit criteria.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold mb-2">Mode distribution</h3>
+        <canvas id="ragModeChart" height="160"></canvas>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-2">Top-1 BM25 score (shadow + on rows)</h3>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <div class="text-xs text-slate-500">Sample size</div>
+            <div id="ragSampleSize" class="text-2xl font-semibold">0</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Average</div>
+            <div id="ragAvgScore" class="text-2xl font-semibold">—</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Median</div>
+            <div id="ragMedianScore" class="text-2xl font-semibold">—</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">P90</div>
+            <div id="ragP90Score" class="text-2xl font-semibold">—</div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-3" id="ragTrackedNote">
+          Plans tracked with rag telemetry: <span id="ragTrackedCount">0</span>
+        </p>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+        <h3 class="text-sm font-semibold mb-2">Top retrieved doc ids</h3>
+        <table class="w-full text-xs">
+          <thead class="text-slate-500">
+            <tr><th class="text-left">Doc id</th><th class="text-right">Retrieval count</th></tr>
+          </thead>
+          <tbody id="ragTopIdsTable"></tbody>
+        </table>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold mb-2">Recent retrievals (last 20)</h3>
+        <table class="w-full text-xs">
+          <thead class="text-slate-500">
+            <tr>
+              <th class="text-left">Input</th>
+              <th class="text-left">Mode</th>
+              <th class="text-right">Top score</th>
+              <th class="text-right">#</th>
+            </tr>
+          </thead>
+          <tbody id="ragRecentTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
     <div class="bg-white rounded-lg shadow p-4">
       <h2 class="text-lg font-semibold mb-2">Per source framework</h2>
@@ -459,6 +525,60 @@
   document.getElementById('roiHoursPerTest').textContent = roi.humanHoursPerTest;
   document.getElementById('roiHourlyRate').textContent = '$' + roi.humanHourlyRateUsd;
   document.getElementById('roiRateSource').textContent = roi.rateFromEnv ? ('configured = $' + roi.humanHourlyRateUsd) : ('default = $' + roi.humanHourlyRateUsd);
+
+  // ---- Phase 1 RAG retrieval panel (ADR-0001) ----------------------------
+  const rag = data.rag || { trackedPlans: 0, modeDistribution: [], scoreStats: { sampleSize: 0, avg: null, median: null, p90: null }, topRetrievedIds: [], recent: [] };
+  document.getElementById('ragTrackedCount').textContent = rag.trackedPlans.toLocaleString('en-US');
+  const ragModeColors = { 'pre-phase-1': '#94a3b8', 'off': '#cbd5e1', 'shadow': '#60a5fa', 'on': '#10b981' };
+  new Chart(document.getElementById('ragModeChart'), {
+    type: 'bar',
+    data: {
+      labels: rag.modeDistribution.map((r) => r.mode),
+      datasets: [{
+        label: 'plans',
+        data: rag.modeDistribution.map((r) => r.count),
+        backgroundColor: rag.modeDistribution.map((r) => ragModeColors[r.mode] || '#94a3b8'),
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'plan rows' } } },
+    },
+  });
+  const fmtScore = (v) => v == null ? '—' : v.toFixed(2);
+  document.getElementById('ragSampleSize').textContent = rag.scoreStats.sampleSize.toLocaleString('en-US');
+  document.getElementById('ragAvgScore').textContent = fmtScore(rag.scoreStats.avg);
+  document.getElementById('ragMedianScore').textContent = fmtScore(rag.scoreStats.median);
+  document.getElementById('ragP90Score').textContent = fmtScore(rag.scoreStats.p90);
+  const ragTopIdsBody = document.getElementById('ragTopIdsTable');
+  if (rag.topRetrievedIds.length === 0) {
+    ragTopIdsBody.innerHTML = '<tr><td colspan="2" class="py-2 text-slate-500">No retrievals recorded yet.</td></tr>';
+  } else {
+    ragTopIdsBody.innerHTML = rag.topRetrievedIds
+      .map((r) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + r.id + '</td>' +
+        '<td class="py-1 text-right">' + r.count + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
+  const ragRecentBody = document.getElementById('ragRecentTable');
+  if (rag.recent.length === 0) {
+    ragRecentBody.innerHTML = '<tr><td colspan="4" class="py-2 text-slate-500">No plan rows with rag telemetry yet.</td></tr>';
+  } else {
+    ragRecentBody.innerHTML = rag.recent
+      .map((r) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + r.inputBasename + '</td>' +
+        '<td class="py-1 font-mono">' + r.ragMode + '</td>' +
+        '<td class="py-1 text-right">' + fmtScore(r.ragTopScore) + '</td>' +
+        '<td class="py-1 text-right">' + r.retrievedCount + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
 
   // ---- Per-run cost table.
   const perRun = data.costPerRun || [];

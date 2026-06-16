@@ -608,6 +608,64 @@ jobs:
           # All 3 prompts (analyze, generate, verify) now use includes.
           npx tsx scripts/assemble-prompts.ts --write
 
+      - name: Compute Stage 1 max-turns budget (adaptive)
+        if: steps.dedup.outputs.skip == 'false'
+        id: max_turns
+        env:
+          INPUT_PATH: ${{ matrix.input_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Adaptive max-turns: count complexity markers in input and pick
+          # a per-input budget from a 3-tier table. Why: Stage 1 hit 12 min
+          # exit-code-1 (max-turns 12 burned) on inputs/cypress/checkout-
+          # flow.cy.js twice (runs 27623863781 + 27625137636, 2026-06-16),
+          # while inputs/cypress/wishlist.cy.js succeeded at max-turns=12.
+          # Files are similar size; the cost difference is in *decision*
+          # complexity — checkout-flow has 2 intercepts, response-body
+          # assertions, dynamic .each iteration, form-input clusters.
+          # Each is a known-heavy mapping (KB lookup + qa-master layering
+          # decision) that costs turns. Flat bump masks the signal; this
+          # adaptive table preserves the cheap path for simple inputs.
+          #
+          # Score = sum of:
+          #   M1 — framework hooks/decorators (cy.intercept / WebElement /
+          #        @Test / pytest setUp/tearDown / test_ prefix)
+          #   M2 — async iteration (cy.wait('@... / .each / .forEach)
+          #   M3 — form input clusters (input[name=...])
+          #   M4 — DOM-up traversal & response-body assertions
+          #
+          # Tiers (calibrated 2026-06-16):
+          #   score <= 3  → simple   → max-turns 12 (default; wishlist=3 OK)
+          #   score 4-6   → medium   → max-turns 16
+          #   score >= 7  → complex  → max-turns 20 (checkout-flow=13)
+          if [ -d "$INPUT_PATH" ]; then
+            mapfile -t FILES < <(find "$INPUT_PATH" -type f \( -name '*.ts' -o -name '*.js' -o -name '*.java' -o -name '*.py' \))
+          else
+            FILES=("$INPUT_PATH")
+          fi
+          SCORE=0
+          for F in "${FILES[@]}"; do
+            M1=$(grep -cE 'cy\.intercept|WebElement|@Test|def setUp|def tearDown|test_' "$F" 2>/dev/null || true)
+            M2=$(grep -cE 'cy\.wait\(.@|\.each\(|\.forEach\(' "$F" 2>/dev/null || true)
+            M3=$(grep -cE 'input\[name="[^"]+"\]' "$F" 2>/dev/null || true)
+            M4=$(grep -cE '\.parent\(\)|interception\.response|expect.*response' "$F" 2>/dev/null || true)
+            SCORE=$((SCORE + M1 + M2 + M3 + M4))
+          done
+          if [ "$SCORE" -le 3 ]; then
+            MAX_TURNS=12
+            TIER=simple
+          elif [ "$SCORE" -le 6 ]; then
+            MAX_TURNS=16
+            TIER=medium
+          else
+            MAX_TURNS=20
+            TIER=complex
+          fi
+          echo "Input complexity score: $SCORE → tier: $TIER → max-turns: $MAX_TURNS"
+          echo "::notice::Adaptive Stage 1 budget: $INPUT_PATH (score $SCORE, $TIER) → --max-turns $MAX_TURNS"
+          echo "max_turns=$MAX_TURNS" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude (analyze stage)
         # Stage 1 typically finishes in 5-10 min (Read input + KB + rules +
         # examples; write plan markdown + envelope sidecar). 20 min is a 2x
@@ -686,7 +744,7 @@ jobs:
           mkdir -p outputs/.usage
           claude \
             --model claude-sonnet-4-6 \
-            --max-turns 12 \
+            --max-turns ${{ steps.max_turns.outputs.max_turns }} \
             --print \
             --output-format stream-json \
             --verbose \

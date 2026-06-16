@@ -641,8 +641,8 @@ jobs:
       # in one pass (typecheck + eslint + playwright parse), and if any are
       # present, hand them back to Claude with the inventory + plan + the
       # original deliverable contract for ONE bounded surgical-fix pass.
-      # Bound = 1 retry, max-turns = 12 (fewer than the generate budget of
-      # 20 — surgical fixes are smaller than greenfield generation).
+      # Bound = 1 retry, max-turns = 20 (fewer than the generate budget of
+      # 50 — surgical fixes are smaller than greenfield generation).
       # ---------------------------------------------------------------------
       - name: Auto-rewrite @types/ → @type-defs/ path alias (KB-1.1.27 pre-flight)
         if: steps.budget_guard.outputs.over_budget != 'true'

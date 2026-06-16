@@ -185,9 +185,19 @@ export function scanReport(report: string | null): Anomaly[] {
     out.push({ kind: "low-plan-confidence", detail: `plan avg ${planAvg} (< 0.5)` });
   }
   // Residual smells: any "Output" column > 0 in the smell table (delta not fully removed).
+  // nonWebFirstAsserts is exempt from the "fix locally" residual-smell class: the
+  // prompt (generate.md) explicitly sanctions expect().toBe() on event/API VALUES
+  // (dialog.message(), cookie values) that are not Locator probes, so a non-zero
+  // count is usually legitimate — recurs as triage noise on selenium PRs (#151, #13).
+  // Demote it to a non-blocking review-note; all other smells stay residual-smell.
   for (const line of report.split("\n")) {
     const m = /^\|\s*(\w+)\s*\|\s*\d+\s*\|\s*([1-9]\d*)\s*\|/.exec(line);
-    if (m) out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
+    if (!m) continue;
+    if (m[1] === "nonWebFirstAsserts") {
+      out.push({ kind: "review-note", detail: `nonWebFirstAsserts ${m[2]} in output — confirm each is a prompt-sanctioned event/API value-assert, not a Locator probe` });
+    } else {
+      out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
+    }
   }
   if (/Forbidden patterns in output[\s\S]*?❌/.test(report)) {
     out.push({ kind: "forbidden-pattern", detail: "report flags forbidden patterns present" });

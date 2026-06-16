@@ -31,7 +31,11 @@ on:
 # inside the job (issue_comment events fire on both issues and PRs, and labels
 # are not in the trigger filter surface).
 permissions:
-  contents: read
+  # contents:write required: peter-evans/slash-command-dispatch fires
+  # POST /repos/{owner}/{repo}/dispatches with github.token — contents:read
+  # 403s the dispatch (silent /regenerate no-op). Mirrors verify.yml:62 +
+  # docs/troubleshooting.md:91 precedent for the same endpoint.
+  contents: write
   pull-requests: read
 
 jobs:

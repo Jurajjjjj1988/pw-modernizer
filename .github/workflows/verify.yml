@@ -38,7 +38,11 @@ on:
         type: string
       generate_confidence:
         description: 'Aggregate confidence reported by Stage 2'
-        required: true
+        # Forwarded to the attempt-2 retry only; the verify tally never consumes
+        # it (the < 0.7 fire threshold lives in migrate.yml). Both real callers
+        # pass a value; default keeps the retry forward valid if ever omitted.
+        required: false
+        default: '0'
         type: string
       pr_branch:
         description: 'Optional branch ref to checkout (defaults to main). Use migrator/code-<name> to verify an unmerged Stage 2 PR.'

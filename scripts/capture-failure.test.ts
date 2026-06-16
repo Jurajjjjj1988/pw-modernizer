@@ -91,6 +91,19 @@ test("scanReport: a healthy report yields no anomalies", () => {
   assert.deepEqual(scanReport(report), []);
 });
 
+test("scanReport: nonWebFirstAsserts is a review-note, not a residual-smell (PR #151/#13 noise)", () => {
+  const report = [
+    "## Smell count",
+    "| nonWebFirstAsserts | 0 | 1 |",
+    "| magicNumbers | 8 | 2 |",
+  ].join("\n");
+  const a = scanReport(report);
+  // magicNumbers IS a residual-smell; nonWebFirstAsserts is demoted to review-note.
+  assert.deepEqual(kinds(a).sort(), ["residual-smell", "review-note"]);
+  assert.ok(a.some((x) => x.kind === "residual-smell" && x.detail.includes("magicNumbers")));
+  assert.ok(!a.some((x) => x.kind === "residual-smell" && x.detail.includes("nonWebFirstAsserts")));
+});
+
 test("detectAnomalies: composes drift + report scan", () => {
   const report = "- Plan confidence: avg 0.40";
   const a = detectAnomalies(report, "inputs/cypress/wishlist.cy.js", "outputs/tests/search-filters.spec.ts");

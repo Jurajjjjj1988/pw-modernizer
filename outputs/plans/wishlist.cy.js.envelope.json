@@ -1,0 +1,164 @@
+{
+  "inputBasename": "wishlist.cy.js",
+  "sourceFramework": "cypress",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "adds a product to the wishlist from a product card @positive",
+      "userAction": "Navigate to the products page, click 'Add to wishlist' on the first product card, verify the confirmation toast appears and the header count badge updates to 1, then navigate to the wishlist page and confirm exactly one item is listed.",
+      "expectedAssertions": [
+        "After clicking add-to-wishlist on first card: toast 'Added to wishlist' is visible",
+        "After add: header wishlist count badge shows text '1'",
+        "After navigating to wishlist page (waitForResponse /api/wishlist): exactly 1 wishlist item is visible (toHaveCount(1))"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "removes a product from the wishlist and restores the empty state @positive",
+      "userAction": "Seed one product into the wishlist via API, navigate to the wishlist page, click the remove button on the single item, and confirm the empty-state message appears and the header count badge shows 0.",
+      "expectedAssertions": [
+        "After clicking remove on the single wishlist item: empty wishlist message is visible",
+        "After remove: header wishlist count badge shows text '0'"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/products.page.ts",
+    "outputs/helper/page-object/pages/wishlist.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [
+    "outputs/helper/api/wishlist.api.ts"
+  ],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "cy.get('div.product-grid article.product-card').eq(0)",
+      "target": "page.getByRole('article').first()",
+      "confidence": "low",
+      "notes": "article HTML element implies ARIA role article; no accessible name available. .first() is still index-based. Recommend data-testid per Q6. See pin 1."
+    },
+    {
+      "original": "cy.get('div.product-grid article.product-card').eq(2)",
+      "target": "page.getByRole('article').nth(2)",
+      "confidence": "low",
+      "notes": "Same as eq(0) but index 2. Scenario 1.2 setup replaced by API call; this locator only needed for reference. See pin 1 and Q6."
+    },
+    {
+      "original": "cy.get('button.add-to-wishlist') (within product card)",
+      "target": "page.getByRole('button', { name: /add to wishlist/i })",
+      "confidence": "med",
+      "notes": "button element confirms role; accessible name inferred from CSS class. May be icon-only button. See pin 2 and Q1."
+    },
+    {
+      "original": "cy.contains('Added to wishlist')",
+      "target": "page.getByText('Added to wishlist')",
+      "confidence": "med",
+      "notes": "Literal text match; toast role (status/alert) unknown. Upgrade to getByRole if ARIA role confirmed. See pin 6 and Q11."
+    },
+    {
+      "original": "cy.get('.header-wishlist-count')",
+      "target": "page.locator('.header-wishlist-count')",
+      "confidence": "low",
+      "notes": "CSS class only. No testid or ARIA evidence. Upgrade to getByTestId if data-testid added. See pin 3 and Q4."
+    },
+    {
+      "original": "cy.get('a.header-wishlist-link')",
+      "target": "page.getByRole('link', { name: /wishlist/i })",
+      "confidence": "med",
+      "notes": "a element confirms link role; accessible name inferred from class name. May be icon-only link. See pin 7 and Q5."
+    },
+    {
+      "original": "cy.get('.wishlist-page .wishlist-item')",
+      "target": "page.locator('.wishlist-item')",
+      "confidence": "low",
+      "notes": "CSS class only. Upgrade to getByRole('listitem') if <li>, getByRole('article') if <article>. See pin 4 and Q2."
+    },
+    {
+      "original": "cy.get('.wishlist-item button.remove-from-wishlist').first()",
+      "target": "page.getByRole('button', { name: /remove from wishlist/i }).first()",
+      "confidence": "med",
+      "notes": "button element confirms role; accessible name inferred from class. .first() acceptable when test guarantees exactly 1 item. See pin 2 and Q9."
+    },
+    {
+      "original": "cy.get('.empty-wishlist-message')",
+      "target": "page.getByText(/your wishlist is empty/i)",
+      "confidence": "low",
+      "notes": "CSS class only; text content guessed. If text differs, keep CSS class fallback and add WHY-comment. See pin 5 and Q3."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Product card (index-based selection)",
+      "assumedLocator": "page.getByRole('article').first()",
+      "sourceLocator": "cy.get('div.product-grid article.product-card').eq(0)",
+      "whyComment": "Q6 unresolved: no accessible product name available — article role inferred from <article> element; index fallback used.",
+      "reviewerFallback": "Request data-testid='product-card' from FE team keyed to product ID, or filter by product title text once product names are known."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Add-to-wishlist and remove-from-wishlist buttons (accessible name)",
+      "assumedLocator": "page.getByRole('button', { name: /add to wishlist/i })",
+      "sourceLocator": "cy.get('button.add-to-wishlist')",
+      "whyComment": "Q1/Q9 unresolved: button accessible name inferred from CSS class name — may be icon-only with aria-label.",
+      "reviewerFallback": "Inspect rendered button HTML; if aria-label differs from /add to wishlist/i, update regex. If icon-only with no accessible name, request aria-label from FE team."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Header wishlist count badge",
+      "assumedLocator": "page.locator('.header-wishlist-count')",
+      "sourceLocator": "cy.get('.header-wishlist-count')",
+      "whyComment": "Q4 unresolved: count badge has no testid or ARIA evidence — CSS class fallback used.",
+      "reviewerFallback": "Request data-testid='header-wishlist-count' from FE team. Once added, upgrade to page.getByTestId('header-wishlist-count')."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Wishlist item elements",
+      "assumedLocator": "page.locator('.wishlist-item')",
+      "sourceLocator": "cy.get('.wishlist-page .wishlist-item')",
+      "whyComment": "Q2 unresolved: wishlist item element type unknown — CSS class fallback used.",
+      "reviewerFallback": "Inspect wishlist page HTML. If <li>, upgrade to page.getByRole('listitem'). If <article>, use page.getByRole('article'). If <div>, request data-testid='wishlist-item'."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Empty wishlist message",
+      "assumedLocator": "page.getByText(/your wishlist is empty/i)",
+      "sourceLocator": "cy.get('.empty-wishlist-message')",
+      "whyComment": "Q3 unresolved: empty-state text content unknown — regex guess used.",
+      "reviewerFallback": "Check app copy for exact empty-state text and replace regex. If text varies by locale, use CSS class fallback: page.locator('.empty-wishlist-message')."
+    },
+    {
+      "pinId": 6,
+      "elementDescription": "Added-to-wishlist toast notification",
+      "assumedLocator": "page.getByText('Added to wishlist')",
+      "sourceLocator": "cy.contains('Added to wishlist')",
+      "whyComment": "Q11 unresolved: toast ARIA role unknown — text-based fallback used instead of getByRole('status') or getByRole('alert').",
+      "reviewerFallback": "Inspect toast component ARIA role. If role='status': upgrade to page.getByRole('status').filter({ hasText: 'Added to wishlist' }). If role='alert': use getByRole('alert')."
+    },
+    {
+      "pinId": 7,
+      "elementDescription": "Header wishlist navigation link",
+      "assumedLocator": "page.getByRole('link', { name: /wishlist/i })",
+      "sourceLocator": "cy.get('a.header-wishlist-link')",
+      "whyComment": "Q5 unresolved: link accessible name inferred from CSS class — may be icon-only link with no accessible name.",
+      "reviewerFallback": "Inspect <a> element for text content or aria-label. If icon-only: request aria-label='Wishlist' from FE team. If text exists but doesn't match /wishlist/i: update regex."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.44,
+    "smellCountDelta": -21,
+    "locDelta": 159,
+    "antiPatternCoverage": "21/21"
+  }
+}

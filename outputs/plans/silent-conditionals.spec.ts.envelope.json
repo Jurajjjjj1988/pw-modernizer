@@ -1,0 +1,131 @@
+{
+  "inputBasename": "silent-conditionals.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "displays the personalised welcome banner on the dashboard @positive",
+      "userAction": "Load the dashboard as an authenticated user with the A/B welcome-banner variant forced ON via fixture cookie, and verify the banner is visible and contains the user's display name.",
+      "expectedAssertions": [
+        "welcome banner is visible after dashboard load",
+        "welcome banner contains the authenticated user's display name (or matches EXPECTED_GREETING_PATTERN)"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "shows at least one item in the notifications widget @positive",
+      "userAction": "Load the dashboard as an authenticated user, interact with the notifications widget (expand or open if needed), and verify at least one notification item is visible with content.",
+      "expectedAssertions": [
+        "notifications widget is visible after dashboard load",
+        "first notification item is visible after opening the widget",
+        "first notification item contains notification text"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts",
+    "outputs/helper/fixtures/authenticated.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/dashboard.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [
+    "outputs/helper/api/accounts.api.ts"
+  ],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts",
+    "outputs/helper/test-data/cookies.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('#email')",
+      "target": "page.getByLabel(/email/i)",
+      "confidence": "med",
+      "notes": "Assumes login form has <label> for the email input. Moves to authenticated.fixture.ts. Fall back: getByRole('textbox', { name: /email/i })."
+    },
+    {
+      "original": "page.locator('#password')",
+      "target": "page.getByLabel(/password/i)",
+      "confidence": "med",
+      "notes": "Assumes login form has <label> for the password input. Moves to authenticated.fixture.ts. Fall back: getByRole('textbox', { name: /password/i })."
+    },
+    {
+      "original": "page.getByRole('button', { name: 'Sign in' })",
+      "target": "page.getByRole('button', { name: /sign in/i })",
+      "confidence": "high",
+      "notes": "Already role-based; widen to regex for copy-variation resilience. Moves to authenticated.fixture.ts."
+    },
+    {
+      "original": "page.locator('.welcome-banner')",
+      "target": "page.getByRole('region', { name: /welcome/i })",
+      "confidence": "low",
+      "notes": "No DOM snapshot. Element could be <section>, <aside>, <div>, role=alert, or role=status. See pin 1."
+    },
+    {
+      "original": "page.locator('.notifications-widget')",
+      "target": "page.getByRole('region', { name: /notifications/i })",
+      "confidence": "low",
+      "notes": "No DOM snapshot. Same uncertainty as welcome-banner. See pin 2."
+    },
+    {
+      "original": "page.locator('.notification-item').first()",
+      "target": "page.getByRole('listitem').first()",
+      "confidence": "low",
+      "notes": "No DOM snapshot. Items could be <li>, <tr>, <article>, or a custom element. See pin 3."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Welcome banner",
+      "assumedLocator": "page.getByRole('region', { name: /welcome/i })",
+      "sourceLocator": "page.locator('.welcome-banner')",
+      "whyComment": "Q1 unresolved: .welcome-banner element role unknown — assumed sectioning element with accessible name matching /welcome/.",
+      "reviewerFallback": "Ask FE team for the element type. If no region/accessible-name, add data-testid='welcome-banner' and switch to page.getByTestId('welcome-banner')."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Notifications widget",
+      "assumedLocator": "page.getByRole('region', { name: /notifications/i })",
+      "sourceLocator": "page.locator('.notifications-widget')",
+      "whyComment": "Q2 unresolved: .notifications-widget element role unknown — assumed sectioning element with accessible name matching /notifications/.",
+      "reviewerFallback": "Ask FE team for the element type. If no region/accessible-name, add data-testid='notifications-widget' and switch to page.getByTestId('notifications-widget')."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "First notification item",
+      "assumedLocator": "page.getByRole('listitem').first()",
+      "sourceLocator": "page.locator('.notification-item').first()",
+      "whyComment": "Q3 unresolved: .notification-item element type unknown — assumed <li> inside <ul>/<ol>.",
+      "reviewerFallback": "Confirm element is <li>. If not (e.g. <tr>, <article>), add data-testid='notification-item' and switch to page.getByTestId('notification-item').first()."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Email input (auth fixture)",
+      "assumedLocator": "page.getByLabel(/email/i)",
+      "sourceLocator": "page.locator('#email')",
+      "whyComment": "Q1-auth: assumes login form has a <label> associated with the email input.",
+      "reviewerFallback": "If no label exists, use page.getByRole('textbox', { name: /email/i }) or page.getByPlaceholder(/email/i) as fallback."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Password input (auth fixture)",
+      "assumedLocator": "page.getByLabel(/password/i)",
+      "sourceLocator": "page.locator('#password')",
+      "whyComment": "Q1-auth: assumes login form has a <label> associated with the password input.",
+      "reviewerFallback": "If no label exists, use page.getByRole('textbox', { name: /password/i }) or page.getByPlaceholder(/password/i) as fallback."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.67,
+    "smellCountDelta": -17,
+    "locDelta": 85,
+    "antiPatternCoverage": "17/17"
+  }
+}

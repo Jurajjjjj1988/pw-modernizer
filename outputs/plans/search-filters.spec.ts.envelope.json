@@ -1,0 +1,201 @@
+{
+  "inputBasename": "search-filters.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "filters search results by category and price range @positive @e2e",
+      "userAction": "Navigate to /products, search for 'shoes', click the running-category filter, enter a $50–$150 price range and apply, then verify filtered product cards are visible and the result count contains 'found'.",
+      "expectedAssertions": [
+        "at least one product card visible after search",
+        "at least one product card visible after category filter applied",
+        "result-count element contains text 'found' after category filter",
+        "at least one product card visible after price range filter applied"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "clearing all filters returns to the unfiltered result set @edge @e2e",
+      "userAction": "Navigate to /products, search for 'jacket', record the initial product card count, apply the rain-category filter, then click 'clear all filters' and verify the count returns to its pre-filter value.",
+      "expectedAssertions": [
+        "at least one product card visible after searching 'jacket'",
+        "product card count after clearing filters matches the pre-filter search count"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/search-filters.page.ts"
+  ],
+  "requiredBlocks": [
+    "outputs/helper/page-object/blocks/search-filter.block.ts"
+  ],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts",
+    "outputs/helper/test-data/urls.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('input.search-bar')",
+      "target": "page.getByRole('searchbox')",
+      "confidence": "med",
+      "notes": "input tag confirms it is an input; search-bar class implies search purpose; no DOM evidence of type=search or role=searchbox. See Q1, pin 1."
+    },
+    {
+      "original": "page.locator('button.search-submit')",
+      "target": "page.getByRole('button', { name: /search/i })",
+      "confidence": "med",
+      "notes": "button tag confirms role; accessible name guessed from class name. See Q2, pin 2."
+    },
+    {
+      "original": "page.locator('.product-card')",
+      "target": "page.locator('.product-card')",
+      "confidence": "low",
+      "notes": "No ARIA role evidence; common patterns are article or listitem but cannot promote without DOM proof. Reviewer: add data-testid=product-card or confirm ARIA role. See Q3, pin 3."
+    },
+    {
+      "original": "page.locator('.filter-sidebar .category-running')",
+      "target": "page.getByRole('button', { name: /running/i })",
+      "confidence": "low",
+      "notes": "Element type entirely unknown — could be checkbox, link, or button. Accessible name guessed from class suffix. See Q4, pin 4."
+    },
+    {
+      "original": "page.locator('.result-count')",
+      "target": "page.locator('.result-count')",
+      "confidence": "low",
+      "notes": "No ARIA or semantic evidence. Kept as CSS fallback. Reviewer: add data-testid=result-count. See Q5, pin 5."
+    },
+    {
+      "original": "page.locator('.price-min')",
+      "target": "page.getByLabel(/min(imum)?\\s*price/i)",
+      "confidence": "low",
+      "notes": "Label text unknown; assumes input is visually labeled. Could be getByPlaceholder if label absent. See Q6, pin 6."
+    },
+    {
+      "original": "page.locator('.price-max')",
+      "target": "page.getByLabel(/max(imum)?\\s*price/i)",
+      "confidence": "low",
+      "notes": "Same uncertainty as .price-min. See Q6, pin 7."
+    },
+    {
+      "original": "page.locator('button.apply-filters')",
+      "target": "page.getByRole('button', { name: /apply/i })",
+      "confidence": "med",
+      "notes": "button tag confirms role; accessible name guessed from class. See Q7, pin 8."
+    },
+    {
+      "original": "page.locator('.no-results')",
+      "target": "absorbed into positive assertion — locator dropped",
+      "confidence": "low",
+      "notes": "Conditional-logic block (KB-1.1.12) removed. Migrated spec asserts expect(arrayProductCards.first()).toBeVisible() directly. This locator is not emitted in Stage 2 output."
+    },
+    {
+      "original": "page.locator('.filter-sidebar .category-rain')",
+      "target": "page.getByRole('button', { name: /rain/i })",
+      "confidence": "low",
+      "notes": "Same reasoning as .category-running. See Q4, pin 9."
+    },
+    {
+      "original": "page.locator('button.clear-filters')",
+      "target": "page.getByRole('button', { name: /clear/i })",
+      "confidence": "med",
+      "notes": "button tag confirms role; accessible name guessed. See Q8, pin 10."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Search input",
+      "assumedLocator": "page.getByRole('searchbox')",
+      "sourceLocator": "page.locator('input.search-bar')",
+      "whyComment": "Q1 unresolved: search input type/role not confirmed — assumed type=search or role=searchbox from class name semantics",
+      "reviewerFallback": "Add type=search to the HTML input, or provide the visible label text so getByLabel can be used, or confirm role=searchbox applies."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Search submit button",
+      "assumedLocator": "page.getByRole('button', { name: /search/i })",
+      "sourceLocator": "page.locator('button.search-submit')",
+      "whyComment": "Q2 unresolved: search button accessible name not confirmed — guessed from class suffix 'search-submit'",
+      "reviewerFallback": "Provide the exact visible text or aria-label of the button so the regex can be tightened. If icon-only, add aria-label=Search."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Product card collection",
+      "assumedLocator": "page.locator('.product-card')",
+      "sourceLocator": "page.locator('.product-card')",
+      "whyComment": "Q3 unresolved: product card ARIA role unknown — kept CSS class as fallback rather than guessing article or listitem",
+      "reviewerFallback": "Confirm the element's ARIA role (article, listitem, or none). If confirmable, upgrade to getByRole. If not, add data-testid=product-card and switch to getByTestId."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Running-category filter element",
+      "assumedLocator": "page.getByRole('button', { name: /running/i })",
+      "sourceLocator": "page.locator('.filter-sidebar .category-running')",
+      "whyComment": "Q4 unresolved: category filter element type unknown — assumed button; could be checkbox or link",
+      "reviewerFallback": "Inspect the element: if input[type=checkbox], use getByRole('checkbox', { name: /running/i }) with .check(); if a[href], use getByRole('link', { name: /running/i }). Provide accessible name so regex can be verified."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Result count text element",
+      "assumedLocator": "page.locator('.result-count')",
+      "sourceLocator": "page.locator('.result-count')",
+      "whyComment": "Q5 unresolved: result count element type unknown — kept CSS class; no ARIA role evidence",
+      "reviewerFallback": "Add data-testid=result-count to enable getByTestId, or confirm a role/aria-live attribute that allows a semantic upgrade."
+    },
+    {
+      "pinId": 6,
+      "elementDescription": "Minimum price input",
+      "assumedLocator": "page.getByLabel(/min(imum)?\\s*price/i)",
+      "sourceLocator": "page.locator('.price-min')",
+      "whyComment": "Q6 unresolved: price-min label/placeholder text unknown — assumed visible label containing 'min' or 'minimum price'",
+      "reviewerFallback": "Provide the exact label text or placeholder. If type=number, consider getByRole('spinbutton', { name: /min/i }) as alternative."
+    },
+    {
+      "pinId": 7,
+      "elementDescription": "Maximum price input",
+      "assumedLocator": "page.getByLabel(/max(imum)?\\s*price/i)",
+      "sourceLocator": "page.locator('.price-max')",
+      "whyComment": "Q6 unresolved: price-max label/placeholder text unknown — assumed visible label containing 'max' or 'maximum price'",
+      "reviewerFallback": "Same as pin 6 — provide exact label text or placeholder for the maximum price input."
+    },
+    {
+      "pinId": 8,
+      "elementDescription": "Apply filters button",
+      "assumedLocator": "page.getByRole('button', { name: /apply/i })",
+      "sourceLocator": "page.locator('button.apply-filters')",
+      "whyComment": "Q7 unresolved: apply-filters button accessible name not confirmed — guessed from class suffix 'apply-filters'",
+      "reviewerFallback": "Provide the button's visible text (e.g. 'Apply', 'Apply Filters', 'Filter') so the regex can be tightened or replaced with an exact match."
+    },
+    {
+      "pinId": 9,
+      "elementDescription": "Rain-category filter element",
+      "assumedLocator": "page.getByRole('button', { name: /rain/i })",
+      "sourceLocator": "page.locator('.filter-sidebar .category-rain')",
+      "whyComment": "Q4 unresolved (category-rain variant): same uncertainty as category-running — element type and accessible name both unconfirmed",
+      "reviewerFallback": "Same fallback logic as pin 4. Confirm element type and accessible name."
+    },
+    {
+      "pinId": 10,
+      "elementDescription": "Clear all filters button",
+      "assumedLocator": "page.getByRole('button', { name: /clear/i })",
+      "sourceLocator": "page.locator('button.clear-filters')",
+      "whyComment": "Q8 unresolved: clear-filters button accessible name not confirmed — guessed from class suffix 'clear-filters'",
+      "reviewerFallback": "Provide the button's visible text (e.g. 'Clear', 'Clear all', 'Reset filters') so the regex can be tightened."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.55,
+    "smellCountDelta": -32,
+    "locDelta": 140,
+    "antiPatternCoverage": "32/32"
+  }
+}

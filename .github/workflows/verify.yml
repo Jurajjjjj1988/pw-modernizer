@@ -241,6 +241,45 @@ jobs:
           # redirect loses live CI log visibility for the Claude turn
           # stream but the NDJSON is captured in the file for cost-capture.
 
+      - name: Diagnose sub-agent crash (on failure)
+        if: failure()
+        env:
+          LENS: ${{ matrix.lens }}
+        shell: bash
+        run: |
+          # When the Claude step exits non-zero (3-min crash, max-turns hit,
+          # SIGPIPE, OAuth 401, etc.) the workflow log shows the bash command
+          # echo'd and then nothing else — because stdout went to the ndjson
+          # file and stderr is the only thing that would have surfaced live,
+          # and Claude CLI is mostly silent on stderr. Without this step the
+          # only debugging signal is "exit code 1" and we can't tell whether
+          # the agent emitted 0, 5, or 24 events before dying.
+          #
+          # This step runs only on failure and dumps:
+          #   - the byte size + line count of the captured ndjson
+          #   - the LAST 5 events (init, tool_use, tool_result, etc.)
+          #   - the parsed `type` of the final event (init = died before any
+          #     LLM activity → likely auth/network; result = LLM finished →
+          #     a downstream step broke; assistant/tool_use = died mid-stream)
+          #
+          # All non-fatal — we just want signal in the log for next time.
+          EVENTS="/tmp/claude-verify-${LENS}-events.ndjson"
+          echo "::group::Sub-agent (${LENS}) crash diagnostics"
+          if [ ! -e "$EVENTS" ]; then
+            echo "ndjson file does not exist — Claude CLI never wrote anything to stdout"
+          elif [ ! -s "$EVENTS" ]; then
+            echo "ndjson file exists but is empty (0 bytes) — Claude CLI exited before first event"
+          else
+            BYTES=$(wc -c < "$EVENTS" | tr -d ' ')
+            LINES=$(wc -l < "$EVENTS" | tr -d ' ')
+            echo "ndjson: ${BYTES} bytes, ${LINES} events captured"
+            echo "--- LAST 5 EVENTS ---"
+            tail -5 "$EVENTS" || true
+            echo "--- FINAL EVENT TYPE ---"
+            tail -1 "$EVENTS" | jq -r '.type // "unknown"' 2>/dev/null || echo "could not parse final event as JSON"
+          fi
+          echo "::endgroup::"
+
       - name: Capture Claude usage stats (cost tracking)
         continue-on-error: true
         env:

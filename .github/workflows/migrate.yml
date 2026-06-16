@@ -861,6 +861,30 @@ jobs:
             --envelope "$ENV" \
             --output "outputs/tests"
 
+      - name: Helper-usage gate (PR #126 SDET finding → static check)
+        if: steps.budget_guard.outputs.over_budget != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Catches the exact class of bug PR #126 SDET found: an exported
+          # API helper (clearWishlist) was emitted but never wired into the
+          # spec, so the test leaked state across runs. The validator wall
+          # (typecheck, eslint, qa-master conformance) didn't flag it
+          # because each file was independently valid — only the missing
+          # cross-file wiring was wrong.
+          #
+          # Warn-only here: a healthy long-tail of migrations may emit
+          # genuinely orphan helpers (manual review / refactor candidate)
+          # without it being a block-severity defect. Promote to --strict
+          # after observing N real runs where every warning was a true
+          # positive. See scripts/validate-helper-usage.ts header for the
+          # full rationale + calibration corpus link.
+          #
+          # In warn mode (no --strict) the validator exits 0 even when it
+          # finds unused exports; findings surface as ::warning:: lines on
+          # the run summary. No `|| true` needed — the script handles it.
+          npx tsx scripts/validate-helper-usage.ts
+
       - name: qa-master architecture conformance (v0.2.0 default)
         if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash

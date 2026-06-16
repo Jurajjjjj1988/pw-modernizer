@@ -30,6 +30,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -49,7 +50,7 @@ interface PrMeta {
 }
 
 /** A single deterministic red flag surfaced from the report or file names. */
-interface Anomaly { kind: string; detail: string }
+export interface Anomaly { kind: string; detail: string }
 
 /** Everything the digest needs, derived without reading the full CI log. */
 interface Digest {
@@ -114,13 +115,14 @@ function fetchFileAtRef(slug: string, path: string, ref: string): string | null 
 }
 
 /** The verify verdict, read from labels (verify:ship-it / fix-first / start-over). */
-function verdictFromLabels(labels: string[]): string {
+export function verdictFromLabels(labels: string[]): string {
   const v = labels.filter((l) => l.startsWith("verify:"));
-  if (v.length === 0) return "UNKNOWN";
+  const sole = v[0];
+  if (sole === undefined) return "UNKNOWN";
   if (v.length > 1) {
     return `CONFLICT(${v.map((l) => l.replace("verify:", "")).join(" + ")})`;
   }
-  return v[0]!.replace("verify:", "").toUpperCase().replace(/-/g, " ");
+  return sole.replace("verify:", "").toUpperCase().replaceAll("-", " ");
 }
 
 /**
@@ -128,7 +130,7 @@ function verdictFromLabels(labels: string[]): string {
  * removing the old one, so verify:* and confidence:* siblings accumulate. This
  * misleads reviewers and babysit.sh auto-merge. Deterministic — fix in verify.yml.
  */
-function labelConflicts(labels: string[]): Anomaly[] {
+export function labelConflicts(labels: string[]): Anomaly[] {
   const out: Anomaly[] = [];
   const verdicts = labels.filter((l) => l.startsWith("verify:"));
   if (verdicts.length > 1) {
@@ -148,8 +150,49 @@ function sourceInputFromTitle(title: string): string | null {
 
 /** First capture group of the first matching line, or null. */
 function grab(report: string, re: RegExp): string | null {
-  const m = report.match(re);
-  return m && m[1] !== undefined ? m[1].trim() : null;
+  const v = re.exec(report)?.[1];
+  return v === undefined ? null : v.trim();
+}
+
+/**
+ * Filename drift: output spec names a different feature than the source
+ * (e.g. wishlist -> search-filters). Compare on a separator-free normal form so
+ * camelCase Java (AddCookiesJupiterTest) and kebab-case TS
+ * (add-cookies-jupiter-test) read as identical, and a dropped suffix
+ * (AddCookiesJupiterTest -> add-cookies) still counts as a containment match.
+ */
+export function filenameDrift(sourceInput: string | null, outputSpec: string | null): Anomaly[] {
+  if (!sourceInput || !outputSpec) return [];
+  const srcStem = basename(sourceInput).replace(/\.(cy|spec)?\.?\w+$/i, "");
+  const outStem = basename(outputSpec).replace(/\.spec\.ts$/i, "");
+  const norm = (s: string): string => s.replaceAll(/[^a-z0-9]/gi, "").toLowerCase();
+  const srcN = norm(srcStem);
+  const outN = norm(outStem);
+  const related = srcN.length > 0 && outN.length > 0
+    && (srcN.includes(outN) || outN.includes(srcN));
+  return related ? [] : [{
+    kind: "filename-drift",
+    detail: `source "${srcStem}" vs output "${outStem}" name different features`,
+  }];
+}
+
+/** Scan the verify report markdown for low plan confidence, residual smells, forbidden patterns. */
+export function scanReport(report: string | null): Anomaly[] {
+  if (!report) return [];
+  const out: Anomaly[] = [];
+  const planAvg = grab(report, /Plan confidence:[^\n]*avg\s*([\d.]+)/i);
+  if (planAvg && Number(planAvg) < 0.5) {
+    out.push({ kind: "low-plan-confidence", detail: `plan avg ${planAvg} (< 0.5)` });
+  }
+  // Residual smells: any "Output" column > 0 in the smell table (delta not fully removed).
+  for (const line of report.split("\n")) {
+    const m = /^\|\s*(\w+)\s*\|\s*\d+\s*\|\s*([1-9]\d*)\s*\|/.exec(line);
+    if (m) out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
+  }
+  if (/Forbidden patterns in output[\s\S]*?❌/.test(report)) {
+    out.push({ kind: "forbidden-pattern", detail: "report flags forbidden patterns present" });
+  }
+  return out;
 }
 
 /**
@@ -157,49 +200,15 @@ function grab(report: string, re: RegExp): string | null {
  * signatures that usually explain a START OVER / FIX FIRST without needing the
  * CI log at all.
  */
-function detectAnomalies(
+export function detectAnomalies(
   report: string | null,
   sourceInput: string | null,
   outputSpec: string | null,
 ): Anomaly[] {
-  const out: Anomaly[] = [];
-
-  // Filename drift: output spec names a different feature than the source
-  // (e.g. wishlist -> search-filters). Compare on a separator-free normal form
-  // so camelCase Java (AddCookiesJupiterTest) and kebab-case TS
-  // (add-cookies-jupiter-test) read as identical, and a dropped suffix
-  // (AddCookiesJupiterTest -> add-cookies) still counts as a containment match.
-  if (sourceInput && outputSpec) {
-    const srcStem = basename(sourceInput).replace(/\.(cy|spec)?\.?\w+$/i, "");
-    const outStem = basename(outputSpec).replace(/\.spec\.ts$/i, "");
-    const norm = (s: string): string => s.replace(/[^a-z0-9]/gi, "").toLowerCase();
-    const srcN = norm(srcStem);
-    const outN = norm(outStem);
-    const related = srcN.length > 0 && outN.length > 0
-      && (srcN.includes(outN) || outN.includes(srcN));
-    if (!related) {
-      out.push({
-        kind: "filename-drift",
-        detail: `source "${srcStem}" vs output "${outStem}" name different features`,
-      });
-    }
-  }
-
-  if (report) {
-    const planAvg = grab(report, /Plan confidence:[^\n]*avg\s*([\d.]+)/i);
-    if (planAvg && Number(planAvg) < 0.5) {
-      out.push({ kind: "low-plan-confidence", detail: `plan avg ${planAvg} (< 0.5)` });
-    }
-    // Residual smells: any "Output" column > 0 in the smell table (delta not fully removed).
-    for (const line of report.split("\n")) {
-      const m = line.match(/^\|\s*(\w+)\s*\|\s*\d+\s*\|\s*([1-9]\d*)\s*\|/);
-      if (m) out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
-    }
-    if (/Forbidden patterns in output[\s\S]*?❌/.test(report)) {
-      out.push({ kind: "forbidden-pattern", detail: "report flags forbidden patterns present" });
-    }
-  }
-  return out;
+  return [
+    ...filenameDrift(sourceInput, outputSpec),
+    ...scanReport(report),
+  ];
 }
 
 /** Suggested zero-token local replay commands, chosen from the source framework. */
@@ -221,7 +230,7 @@ function replayCommands(sourceInput: string | null, captureDir: string): string[
 function slugFor(meta: PrMeta): string {
   const src = sourceInputFromTitle(meta.title);
   const stem = src ? basename(src).replace(/\.\w+$/, "") : `pr-${meta.number}`;
-  return `pr${meta.number}-${stem}`.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return `pr${meta.number}-${stem}`.replaceAll(/[^a-zA-Z0-9._-]/g, "-");
 }
 
 function main(): void {
@@ -299,4 +308,7 @@ function main(): void {
   process.stdout.write(`${digestText}\nFrozen → ${captureDir}\n`);
 }
 
-main();
+// Only run the CLI when invoked directly — importing for tests must not fetch PRs.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

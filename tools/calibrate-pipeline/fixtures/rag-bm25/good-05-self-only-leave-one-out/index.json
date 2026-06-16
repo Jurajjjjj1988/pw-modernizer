@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-16T00:00:00.000Z",
+  "sourceHash": "fixture-bad-02-self-only",
+  "documents": [
+    {
+      "id": "input.spec.ts",
+      "source": "examples",
+      "sourceFramework": "bad-playwright",
+      "verdict": "SHIP IT",
+      "kbIds": ["KB-1.1.1"],
+      "locatorConfidence": {"HIGH": 1, "MED": 0, "LOW": 0},
+      "planBody": "# Migration plan: input.spec.ts\n\n## Source framework\n\n**bad-playwright**\n\nSelf-match candidate; leave-one-out must exclude.\n",
+      "planPath": "fixtures/rag-bm25/synthetic/input.spec.ts.md"
+    }
+  ]
+}

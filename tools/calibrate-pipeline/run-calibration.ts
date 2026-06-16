@@ -41,7 +41,8 @@ type ValidatorName =
   | "ast-diff-trivial-check" | "validate-examples"
   | "plan-code-coverage" | "dom-ground" | "verify-tally"
   | "danger-policy"
-  | "cypress-conformance" | "selenium-python-conformance";
+  | "cypress-conformance" | "selenium-python-conformance"
+  | "rag-bm25";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
@@ -49,6 +50,7 @@ const VALIDATORS: readonly ValidatorName[] = [
   "plan-code-coverage", "dom-ground", "verify-tally",
   "danger-policy",
   "cypress-conformance", "selenium-python-conformance",
+  "rag-bm25",
 ];
 
 /**
@@ -380,6 +382,32 @@ function runSeleniumPythonConformance(fixtureName: string): FixtureResult {
   return runConformance("selenium-python-conformance", fixtureName);
 }
 
+// rag-bm25 fixtures live under fixtures/rag-bm25/<name>/ with a pre-built
+// `index.json` + an `input.<ext>` query file. The runner spawns
+// `scripts/retrieval-bm25.ts` against the fixture index and verifies the
+// resulting JSON contains the golden substrings (Phase 1, ADR-0001).
+function runRagBm25(fixtureName: string): FixtureResult {
+  const fixtureDir = join(FIXTURES_ROOT, "rag-bm25", fixtureName);
+  const indexPath = join(fixtureDir, "index.json");
+  const inputCandidates = readdirSync(fixtureDir)
+    .filter((n) => n.startsWith("input."));
+  if (inputCandidates.length === 0) {
+    return {
+      fixture: fixtureName, expectedExit: expectedExitFromName(fixtureName),
+      actualExit: -1, missingSubstrings: [],
+      passed: false,
+    };
+  }
+  const inputPath = join(fixtureDir, inputCandidates[0]!);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "retrieval-bm25.ts"),
+    "--input", inputPath,
+    "--index", indexPath,
+    "--k", "3",
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("rag-bm25", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -391,6 +419,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "danger-policy": runDangerPolicy,
   "cypress-conformance": runCypressConformance,
   "selenium-python-conformance": runSeleniumPythonConformance,
+  "rag-bm25": runRagBm25,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

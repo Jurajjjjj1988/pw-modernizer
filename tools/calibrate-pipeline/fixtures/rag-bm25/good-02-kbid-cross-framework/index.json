@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-16T00:00:00.000Z",
+  "sourceHash": "fixture-good-02-kbid-cross-fw",
+  "documents": [
+    {
+      "id": "fixture-bad-pw-flaky",
+      "source": "examples",
+      "sourceFramework": "bad-playwright",
+      "verdict": "SHIP IT",
+      "kbIds": ["KB-1.1.1", "KB-1.1.5"],
+      "locatorConfidence": {"HIGH": 3, "MED": 0, "LOW": 0},
+      "planBody": "# Migration plan: flaky.spec.ts\n\n## Source framework\n\n**bad-playwright**\n\n## Anti-patterns detected\n\n| Severity | KB-ID | Anti-pattern |\n|---|---|---|\n| H | KB-1.1.1 | hard-wait |\n",
+      "planPath": "fixtures/rag-bm25/synthetic/bad-pw-flaky.md"
+    },
+    {
+      "id": "fixture-sel-java-sleep",
+      "source": "examples",
+      "sourceFramework": "selenium-java",
+      "verdict": "SHIP IT",
+      "kbIds": ["KB-1.3.1"],
+      "locatorConfidence": {"HIGH": 2, "MED": 1, "LOW": 0},
+      "planBody": "# Migration plan: SleepTest.java\n\n## Source framework\n\n**Selenium Java**\n\n## Anti-patterns detected\n\n| Severity | KB-ID | Anti-pattern |\n|---|---|---|\n| H | KB-1.3.1 | Thread.sleep hard wait |\n",
+      "planPath": "fixtures/rag-bm25/synthetic/sel-java-sleep.md"
+    },
+    {
+      "id": "fixture-cypress-route",
+      "source": "examples",
+      "sourceFramework": "cypress",
+      "verdict": "SHIP IT",
+      "kbIds": ["KB-1.2.11"],
+      "locatorConfidence": {"HIGH": 1, "MED": 2, "LOW": 0},
+      "planBody": "# Migration plan: route.cy.js\n\n## Source framework\n\ncypress\n\n## Anti-patterns detected\n\n| Severity | KB-ID | Anti-pattern |\n|---|---|---|\n| M | KB-1.2.11 | cy.intercept route stub in spec |\n",
+      "planPath": "fixtures/rag-bm25/synthetic/cypress-route.md"
+    }
+  ]
+}

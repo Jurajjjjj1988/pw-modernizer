@@ -194,6 +194,8 @@ jobs:
         run: npx tsx scripts/assemble-prompts.ts --write
 
       - name: Run Claude (analyze stage)
+        # Regression-semantic mirrors plan.yml shape; same 20-min cap.
+        timeout-minutes: 20
         env:
           # Auto-route by token prefix — same logic as plan.yml / migrate.yml
           # so token handling cannot drift between workflows.

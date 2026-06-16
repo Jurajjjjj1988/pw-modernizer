@@ -264,6 +264,12 @@ jobs:
       # scripts/assemble-prompts.ts and prompts/_fragments/ for the design.
 
       - name: Run Claude (generate stage)
+        # Stage 2 is the heaviest LLM call (Read plan + KB + rules + qa-master
+        # reference + inventory; write spec + Pages + Blocks + fixtures + API
+        # wrappers + report). Cypress migrations with max-turns 50 can push
+        # 15 min; 30 min is a 2x headroom on the longest observed runtime.
+        # Without this cap a stuck inference would burn until GHA's 6h limit.
+        timeout-minutes: 30
         env:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
           # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).
@@ -698,6 +704,11 @@ jobs:
           exit 0
 
       - name: Run Claude (fix lint errors)
+        # Fix-lint is a constrained edit pass (read the .lint-errors.md report,
+        # patch the failing files in place). 10 min is generous — typical
+        # runtime is 2-4 min. Without this cap a stuck inference would burn
+        # until GHA's 6h limit.
+        timeout-minutes: 10
         if: steps.budget_guard.outputs.over_budget != 'true' && steps.validate.outputs.status != '0'
         env:
           # Same token-prefix routing as the generate step — keep consistent.

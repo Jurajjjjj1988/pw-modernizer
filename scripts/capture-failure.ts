@@ -28,8 +28,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -116,8 +115,29 @@ function fetchFileAtRef(slug: string, path: string, ref: string): string | null 
 
 /** The verify verdict, read from labels (verify:ship-it / fix-first / start-over). */
 function verdictFromLabels(labels: string[]): string {
-  const v = labels.find((l) => l.startsWith("verify:"));
-  return v ? v.replace("verify:", "").toUpperCase().replace(/-/g, " ") : "UNKNOWN";
+  const v = labels.filter((l) => l.startsWith("verify:"));
+  if (v.length === 0) return "UNKNOWN";
+  if (v.length > 1) {
+    return `CONFLICT(${v.map((l) => l.replace("verify:", "")).join(" + ")})`;
+  }
+  return v[0]!.replace("verify:", "").toUpperCase().replace(/-/g, " ");
+}
+
+/**
+ * Stale-label conflicts: re-running verify on a PR adds a new verdict without
+ * removing the old one, so verify:* and confidence:* siblings accumulate. This
+ * misleads reviewers and babysit.sh auto-merge. Deterministic — fix in verify.yml.
+ */
+function labelConflicts(labels: string[]): Anomaly[] {
+  const out: Anomaly[] = [];
+  const verdicts = labels.filter((l) => l.startsWith("verify:"));
+  if (verdicts.length > 1) {
+    out.push({ kind: "conflicting-verdict-labels", detail: verdicts.join(" + ") });
+  }
+  if (labels.includes("confidence:low") && labels.includes("confidence:high")) {
+    out.push({ kind: "conflicting-confidence-labels", detail: "confidence:low + confidence:high" });
+  }
+  return out;
 }
 
 /** Pull `inputs/...` source path out of the PR title. */
@@ -248,7 +268,10 @@ function main(): void {
     outputSpec,
     aggregateConfidence: report ? grab(report, /Aggregate confidence:\*\*\s*([\d.]+)/i) : null,
     planConfidence: report ? grab(report, /Plan confidence:[^\n]*avg\s*([\d.]+)/i) : null,
-    anomalies: detectAnomalies(report, sourceInput, outputSpec),
+    anomalies: [
+      ...labelConflicts(labels),
+      ...detectAnomalies(report, sourceInput, outputSpec),
+    ],
     replayCommands: replayCommands(sourceInput, captureDir),
   };
   writeFileSync(join(captureDir, "meta.json"), JSON.stringify(digest, null, 2));

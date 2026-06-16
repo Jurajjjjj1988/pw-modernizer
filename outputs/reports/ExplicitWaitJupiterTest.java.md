@@ -2,12 +2,12 @@
 
 ## Source → Target
 - Source: `inputs/selenium-java/ExplicitWaitJupiterTest.java` (61 LOC)
-- Output: `outputs/tests/explicit-wait-jupiter-test.spec.ts` (22 LOC)
-- LOC delta: -39
+- Output: `outputs/tests/_legacy-v0.1.x/using_selenium_tests.spec.ts` (29 LOC)
+- LOC delta: -32
 
 ## Quality scores
-- **Aggregate confidence:** 0.75
-- Selector quality: 0% canonical (0 canonical / 1 fragile)
+- **Aggregate confidence:** 0.92
+- Selector quality: 67% canonical (2 canonical / 1 fragile)
 - Web-first assertion rate: 100%
 - Plan confidence: 1 high / 0 med / 0 low → avg 1.00
 
@@ -15,7 +15,7 @@
 | Signal | Value | Weight | Contribution |
 |---|---|---|---|
 | Plan confidence | 1.00 | 0.40 | 0.400 |
-| Selector quality | 0.00 | 0.25 | 0.000 |
+| Selector quality | 0.67 | 0.25 | 0.167 |
 | Web-first rate | 1.00 | 0.10 | 0.100 |
 | Smell removal rate | 1.00 | 0.15 | — |
 | Forbidden absence | 1.00 | 0.10 | 0.100 |

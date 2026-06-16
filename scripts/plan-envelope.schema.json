@@ -75,10 +75,10 @@
     },
     "requiredPOMs": {
       "type": "array",
-      "description": "Page Object Model file paths Stage 2 must produce, relative to repo root (e.g. 'outputs/tests/pages/login.page.ts'). Empty array when no POM extraction is justified.",
+      "description": "Page Object Model file paths Stage 2 must produce, relative to repo root. Accepts BOTH legacy v0.1.x path (`outputs/tests/pages/foo.page.ts`) AND qa-master v0.2.0 path (`outputs/helper/page-object/pages/foo.page.ts`). The validator's qa-master fallback maps the legacy path to the new location when checking on-disk existence (PR #156). Empty array when no POM extraction is justified.",
       "items": {
         "type": "string",
-        "pattern": "^outputs/tests/pages/[A-Za-z0-9._/-]+\\.page\\.ts$"
+        "pattern": "^outputs/(tests/pages|helper/page-object/pages)/[A-Za-z0-9._/-]+\\.page\\.ts$"
       }
     },
     "requiredFixtures": {

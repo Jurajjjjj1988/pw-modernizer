@@ -533,6 +533,61 @@ jobs:
           echo "Token prefix (first 12 chars): ${TRIMMED:0:12}..."
           claude --version || echo "(claude --version failed)"
 
+      - name: Stage 0.5 - RAG retrieval (Phase 1, ADR-0001)
+        # Phase 1 RAG: index past plans, retrieve top-K most-similar by BM25,
+        # render as markdown fragment that analyze.md includes. Gated on the
+        # STAGE1_RAG repo variable so the default (off) preserves pre-Phase-1
+        # behaviour. Shadow mode runs retrieval + records the json sidecar
+        # for measurement but keeps the fragment empty so Sonnet does not
+        # see the retrieved context - that lets us calibrate retrieval
+        # quality without affecting any live plan.
+        if: steps.dedup.outputs.skip == 'false'
+        id: rag_retrieval
+        env:
+          STAGE1_RAG: ${{ vars.STAGE1_RAG || 'off' }}
+          INPUT_PATH: ${{ matrix.input_path }}
+          INPUT_BASENAME: ${{ steps.idempotency.outputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODE="${STAGE1_RAG:-off}"
+          case "$MODE" in
+            off|shadow|on) ;;
+            *)
+              echo "::error::STAGE1_RAG must be one of off|shadow|on, got '$MODE'"
+              exit 1
+              ;;
+          esac
+          # Always reset the fragment so a stale render from a previous run
+          # cannot contaminate this one. Empty file = analyze.md include
+          # resolves to nothing.
+          : > prompts/_fragments/rag-context.md
+          if [ "$MODE" = "off" ]; then
+            echo "::notice::STAGE1_RAG=off - skipping retrieval (default)"
+            exit 0
+          fi
+          # Build / refresh the index (deterministic, sha-cached cheap when
+          # the corpus hasn't moved).
+          npx tsx scripts/index-plans.ts > /dev/null
+          mkdir -p outputs/reports
+          RESULTS_PATH="outputs/reports/${INPUT_BASENAME}-rag.json"
+          # Retrieval ALWAYS writes its json sidecar - shadow mode keeps
+          # that file as the measurement signal even though Sonnet does
+          # not see it.
+          npx tsx scripts/retrieval-bm25.ts \
+            --input "$INPUT_PATH" \
+            --out "$RESULTS_PATH" \
+            --k 3 \
+            --quiet
+          if [ "$MODE" = "on" ]; then
+            npx tsx scripts/rag-context-render.ts \
+              --results "$RESULTS_PATH" \
+              --out prompts/_fragments/rag-context.md
+            echo "::notice::STAGE1_RAG=on - retrieval rendered into the analyze.md prefix"
+          else
+            echo "::notice::STAGE1_RAG=shadow - retrieval recorded to $RESULTS_PATH, fragment kept empty"
+          fi
+
       - name: Assemble prompt fragments
         if: steps.dedup.outputs.skip == 'false'
         shell: bash

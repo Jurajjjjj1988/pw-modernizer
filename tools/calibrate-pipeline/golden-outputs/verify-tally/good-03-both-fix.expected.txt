@@ -1,0 +1,2 @@
+# FIX FIRST + FIX FIRST → FIX FIRST (max-severity tally: no lens wants regen)
+verify-tally: SDET=FIX FIRST CR=FIX FIRST → FIX FIRST

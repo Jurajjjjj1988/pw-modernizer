@@ -243,13 +243,38 @@ function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Viol
   return out;
 }
 
+// v0.1.x plans declared POMs/blocks/fixtures under `outputs/tests/{pages,
+// blocks,fixtures}/`. qa-master v0.2.0 moved them under
+// `outputs/helper/{page-object/pages,page-object/blocks,fixtures}/`. Old
+// envelopes (pre-2026-06-10) still reference the v0.1.x paths; Stage 2
+// emits to the new location. Map old path → equivalent qa-master path so
+// the validator accepts the file even though the envelope is stale.
+// Observed 2026-06-16 run 27649532990 (EmployeesTest.java).
+const QA_MASTER_PATH_FALLBACKS: ReadonlyArray<readonly [string, string]> = [
+  ["outputs/tests/pages/", "outputs/helper/page-object/pages/"],
+  ["outputs/tests/blocks/", "outputs/helper/page-object/blocks/"],
+  ["outputs/tests/fixtures/", "outputs/helper/fixtures/"],
+];
+
+function existsAtQaMasterFallback(legacyPath: string): boolean {
+  for (const [oldPrefix, newPrefix] of QA_MASTER_PATH_FALLBACKS) {
+    if (!legacyPath.startsWith(oldPrefix)) continue;
+    const candidate = newPrefix + legacyPath.slice(oldPrefix.length);
+    if (existsSync(resolve(REPO_ROOT, candidate))) return true;
+  }
+  return false;
+}
+
 function validatePomFixturePaths(envelope: Envelope, envelopePath: string): Violation[] {
   const out: Violation[] = [];
   for (const p of [...envelope.requiredPOMs, ...envelope.requiredFixtures]) {
-    const abs = resolve(REPO_ROOT, p);
-    if (!existsSync(abs)) {
-      out.push({ file: envelopePath, line: 1, message: `requiredPOMs/requiredFixtures path missing on disk: ${p}` });
-    }
+    if (existsSync(resolve(REPO_ROOT, p))) continue;
+    if (existsAtQaMasterFallback(p)) continue;
+    out.push({
+      file: envelopePath,
+      line: 1,
+      message: `requiredPOMs/requiredFixtures path missing on disk: ${p}`,
+    });
   }
   return out;
 }

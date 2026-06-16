@@ -752,6 +752,29 @@ jobs:
                     -f pr_branch="${{ inputs.pr_branch }}" \
                     -f verify_attempt="2"; then
                   echo "::notice::Verify retry dispatched. This run defers final verdict to the retry's check."
+                  # UX: post a comment on the code PR so reviewers seeing the
+                  # START OVER tally know a retry is in flight and don't pull
+                  # the trigger on closing / manual /regenerate. Without this
+                  # the only signal is in the workflow log a reviewer wouldn't
+                  # think to open. The retry comes back with its own findings
+                  # comment ~3-5 min later that supersedes the START OVER.
+                  # Fetch the just-dispatched run's URL — gh workflow run
+                  # doesn't return it, but the newest queued/in_progress run
+                  # for verify.yml authored by github-actions[bot] is it.
+                  sleep 3  # give the API a moment to register the queued run
+                  RETRY_URL=$(gh run list --workflow=verify.yml \
+                      --status=queued --limit=1 \
+                      --json url --jq '.[0].url' 2>/dev/null || true)
+                  if [ -z "$RETRY_URL" ] || [ "$RETRY_URL" = "null" ]; then
+                    RETRY_URL=$(gh run list --workflow=verify.yml \
+                        --status=in_progress --limit=1 \
+                        --json url --jq '.[0].url' 2>/dev/null || true)
+                  fi
+                  if [ -n "$RETRY_URL" ] && [ "$RETRY_URL" != "null" ]; then
+                    gh pr comment "$PR_NUMBER" --body "🔄 Verify retry dispatched ([attempt 2/2]($RETRY_URL)). The START OVER above is provisional — wait ~3-5 min for the retry's verdict before acting." 2>/dev/null || true
+                  else
+                    gh pr comment "$PR_NUMBER" --body "🔄 Verify retry dispatched (attempt 2/2). The START OVER above is provisional — wait ~3-5 min for the retry's verdict before acting." 2>/dev/null || true
+                  fi
                   exit 0
                 fi
                 echo "::warning::Failed to dispatch verify retry. Falling through to auto-regen."

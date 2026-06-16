@@ -144,15 +144,23 @@ function detectAnomalies(
 ): Anomaly[] {
   const out: Anomaly[] = [];
 
-  // Filename drift: output spec stem unrelated to source stem (e.g. wishlist -> search-filters).
+  // Filename drift: output spec names a different feature than the source
+  // (e.g. wishlist -> search-filters). Compare on a separator-free normal form
+  // so camelCase Java (AddCookiesJupiterTest) and kebab-case TS
+  // (add-cookies-jupiter-test) read as identical, and a dropped suffix
+  // (AddCookiesJupiterTest -> add-cookies) still counts as a containment match.
   if (sourceInput && outputSpec) {
-    const srcStem = basename(sourceInput).replace(/\.(cy|spec)?\.?\w+$/i, "").toLowerCase();
-    const outStem = basename(outputSpec).replace(/\.spec\.ts$/i, "").toLowerCase();
-    const shared = srcStem.split(/[-_]/).some((t) => t.length > 3 && outStem.includes(t));
-    if (!shared) {
+    const srcStem = basename(sourceInput).replace(/\.(cy|spec)?\.?\w+$/i, "");
+    const outStem = basename(outputSpec).replace(/\.spec\.ts$/i, "");
+    const norm = (s: string): string => s.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const srcN = norm(srcStem);
+    const outN = norm(outStem);
+    const related = srcN.length > 0 && outN.length > 0
+      && (srcN.includes(outN) || outN.includes(srcN));
+    if (!related) {
       out.push({
         kind: "filename-drift",
-        detail: `source "${srcStem}" vs output "${outStem}" share no stem token`,
+        detail: `source "${srcStem}" vs output "${outStem}" name different features`,
       });
     }
   }

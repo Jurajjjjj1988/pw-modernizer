@@ -16,7 +16,7 @@
       "@browser/*": ["helper/browser/*"],
       "@page-object/*": ["helper/page-object/*"],
       "@test-data/*": ["helper/test-data/*"],
-      "@types/*": ["helper/types/*"],
+      "@type-defs/*": ["helper/types/*"],
       "@utilities/*": ["helper/utilities/*"],
       "@logger": ["helper/utilities/logger.ts"]
     },

@@ -39,7 +39,7 @@ const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-interface Args { input: string; plan: string; mock: boolean; help: boolean; check: boolean }
+interface Args { input: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean" }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -53,6 +53,7 @@ function parseCliArgs(): Args {
       mock: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       check: { type: "boolean", default: false },
+      profile: { type: "string", default: "qa-master" },
     },
   });
   return {
@@ -61,6 +62,7 @@ function parseCliArgs(): Args {
     mock: values.mock === true,
     help: values.help === true,
     check: values.check === true,
+    profile: values.profile === "lean" ? "lean" : "qa-master",
   };
 }
 
@@ -73,6 +75,7 @@ function printHelp(): void {
     "  npm run migrate -- --input <path> --plan <p> explicit plan path",
     "  npm run migrate -- --input <path> --mock     wiring check, no Claude call",
     "  npm run migrate -- --check                   preflight: Node/auth/plan setup doctor",
+    "  npm run migrate -- --input <p> --profile lean  emit specs + page objects only (ADR 0002; default qa-master)",
     "  npm run migrate -- --help",
     "",
     "Auth (one of):",
@@ -175,10 +178,13 @@ function validateEnvelopeSchema(p: Paths): void {
 }
 
 /** The Stage-2 wrapper prompt — points Claude at the assembled spec + context, mirroring migrate.yml. */
-function buildPrompt(p: Paths): string {
+function buildPrompt(p: Paths, profile: Args["profile"]): string {
+  const leanNote = profile === "lean"
+    ? "\nPROFILE: lean (ADR 0002). Emit specs + page objects only; the fixture barrel is NOT required and specs MAY import `test`/`expect` straight from `@playwright/test`. Keep page objects for locators.\n"
+    : "";
   return [
     "You are running Stage 2 of the PWmodernizer pipeline (local migrate run).",
-    "",
+    leanNote,
     "Read prompts/_assembled/generate.md — that is your full system prompt. Follow it",
     "exactly, including the STOP block: write the FULL qa-master triad (spec under",
     "outputs/tests/<kebab>.spec.ts importing test/expect from @fixtures/base.fixture,",
@@ -223,7 +229,7 @@ function runClaude(auth: Auth, prompt: string): void {
 }
 
 /** The post-generate validator wall — same scripts + args as migrate.yml. */
-function validatorWall(p: Paths): WallStep[] {
+function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
   // Parse gate: `playwright test --list` over the literal spec paths (spawnSync
   // takes argv, so no glob — and no --config so PW auto-discovers
   // outputs/tests/playwright.config.ts exactly as migrate.yml does). Skipped
@@ -240,7 +246,7 @@ function validatorWall(p: Paths): WallStep[] {
     { name: "plan-envelope coverage", cmd: "npx", args: ["tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope, "--code", "outputs/tests"] },
     { name: "plan-code coverage", cmd: "npx", args: ["tsx", "scripts/plan-code-coverage.ts", "--envelope", p.envelope, "--output", "outputs/tests"] },
     { name: "helper-usage", cmd: "npx", args: ["tsx", "scripts/validate-helper-usage.ts"] },
-    { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base] },
+    { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base, ...(profile === "lean" ? ["--profile", "lean"] : [])] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
   ];
@@ -347,10 +353,10 @@ function main(): number {
   if (auth.kind === "none") {
     fail("no Claude auth. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (see --help). Or --mock to check wiring.");
   }
-  runClaude(auth, buildPrompt(p));
+  runClaude(auth, buildPrompt(p, args.profile));
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
-  const results = runWall(validatorWall(p));
+  const results = runWall(validatorWall(p, args.profile));
   return reportOutcome(p, results);
 }
 

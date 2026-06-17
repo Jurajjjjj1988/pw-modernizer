@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { derivePaths, expectedSpecBasenames } from "./migrate-local.js";
 
 test("derivePaths: BASE/plan/envelope/report mirror migrate.yml (BASE = basename(input))", () => {
-  const p = derivePaths({ input: "inputs/bad-playwright/foo.spec.ts", plan: "", mock: false, help: false, check: false });
+  const p = derivePaths({ input: "inputs/bad-playwright/foo.spec.ts", plan: "", mock: false, help: false, check: false, profile: "qa-master" });
   assert.equal(p.base, "foo.spec.ts");
   assert.ok(p.plan.endsWith("outputs/plans/foo.spec.ts.md"), p.plan);
   assert.ok(p.envelope.endsWith("outputs/plans/foo.spec.ts.envelope.json"), p.envelope);
@@ -22,7 +22,7 @@ test("derivePaths: BASE/plan/envelope/report mirror migrate.yml (BASE = basename
 });
 
 test("derivePaths: explicit --plan overrides the default plan path", () => {
-  const p = derivePaths({ input: "inputs/cypress/bar.cy.js", plan: "custom/plan.md", mock: false, help: false, check: false });
+  const p = derivePaths({ input: "inputs/cypress/bar.cy.js", plan: "custom/plan.md", mock: false, help: false, check: false, profile: "qa-master" });
   assert.equal(p.base, "bar.cy.js");
   assert.ok(p.plan.endsWith("custom/plan.md"), p.plan);
   // envelope/report still derive from BASE, not from the override

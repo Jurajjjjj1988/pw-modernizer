@@ -704,6 +704,26 @@ jobs:
             echo "::warning::No open code PR found for $INPUT_BASENAME"
             exit 0
           fi
+          # Helper: replace any prior terminal verify:* label with the new one.
+          # Prior runs could leave verify:start-over OR verify:fix-first OR
+          # verify:ship-it stacked on the PR; without stripping first, the next
+          # verdict adds a second tag and reviewers see contradictory state.
+          # Observed PR #68 (2026-06-10): two runs 8 min apart left both
+          # verify:start-over AND verify:fix-first on the same PR.
+          # Idempotent — ok if labels don't exist (|| true).
+          # Does NOT touch verify:auto-regen-fired (informational, accumulates
+          # across regen attempts) or verify:start-over-attempt-1 (side tag
+          # already cleaned up at end of retry branch).
+          set_verify_terminal_label() {
+            local pr="$1"
+            local new_label="$2"
+            for old in "verify:ship-it" "verify:fix-first" "verify:start-over"; do
+              if [ "$old" != "$new_label" ]; then
+                gh pr edit "$pr" --remove-label "$old" 2>/dev/null || true
+              fi
+            done
+            gh pr edit "$pr" --add-label "$new_label"
+          }
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
           if [ ! -f "$REPORT" ]; then
             # Tally stage failed silently — no combined report written.
@@ -809,7 +829,7 @@ jobs:
               # are the special case that does NOT re-trigger). So plan.yml's
               # `regenerate-plan` handler will fire from this dispatch.
               # ---------------------------------------------------------------
-              gh pr edit "$PR_NUMBER" --add-label "verify:start-over"
+              set_verify_terminal_label "$PR_NUMBER" "verify:start-over"
               # Count prior auto-regen attempts.
               REGEN_COUNT=$(gh pr view "$PR_NUMBER" --json labels \
                 --jq '[.labels[].name | select(startswith("regen-attempt:") and . != "regen-attempt:max-reached")] | length')
@@ -887,7 +907,7 @@ jobs:
               exit 1
               ;;
             "FIX FIRST")
-              gh pr edit "$PR_NUMBER" --add-label "verify:fix-first"
+              set_verify_terminal_label "$PR_NUMBER" "verify:fix-first"
               # FIX FIRST = soft block. Workflow succeeds (check passes) but
               # the label signals human reviewer must adjudicate. Branch
               # protection can also be configured to require the label
@@ -895,7 +915,7 @@ jobs:
               echo "::warning::Verifier verdict: FIX FIRST. Reviewer should adjudicate before merge."
               ;;
             "SHIP IT")
-              gh pr edit "$PR_NUMBER" --add-label "verify:ship-it"
+              set_verify_terminal_label "$PR_NUMBER" "verify:ship-it"
               # SHIP IT trumps the confidence:low label. Both Opus sub-agents
               # reviewed the output independently and approved — confidence
               # < 0.7 was a false alarm from the Sonnet-side metric. Remove

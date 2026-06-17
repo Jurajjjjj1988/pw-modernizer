@@ -1,0 +1,109 @@
+{
+  "inputBasename": "force-clicks.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "logs in with valid credentials and views the full dashboard @positive",
+      "userAction": "Navigate to /login, dismiss the newsletter modal, fill valid credentials, click Sign in, and verify the resulting dashboard shows the URL, nav links, personalised welcome heading, and Logout button.",
+      "expectedAssertions": [
+        "URL matches /\\/dashboard/ after successful sign-in",
+        "navigation contains exactly NAV_LINK_COUNT links",
+        "welcome heading contains VALID_USER_DISPLAY_NAME (the user's first name)",
+        "Logout button is visible confirming authenticated state"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/login.page.ts",
+    "outputs/helper/page-object/pages/dashboard.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts",
+    "outputs/helper/test-data/urls.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "page.goto('https://shop.acme.test/login')",
+      "target": "page.goto('/login')",
+      "confidence": "high",
+      "notes": "Absolute URL → relative path. baseURL configured in playwright.config.ts via process.env.BASE_URL."
+    },
+    {
+      "original": "page.getByLabel('Email')",
+      "target": "page.getByLabel('Email')",
+      "confidence": "high",
+      "notes": "Already on canonical label hierarchy — no change needed. Moved into PageClassLogin as readonly inputEmail field."
+    },
+    {
+      "original": "page.getByLabel('Password')",
+      "target": "page.getByLabel('Password')",
+      "confidence": "high",
+      "notes": "Already on canonical label hierarchy — no change needed. Moved into PageClassLogin as readonly inputPassword field."
+    },
+    {
+      "original": "page.getByRole('button', { name: 'Sign in' }).click({ force: true })",
+      "target": "loginPage.dismissNewsletterModal(); then loginPage.buttonSignIn.click()",
+      "confidence": "high",
+      "notes": "Button locator is already correct (getByRole). Only { force: true } option is removed. A modal-dismissal step must precede this click. See pin 1 for the modal close locator."
+    },
+    {
+      "original": "(net-new) newsletter modal close control",
+      "target": "page.getByRole('button', { name: /close|dismiss/i })",
+      "confidence": "low",
+      "notes": "No DOM evidence in source; inferred from inline comment 'Newsletter modal overlay'. Reviewer must verify role and accessible name via Playwright inspector. See pin 1."
+    },
+    {
+      "original": "page.getByRole('navigation').getByRole('link')",
+      "target": "page.getByRole('navigation').getByRole('link')",
+      "confidence": "high",
+      "notes": "Already correct compound role-based locator. Moved into PageClassDashboard as readonly arrayNavLinks field."
+    },
+    {
+      "original": "page.getByRole('heading', { name: /welcome back/i })",
+      "target": "page.getByRole('heading', { name: /welcome back/i })",
+      "confidence": "high",
+      "notes": "Already correct. .toContainText('Jane') assertion updated to .toContainText(VALID_USER_DISPLAY_NAME) constant."
+    },
+    {
+      "original": "page.getByRole('button', { name: 'Logout' })",
+      "target": "page.getByRole('button', { name: 'Logout' })",
+      "confidence": "high",
+      "notes": "Already correct. Moved into PageClassDashboard as readonly buttonLogout field."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Newsletter modal close control",
+      "assumedLocator": "page.getByRole('button', { name: /close|dismiss/i })",
+      "sourceLocator": "(absent from source — inferred from line 11 comment)",
+      "whyComment": "Q1 unresolved: newsletter modal close locator not confirmed — assumed accessible button with name matching /close|dismiss/i.",
+      "reviewerFallback": "Run Playwright inspector (npx playwright test --debug) against /login to capture the modal ARIA tree. If the close control has no accessible name, request that the frontend team add aria-label=\"Close newsletter\" to the button. Fallback locator: page.locator('[data-testid=\"newsletter-close\"]') if a testid exists."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Newsletter modal appearance conditions",
+      "assumedLocator": "modal always shown on fresh BrowserContext visit to /login",
+      "sourceLocator": "(behavioural assumption, not a locator)",
+      "whyComment": "Q2 unresolved: modal appearance conditions not confirmed — assumed always-present on first page load in a fresh context.",
+      "reviewerFallback": "If modal is cookie-gated: add page.addInitScript() in base.fixture.ts to set the newsletter opt-in cookie before navigation, preventing the modal from appearing and making the dismissal step unnecessary. Document the cookie name."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.88,
+    "smellCountDelta": -8,
+    "locDelta": 70,
+    "antiPatternCoverage": "7/7"
+  }
+}

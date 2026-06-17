@@ -551,21 +551,21 @@ test('renders the page', async ({ checkoutPage }) => {
 
 Rationale: qa-master v0.2.0 architecture mandates a single fixture entry point (`outputs/helper/fixtures/base.fixture.ts`) that owns `test` + `expect` for the whole project (per-migration fixtures attach to the base via `.extend<...>()`). Specs that import from `@playwright/test` directly bypass the fixture layer — they lose access to project-specific fixtures (POMs, blocks, authenticated session helpers), they re-introduce the page-only fixture context, and they create N drift surfaces for a future migration off Playwright. The `validate-qa-master-conformance.ts` validator hard-fails this at the spec layer; ESLint's `no-restricted-imports` is the local mirror. Prevents `BypassedFixtureLayer` drift class. See [`config/migration-rules.md §2.1`](../config/migration-rules.md) + `examples/reference/qa-master/helper/fixtures/CLAUDE.md` for the canonical fixture-as-source-of-truth pattern.
 
-#### 1.1.27 `@types/<module>` prefix on a runtime import
+#### 1.1.27 `@types/<module>` prefix on a runtime import (use `@type-defs/*` for local declarations)
 
 ```ts
-// ANTI-PATTERN — @types/ on a value/runtime import → TS6137
+// ANTI-PATTERN — @types/ collides with the npm DefinitelyTyped scope → TS6137
 import type { CartItem } from '@types/external/cart-api';
 import { fetchPaymentSession } from '@types/external/payment-api';
 ```
 
 ```ts
-// CANONICAL — @types/ is the npm scope for *declaration-only* packages
-import type { CartItem } from 'external/cart-api';
-import { fetchPaymentSession } from 'external/payment-api';
+// CANONICAL — qa-master local declarations live under the @type-defs/* alias
+import type { CartItem } from '@type-defs/external/cart-api';
+import { fetchPaymentSession } from '@type-defs/external/payment-api';
 ```
 
-Rationale: `@types/<pkg>` is the npm convention for DefinitelyTyped declaration-only packages — they ship `.d.ts` files and nothing else. TypeScript resolves the type info automatically when you import the underlying package by its real name. Writing `import ... from '@types/<pkg>'` is a category error — TS rejects it with `TS6137: Cannot import type declaration files. Consider importing '<pkg>' instead of '@types/<pkg>'`. Sonnet drifts into this on complex multi-fixture migrations when the original code referenced a `@types/...` triple-slash directive or a `tsconfig.types` entry and Sonnet conflates "type lives in @types/" with "import path starts with @types/". Observed 2026-06-17 on `inputs/cypress/checkout-flow.cy.js` Stage 2 (run 27672121245) — three TS6137 errors in `helper/fixtures/checkout-mocks.fixture.ts` and `helper/test-data/checkout.ts`. Prevents `TypeOnlyImportPrefix` drift class. See [TypeScript handbook — Type-Only Imports and Exports](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html#type-only-imports-and-export).
+Rationale: `@types/<pkg>` is the npm convention for DefinitelyTyped declaration-only packages — they ship `.d.ts` files and nothing else. TypeScript treats the `@types/` namespace as the DefinitelyTyped scope even when you configure it as a tsconfig path alias, and still emits `TS6137: Cannot import type declaration files`. qa-master v0.2.0+ uses `@type-defs/*` as the alias for project-local declaration files under `outputs/helper/types/` to avoid this collision (tsconfig + reference qa-master both updated 2026-06-17). Sonnet drifts into the `@types/` prefix on complex multi-fixture migrations when the original code referenced a `@types/...` triple-slash directive or a `tsconfig.types` entry and conflates "type lives in @types/" with "import path starts with @types/". Observed 2026-06-17 on `inputs/cypress/checkout-flow.cy.js` Stage 2 (run 27672121245) — three TS6137 errors in `helper/fixtures/checkout-mocks.fixture.ts` and `helper/test-data/checkout.ts`. Prevents `TypeOnlyImportPrefix` drift class. See [TypeScript handbook — Type-Only Imports and Exports](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html#type-only-imports-and-export).
 
 ---
 

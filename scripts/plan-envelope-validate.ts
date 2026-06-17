@@ -298,7 +298,7 @@ function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Vi
   const allowedAliasPrefixes = [
     "@fixtures/", "@page-object/", "@page-object",
     "@api/", "@actions/", "@browser/",
-    "@utilities/", "@test-data/", "@types/",
+    "@utilities/", "@test-data/", "@type-defs/",
     "@logger",
   ];
   const project = new Project({ useInMemoryFileSystem: false });

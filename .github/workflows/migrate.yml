@@ -644,32 +644,34 @@ jobs:
       # Bound = 1 retry, max-turns = 12 (fewer than the generate budget of
       # 20 — surgical fixes are smaller than greenfield generation).
       # ---------------------------------------------------------------------
-      - name: Auto-correct @types/ prefix on runtime imports (KB-1.1.27 pre-flight)
+      - name: Auto-rewrite @types/ → @type-defs/ path alias (KB-1.1.27 pre-flight)
         if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # Mechanical fix for Sonnet's TS6137 drift on complex migrations
-          # (KB-1.1.27, observed run 27672121245 cypress checkout-flow): Sonnet
-          # writes `from '@types/foo'` when it should write `from 'foo'`. This
-          # is unambiguous — the `@types/<pkg>` scope is for declaration-only
-          # DefinitelyTyped packages and TypeScript ALWAYS rejects it as a
-          # runtime import. No edge case where `@types/foo` is the right
-          # import path. So we sed-strip the prefix BEFORE validate runs,
-          # saving a fix-lint Claude turn (and the 12-turn budget that often
-          # gets eaten by this exact class).
+          # qa-master v0.2.0+ renamed the local-types path alias from `@types/*`
+          # to `@type-defs/*` to avoid colliding with the npm DefinitelyTyped
+          # scope (TS6137). Sonnet sometimes still emits the old `@types/`
+          # prefix on complex multi-fixture migrations when the input or plan
+          # references it. KB-1.1.27 covers the anti-pattern.
+          #
+          # PR #169 (2026-06-17) initially stripped the prefix entirely. That
+          # was wrong — stripping produces `external/cart-api` which doesn't
+          # resolve to anything (TS2307), since the file actually lives at
+          # `outputs/helper/types/external/cart-api.ts` and is reachable only
+          # through the alias. This step REWRITES the alias instead.
           #
           # Idempotent: silently no-ops when no @types/ prefix in code.
           FIXED=0
           while IFS= read -r f; do
             if grep -qE "from ['\"]@types/" "$f" 2>/dev/null; then
-              sed -E -i "s|from (['\"])@types/([^'\"]+)\\1|from \\1\\2\\1|g" "$f"
+              sed -E -i "s|from (['\"])@types/([^'\"]+)\\1|from \\1@type-defs/\\2\\1|g" "$f"
               FIXED=$((FIXED + 1))
             fi
           done < <(find outputs/tests outputs/helper -type f -name '*.ts' 2>/dev/null \
                      | grep -v '/_legacy-v0.1.x/' || true)
           if [ "$FIXED" -gt 0 ]; then
-            echo "::notice::Auto-corrected @types/ runtime-import prefix in $FIXED file(s) (KB-1.1.27)."
+            echo "::notice::Rewrote @types/ → @type-defs/ alias in $FIXED file(s) (KB-1.1.27)."
           fi
 
       - name: Validate generated code (lint+test+parse)

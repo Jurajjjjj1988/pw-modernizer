@@ -13,7 +13,7 @@
       "@browser/*":      ["helper/browser/*"],
       "@utilities/*":    ["helper/utilities/*"],
       "@test-data/*":    ["helper/test-data/*"],
-      "@types/*":        ["helper/types/*"],
+      "@type-defs/*":    ["helper/types/*"],
       "@logger":         ["helper/utilities/logger"]
     }
   },

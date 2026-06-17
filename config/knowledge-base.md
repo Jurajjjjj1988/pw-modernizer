@@ -527,6 +527,30 @@ await expect(page.getByText('Saved')).toBeVisible();
 
 Rationale: developers normalize the `waitForTimeout` smell by using "small" values (50ms, 100ms, 300ms) and rationalizing them as "just letting React rerender" or "small debounce". The anti-pattern is identical to 1.1.1 — a sleep with no relation to the actual UI state, just a guess that happens to work on one machine. On loaded CI runners those 100ms become 800ms and the test still races. The lint rule `no-wait-for-timeout` fires regardless of N — it's the call that's wrong, not the size. Prevents `ShortHardWaitRationalization` bug class. See [`eslint-plugin-playwright/no-wait-for-timeout`](https://github.com/playwright-community/eslint-plugin-playwright/blob/main/docs/rules/no-wait-for-timeout.md).
 
+#### 1.1.26 Spec imports `test`/`expect` from `@playwright/test`
+
+```ts
+// ANTI-PATTERN — spec reaches past the fixture layer
+import { test, expect } from '@playwright/test';
+
+test('renders the page', async ({ page }) => {
+  await page.goto('/checkout');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+});
+```
+
+```ts
+// CANONICAL — spec consumes the project's fixture barrel
+import { test, expect } from '@fixtures/base.fixture';
+
+test('renders the page', async ({ checkoutPage }) => {
+  await checkoutPage.open();
+  await checkoutPage.expectHeadingVisible();
+});
+```
+
+Rationale: qa-master v0.2.0 architecture mandates a single fixture entry point (`outputs/helper/fixtures/base.fixture.ts`) that owns `test` + `expect` for the whole project (per-migration fixtures attach to the base via `.extend<...>()`). Specs that import from `@playwright/test` directly bypass the fixture layer — they lose access to project-specific fixtures (POMs, blocks, authenticated session helpers), they re-introduce the page-only fixture context, and they create N drift surfaces for a future migration off Playwright. The `validate-qa-master-conformance.ts` validator hard-fails this at the spec layer; ESLint's `no-restricted-imports` is the local mirror. Prevents `BypassedFixtureLayer` drift class. See [`config/migration-rules.md §2.1`](../config/migration-rules.md) + `examples/reference/qa-master/helper/fixtures/CLAUDE.md` for the canonical fixture-as-source-of-truth pattern.
+
 ---
 
 ### 1.2 Cypress anti-patterns

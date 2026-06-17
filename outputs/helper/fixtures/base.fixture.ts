@@ -1,4 +1,10 @@
+// Migrated from cypress on 2026-06-17 by Migrator. See outputs/plans/checkout-flow.cy.js.md for plan.
+
 import { test as base, expect } from "@playwright/test";
+
+import { PageClassCart } from "@page-object/pages/cart.page";
+import { PageClassCheckout } from "@page-object/pages/checkout.page";
+import { PageClassOrderConfirmation } from "@page-object/pages/order-confirmation.page";
 
 /**
  * Single import source for `test` + `expect` in every spec.
@@ -11,8 +17,16 @@ import { test as base, expect } from "@playwright/test";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = Record<string, never>;
+type Fixtures = {
+  cartPage: PageClassCart;
+  checkoutPage: PageClassCheckout;
+  orderConfirmationPage: PageClassOrderConfirmation;
+};
 
-const test = base.extend<Fixtures>({});
+const test = base.extend<Fixtures>({
+  cartPage: async ({ page }, use) => use(new PageClassCart(page)),
+  checkoutPage: async ({ page }, use) => use(new PageClassCheckout(page)),
+  orderConfirmationPage: async ({ page }, use) => use(new PageClassOrderConfirmation(page)),
+});
 
 export { test, expect };

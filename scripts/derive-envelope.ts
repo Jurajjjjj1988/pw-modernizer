@@ -31,6 +31,8 @@ import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+import { type Framework } from "./lib/frameworks.js";
+
 interface LocatorRow {
   original: string;
   target: string;
@@ -56,7 +58,7 @@ interface ScenarioEntry {
 
 interface Envelope {
   inputBasename: string;
-  sourceFramework: "bad-playwright" | "cypress" | "selenium-java" | "selenium-python";
+  sourceFramework: Framework;
   subtractive: boolean;
   scenarios: ScenarioEntry[];
   requiredPOMs: string[];

@@ -30,6 +30,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
+import { type Framework } from "./lib/frameworks.js";
 import { MetricsDB, type RagPlanColumns, type UsageStats } from "./metrics.js";
 
 interface CliArgs {
@@ -59,7 +60,7 @@ interface Scenario {
 
 interface Envelope {
   inputBasename: string;
-  sourceFramework: "bad-playwright" | "selenium-java" | "selenium-python" | "cypress";
+  sourceFramework: Framework;
   subtractive: boolean;
   scenarios: Scenario[];
   locatorTable: LocatorRow[];

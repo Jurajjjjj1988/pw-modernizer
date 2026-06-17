@@ -39,6 +39,8 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Project, SyntaxKind, type Node, type SourceFile } from "ts-morph";
 
+import { type Framework } from "./lib/frameworks.js";
+
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 
 interface Args {
@@ -58,11 +60,7 @@ interface Scenario {
 
 interface Envelope {
   inputBasename: string;
-  sourceFramework:
-    | "bad-playwright"
-    | "selenium-java"
-    | "selenium-python"
-    | "cypress";
+  sourceFramework: Framework;
   subtractive: boolean;
   scenarios: Scenario[];
   requiredPOMs: string[];

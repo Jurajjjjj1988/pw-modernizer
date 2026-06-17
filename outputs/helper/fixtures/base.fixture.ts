@@ -1,5 +1,8 @@
 import { test as base, expect } from "@playwright/test";
 
+import { PageClassDashboard } from "@page-object/pages/dashboard.page";
+import { PageClassLogin } from "@page-object/pages/login.page";
+
 /**
  * Single import source for `test` + `expect` in every spec.
  *
@@ -11,8 +14,11 @@ import { test as base, expect } from "@playwright/test";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = Record<string, never>;
+type Fixtures = { loginPage: PageClassLogin; dashboardPage: PageClassDashboard };
 
-const test = base.extend<Fixtures>({});
+const test = base.extend<Fixtures>({
+  loginPage: async ({ page }, use) => use(new PageClassLogin(page)),
+  dashboardPage: async ({ page }, use) => use(new PageClassDashboard(page)),
+});
 
 export { test, expect };

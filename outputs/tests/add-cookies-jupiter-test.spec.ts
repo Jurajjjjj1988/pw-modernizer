@@ -8,7 +8,7 @@ const COOKIE_VALUE = "new-cookie-value";
 test.describe("Cookies Demo: Add Cookies", () => {
   // plan:scenario=1.1
   test(
-    "adds a cookie and verifies it appears on the page after refresh @positive @slow",
+    "[ACME-AC1] - Check that a programmatically-added cookie appears on the page after refresh",
     { tag: ["@positive", "@slow"] },
     async ({ addCookiesPage, page }) => {
       await test.step("navigate to the cookies demo page", async () => {

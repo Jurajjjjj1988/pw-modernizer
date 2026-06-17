@@ -6,7 +6,7 @@ import { BasePage } from "@page-object/basepage";
 
 const LABEL = "AddCookies";
 
-export class AddCookiesPage extends BasePage {
+export class PageClassAddCookies extends BasePage {
   // Q6: this SUT requires MIGRATION_TARGET_URL at runtime; the project
   // baseURL defaults to http://localhost:3000 which won't resolve this
   // path. Recipe to run against the upstream demo SUT:

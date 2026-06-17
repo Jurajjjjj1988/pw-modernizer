@@ -1,6 +1,6 @@
 import { test as base, expect } from "@playwright/test";
 
-import { AddCookiesPage } from "@page-object/pages/add-cookies.page";
+import { PageClassAddCookies } from "@page-object/pages/add-cookies.page";
 
 /**
  * Single import source for `test` + `expect` in every spec.
@@ -13,10 +13,10 @@ import { AddCookiesPage } from "@page-object/pages/add-cookies.page";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = { addCookiesPage: AddCookiesPage };
+type Fixtures = { addCookiesPage: PageClassAddCookies };
 
 const test = base.extend<Fixtures>({
-  addCookiesPage: async ({ page }, use) => use(new AddCookiesPage(page)),
+  addCookiesPage: async ({ page }, use) => use(new PageClassAddCookies(page)),
 });
 
 export { test, expect };

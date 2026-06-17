@@ -123,11 +123,30 @@ function extractEmittedSpec(report: string): { path: string; claimedLoc: number 
  */
 function extractClaimedLocBlock(report: string): { sourceLoc: number | null; outputLoc: number | null; delta: number | null } {
   const sourceMatch = /Source LOC:\s*(\d+)/i.exec(report);
-  const outputMatch = /Output LOC:\s*(\d+)/i.exec(report);
   const deltaMatch = /LOC delta:\s*(-?\d+)/i.exec(report);
+
+  // Prefer the spec-specific LOC. qa-master multi-file emissions write a
+  // breakdown like:
+  //   - Output LOC: 398 (sum across all 12 produced files)
+  //     - `outputs/tests/checkout-flow.spec.ts` (61 LOC)
+  //     - outputs/helper/fixtures/base.fixture.ts (33 LOC)
+  // The aggregate (398) is not what we want to validate against — that's
+  // the sum across spec + POMs + fixtures + helpers. The spec-only LOC is
+  // the per-spec sub-bullet. Try that first; fall back to the top-level
+  // Output LOC line only when no spec breakdown line exists (single-file
+  // legacy migrations).
+  const specLocMatch = /outputs\/tests\/[\w./-]+\.spec\.ts[`']?\s*\((\d+)\s*LOC\)/i.exec(report);
+  const aggregateMatch = /Output LOC:\s*(\d+)/i.exec(report);
+  let outputLoc: number | null = null;
+  if (specLocMatch) {
+    outputLoc = Number.parseInt(specLocMatch[1] ?? "", 10);
+  } else if (aggregateMatch) {
+    outputLoc = Number.parseInt(aggregateMatch[1] ?? "", 10);
+  }
+
   return {
     sourceLoc: sourceMatch ? Number.parseInt(sourceMatch[1] ?? "", 10) : null,
-    outputLoc: outputMatch ? Number.parseInt(outputMatch[1] ?? "", 10) : null,
+    outputLoc,
     delta: deltaMatch ? Number.parseInt(deltaMatch[1] ?? "", 10) : null,
   };
 }

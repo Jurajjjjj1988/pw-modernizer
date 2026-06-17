@@ -2,340 +2,408 @@
 
 ## Source framework
 
-**Cypress** — detected by:
-- File extension `.cy.js`
-- `cy.*` API calls throughout (`cy.get`, `cy.visit`, `cy.intercept`, `cy.wait`, `cy.contains`)
-- `describe / it` test runner shape
-- `/// <reference types="cypress" />` triple-slash directive
-
-Source version: inferred Cypress 12/13 (modern `cy.intercept`, relative `cy.visit` paths, no deprecated `cy.server()`). No `package.json` present in the input directory.
-
-Target: **Playwright TypeScript** (v1.45+), qa-master layered architecture (v0.2.0).
-
----
+Cypress (`/// <reference types="cypress" />`, `describe/it` API, `cy.*` command chain). Target: Playwright TypeScript (latest stable, 2026 qa-master conventions). Additive migration — full framework translation required.
 
 ## Summary
 
-This two-test suite covers the Beacon Shop checkout flow. Test 1 verifies that a user who updates a cart item's quantity and proceeds through the credit-card payment form reaches the order-confirmation page. Test 2 verifies that the Checkout CTA is disabled once every item has been removed from the cart. Together they catch a class of regression where either the payment submission silently fails to navigate the user forward, or the Checkout button remains interactive on an empty cart.
+This test exercises a Beacon Shop e-commerce checkout flow: visiting the cart page, updating a product's quantity, proceeding through the checkout payment form, and asserting the order-confirmation page. A second scenario verifies that the Checkout CTA is disabled when the user removes all cart items, leaving an empty cart. Both scenarios rely on Cypress network intercepts that spy without stubs and use hard waits and CSS-class selectors throughout.
+
+Migration replaces `cy.intercept` spies with `page.route` stubs lifted into an `auto: true` checkout-mocks fixture, replaces all CSS/attribute selectors with role-/label-/testid-based locators, and eliminates every hard wait with web-first assertions. The output follows qa-master: three `PageClass*` POMs, a cross-page action helper, a feature-specific mocks fixture that re-exports `expect`, typed test-data constants, and external type definitions for both API payloads.
 
 ### What bug does this catch?
 
-Catches a regression where submitting a valid credit-card payment does not redirect the user to the order-confirmation page, OR where the Checkout CTA is still clickable after the cart has been fully emptied.
+Catches a regression where the credit-card checkout flow silently fails to complete (broken quantity update, inaccessible payment form, rejected payment, or missing order-confirmation) OR where the Checkout CTA remains enabled on an empty cart, allowing a zero-item order to be submitted.
 
 ### User-perceivable assertion checklist
 
-**Scenario 1.1 — happy-path credit-card checkout:**
-- [ ] After visiting `/cart`: at least 2 cart rows are visible
-- [ ] After updating the second row's quantity to 3 and clicking "Update cart": cart reflects the update (see Q13 — no explicit assert in source; Stage 2 must add a post-update guard)
-- [ ] After clicking "Checkout", filling payment form, and clicking "Pay Now": URL matches `/order-confirmed`
-- [ ] After payment: an "Order confirmed" heading/text is visible on the confirmation page
-- [ ] After payment: the summary total element contains a `$` currency symbol
-
-**Scenario 1.2 — empty cart disables checkout:**
-- [ ] After removing all items: the empty-cart banner is visible
-- [ ] After removing all items: the Checkout CTA is in a disabled state (semantic `disabled` or `aria-disabled`, not only a CSS class — see unclassified smells)
-
-> **Dropped assertion:** The source checks `interception.response.statusCode === 201` and `interception.response.body.orderId` matching `/^ord_/` via `cy.wait('@payReq').then(...)`. These are backend assertions (not user-perceivable). They are catalogued in the anti-pattern table and will be replaced by the URL + heading confirmation. See Q12 for whether the order ID appears on the confirmation page.
+- [ ] After visiting `/cart`: cart rows collection is visible (exact count from mock)
+- [ ] After updating second-row quantity to `3`: quantity input retains value `'3'` (Q13 guard — replaces `cy.wait(500)` race)
+- [ ] After completing checkout: page URL matches `/order-confirmed`
+- [ ] After completing checkout: "Order confirmed" heading is visible
+- [ ] After completing checkout: summary-total element contains `$`
+- [ ] After removing all cart items: empty-cart banner is visible
+- [ ] After removing all cart items: Checkout button is disabled (semantic `toBeDisabled()`, not CSS-class check)
 
 ---
 
 ## Anti-patterns detected
 
-Sorted by Severity descending (H → M → L), then by Line ascending.
-
 | Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
 |---|---|---|---|---|---|
-| H | 20 | KB-1.2.1 | hard wait | `cy.wait(800)` | web-first assertion on cart content visible |
-| H | 29 | KB-1.2.1 | hard wait | `cy.wait(500)` | web-first assertion on post-update cart state |
-| H | 53 | KB-UNCLASSIFIED | CSS-class disability check | `parent().should('have.class', 'is-disabled')` | `await expect(checkoutBtn).toBeDisabled()` — see unclassified smells |
-| M | 15 | KB-1.2.13 | viewport magic numbers in test | `cy.viewport(1366, 768)` | move to `playwright.config.ts` desktop project |
-| M | 16 | KB-1.2.7 | intercept without explicit stub | `cy.intercept('GET', '/api/cart').as(…)` | `page.route('**/api/cart', route => route.fulfill({...}))` with typed response |
-| M | 17 | KB-1.2.7 | intercept without explicit stub | `cy.intercept('POST', '/api/checkout/pay')…` | `page.route('**/api/checkout/pay', route => route.fulfill({...}))` |
-| M | 19 | KB-1.2.36 | `cy.wait('@alias')` without explicit timeout | `cy.wait('@getCart')` | drop — `page.route` fulfills synchronously; or use `waitForResponse` with timeout |
-| M | 24 | KB-1.2.3 | CSS-class primary selector | `cy.get('.cart-row')` | `getByTestId('cart-row')` or role-based (see Q4) |
-| M | 27 | KB-1.2.2 | index-based selector | `cy.get('.cart-row').eq(1)` | scope by product name / testid filter (see Q4) |
-| M | 27 | KB-1.2.3 | CSS-class selector (child) | `.find('.qty-input')` | `getByLabel(/quantity/i)` or `getByRole('spinbutton')` (see Q5) |
-| M | 27 | KB-1.2.30 | `clear().type()` pattern | `.clear().type('3')` | `.fill('3')` — atomic replace |
-| M | 28 | KB-1.2.6 | `cy.contains` ambiguous text match | `cy.contains('Update cart').click()` | `getByRole('button', { name: /update cart/i })` (see Q6) |
-| M | 31 | KB-1.2.6 | `cy.contains` ambiguous text match | `cy.contains('Checkout').click()` | `getByRole('button', { name: /^checkout$/i })` (see Q7) |
-| M | 33 | KB-1.2.3 | attribute selector (not role-based) | `cy.get('input[name="card"]')` | `getByLabel(/card number/i)` (see Q8) |
-| M | 34 | KB-1.2.3 | attribute selector (not role-based) | `cy.get('input[name="exp"]')` | `getByLabel(/expiry date\|exp/i)` (see Q8) |
-| M | 35 | KB-1.2.3 | attribute selector (not role-based) | `cy.get('input[name="cvc"]')` | `getByLabel(/cvc\|cvv\|security code/i)` (see Q8) |
-| M | 33-35 | KB-1.1.9 | hardcoded payment credentials (magic strings) | `'4242 4242 4242 4242'`, `'12/30'`, `'123'` | extract to `TEST_CARD_*` constants in `helper/test-data/checkout.ts` |
-| M | 36 | KB-1.2.3 | CSS-class composite selector for button | `cy.get('button.pay-now')` | `getByRole('button', { name: /pay now/i })` (see Q8) |
-| M | 37-40 | KB-1.2.11 | `cy.wait('@req').then()` chain with buried assertions | `cy.wait('@payReq').then((ic) => {…})` | `page.waitForResponse()` + flat assertions OR drop (see Q12) |
-| M | 44 | KB-1.2.3 | CSS-class selector | `cy.get('.summary-total')` | `getByTestId('summary-total')` or role-based (see Q9) |
-| M | 48-50 | KB-1.2.3 | CSS descendant-class selector | `cy.get('.cart-row .remove-btn').each(…)` | `getByRole('button', { name: /remove/i })` (see Q11) |
-| M | 48-50 | KB-1.2.18 | snapshot iteration via `.each()` | `.each(($btn) => { cy.wrap($btn).click() })` | iterate a live Locator; assert count first |
-| M | 52 | KB-1.2.3 | CSS-class selector | `cy.get('.empty-cart-banner')` | `getByRole('status')` or `getByTestId(…)` (see Q10) |
-| M | 53 | KB-1.2.6 | `cy.contains` ambiguous text match | `cy.contains('Checkout').parent()` | target the Checkout CTA directly for disability check |
-| L | 37 | KB-1.2.36 | `cy.wait('@alias')` without explicit timeout | `cy.wait('@payReq')` | subsumed by KB-1.2.11 fix above |
-| L | 42 | KB-1.2.32 | URL check not web-first | `cy.url().should('include', '/order-confirmed')` | `await expect(page).toHaveURL(/\/order-confirmed/)` |
-| L | 37-40 | KB-UNCLASSIFIED | non-user-perceivable API body assertion | `expect(ic.response.body.orderId).to.match(…)` | drop; replace with visible URL + heading (see Q12) |
+| H | 16–17 | KB-1.2.7 | `cy.intercept` without response stub | `cy.intercept('GET', '/api/cart').as(…)` | `page.route('**/api/cart', route => route.fulfill({…}))` lifted into `checkout-mocks.fixture.ts` with `auto: true` |
+| H | 20 | KB-1.2.1 | `cy.wait(N)` hard wait | `cy.wait(800)` | Remove; `cartPage.waitForPageLoad()` asserts rows visible |
+| H | 28 | KB-1.2.1 | `cy.wait(N)` hard wait | `cy.wait(500)` | Replace with `expect(byCartRowQtyInput(name)).toHaveValue(qty)` inside `updateItemQuantity` |
+| H | 32–34 | KB-1.1.9 | Hardcoded payment credentials | `type('4242 4242 4242 4242') / '12/30' / '123'` | Extract to `TEST_CARD_NUMBER`, `TEST_CARD_EXPIRY`, `TEST_CARD_CVC` in `test-data/checkout.ts` |
+| M | 15 | KB-1.2.13 | `cy.viewport(N, M)` magic numbers | `cy.viewport(1366, 768)` | Remove; belongs in `playwright.config.ts` desktop project viewport |
+| M | 19 | KB-1.2.36 | `cy.wait('@alias')` without explicit timeout | `cy.wait('@getCart')` | Drop entirely; stub via `page.route` + `waitForPageLoad()` provides sync |
+| M | 24 | KB-1.2.3 | CSS-class primary selector | `cy.get('.cart-row')` | `getByTestId('cart-row')` — see pin 1 |
+| M | 26 | KB-1.2.2 | Index-based selector | `.eq(1)` | `this.cartRows.filter({ hasText: productName })` |
+| M | 26 | KB-1.2.3 | CSS-class primary selector | `.find('.qty-input')` | `.getByRole('spinbutton')` — see pin 2 |
+| M | 26 | KB-1.2.30 | `clear().type()` pattern | `.clear().type('3')` | `.fill('3')` — atomic, no React-state race |
+| M | 27 | KB-1.2.6 | `cy.contains()` ambiguous text match | `cy.contains('Update cart').click()` | `getByRole('button', { name: /update cart/i })` — see pin 3 |
+| M | 30 | KB-1.2.6 | `cy.contains()` ambiguous text match | `cy.contains('Checkout').click()` | `getByRole('button', { name: /^checkout$/i })` — see pin 4 |
+| M | 32 | KB-1.2.3 | Attribute selector (not role-based) | `cy.get('input[name="card"]')` | `getByLabel(/card number/i)` — see pin 5 |
+| M | 33 | KB-1.2.3 | Attribute selector (not role-based) | `cy.get('input[name="exp"]')` | `getByLabel(/expiry date\|exp/i)` — see pin 6 |
+| M | 34 | KB-1.2.3 | Attribute selector (not role-based) | `cy.get('input[name="cvc"]')` | `getByLabel(/cvc\|cvv/i)` — see pin 7 |
+| M | 35 | KB-1.2.3 | CSS-class primary selector | `cy.get('button.pay-now')` | `getByRole('button', { name: /pay now/i })` — see pin 8 |
+| M | 37 | KB-1.2.36 | `cy.wait('@alias')` without explicit timeout | `cy.wait('@payReq')` | Drop; stub via `page.route` + UI assertion subsumes |
+| M | 37–40 | KB-1.2.11 | `cy.wait('@req').then()` nested assertions | `cy.wait('@payReq').then((interception) => …)` | Drop non-user-perceivable backend assertions (statusCode, orderId); URL + heading are the user-visible oracles (see Q12) |
+| M | 42 | KB-1.2.32 | URL match without pattern | `cy.url().should('include', '/order-confirmed')` | `expect(page).toHaveURL(/\/order-confirmed/)` |
+| M | 43 | KB-1.2.6 | `cy.contains()` ambiguous text match | `cy.contains('Order confirmed')` | `getByRole('heading', { name: /order confirmed/i })` — see pin 9 |
+| M | 44 | KB-1.2.3 | CSS-class primary selector | `cy.get('.summary-total')` | `getByTestId('summary-total')` — see pin 10 |
+| M | 48 | KB-1.2.3 | CSS-class primary selector (compound) | `cy.get('.cart-row .remove-btn')` | `byRemoveButton(productName)` arrow-function field — see pin 11 |
+| M | 48–50 | KB-UNCLASSIFIED | `.each()` stale NodeList iteration | `.each(($btn) => { cy.wrap($btn).click() })` | See Unclassified smells below |
+| M | 52 | KB-1.2.3 | CSS-class primary selector | `cy.get('.empty-cart-banner')` | `getByRole('status')` — see pin 12 |
+| M | 53 | KB-1.2.6 | `cy.contains()` ambiguous text match | `cy.contains('Checkout').parent()` | Same `buttonCheckout` locator; see pin 4 |
+| L | 53 | KB-UNCLASSIFIED | CSS-class disability assertion | `.should('have.class', 'is-disabled')` | `toBeDisabled()` semantic check; see Unclassified smells below |
 
 ### Unclassified smells
 
-**CSS-class disability assertion (line 53):** `cy.contains('Checkout').parent().should('have.class', 'is-disabled')` asserts on a CSS class rather than on semantic disabled state. This passes even if the button is visually styled as disabled but remains fully interactive. The Playwright equivalent is `await expect(checkoutButton).toBeDisabled()` (checks HTML `disabled` attribute) or `toHaveAttribute('aria-disabled', 'true')` if ARIA is used instead. No KB ID catalogues this specific pattern. Reviewer must confirm whether the Checkout CTA uses `disabled`, `aria-disabled`, or purely CSS-class disabling — the choice determines which assertion Stage 2 emits. See Q7.
+**`.each()` stale NodeList iteration (lines 48–50):**
+`cy.get('.cart-row .remove-btn').each(($btn) => { cy.wrap($btn).click() })` collects a snapshot of all remove-button references at resolution time. After the first click removes a cart row and the React tree re-renders, the remaining `$btn` references in the captured array can be detached from the DOM. The bug class is `StaleSnapshotAssertion` (closely related to KB-1.2.18 which covers `cy.then()` stale chains) but KB-1.2.18's specific entry is about `cy.then()` chaining syntax, not `.each()` iteration — hence KB-UNCLASSIFIED. Fix: `removeAllItems(productNames: string[])` action method calling the lazy `byRemoveButton(name)` arrow-function field per iteration; each call re-evaluates the live DOM so no reference ever goes stale.
 
-**Non-user-perceivable API body assertion (lines 37-40):** `expect(interception.response.body.orderId).to.match(/^ord_/)` asserts on a JSON field the user never sees. No KB ID. The migration replaces this with the user-visible URL change and "Order confirmed" heading. If the order ID is displayed on the confirmation page, it becomes a user-visible assertion Stage 2 must add. See Q12.
+**CSS-class disabled check (line 53):**
+`cy.contains('Checkout').parent().should('have.class', 'is-disabled')` asserts that the _parent element_ carries a CSS class, not that the button itself is semantically disabled. A change from `is-disabled` class to a `disabled` HTML attribute or `aria-disabled="true"` on the button would silently pass this check while the button is fully interactive. Fix: `await expect(buttonCheckout).toBeDisabled()` — asserts the semantic disabled state, which works for HTML `disabled`, `aria-disabled="true"`, and inert-subtree patterns. This is an **intentionally stricter** assertion; see Risk callouts.
 
 ---
 
 ## Locator translation table
 
-No DOM snapshot present at `outputs/dom-snapshots/checkout-flow.cy.js.yaml` — all confidence levels are inferred from source context, variable names, and locator strategy conventions.
-
 | Original | New | Confidence | Notes |
 |---|---|---|---|
-| `cy.get('.cart-row')` | `page.getByTestId('cart-row')` | low | CSS class only; no role or ARIA evidence. Requires `data-testid="cart-row"` on each row or reviewer DOM confirmation. See Q4. |
-| `cy.get('.cart-row').eq(1).find('.qty-input')` | `cartPage.byCartRowQtyInput(productName)` → scoped `getByRole('spinbutton')` | low | Index `eq(1)` must be replaced by a product-name or testid filter. `spinbutton` role assumed for `type="number"` input. See Q4, Q5. |
-| `cy.contains('Update cart')` | `page.getByRole('button', { name: /update cart/i })` | med | `cy.contains` text match; assuming `<button>` — could be `<a>`. See Q6. |
-| `cy.contains('Checkout')` (line 31) | `page.getByRole('button', { name: /^checkout$/i })` | med | Anchored regex avoids matching "Checkout" in headings or breadcrumbs. Could be `<a>`. See Q7. |
-| `cy.get('input[name="card"]')` | `page.getByLabel(/card number/i)` | low | `name="card"` does not reveal the visible label text. If Stripe/Adyen iframe: needs `frameLocator(...)`. See Q8. |
-| `cy.get('input[name="exp"]')` | `page.getByLabel(/expiry date\|exp/i)` | low | `name="exp"` is abbreviated; visible label text unknown. See Q8. |
-| `cy.get('input[name="cvc"]')` | `page.getByLabel(/cvc\|cvv\|security code/i)` | med | CVC/CVV is standard payment terminology; reasonable label assumption. See Q8. |
-| `cy.get('button.pay-now')` | `page.getByRole('button', { name: /pay now/i })` | med | CSS class `.pay-now` implies accessible name "Pay now"; `button` tag confirms role. See Q8. |
-| `cy.get('.summary-total')` | `page.getByTestId('summary-total')` | low | CSS class only; no role evidence. Requires FE `data-testid` or reviewer DOM confirmation. See Q9. |
-| `cy.contains('Order confirmed')` | `page.getByRole('heading', { name: /order confirmed/i })` | med | Success-page text assumed to be a heading (`<h1>`/`<h2>`). Could be `<p>` or `<div>`. See open question below pin 10. |
-| `cy.get('.cart-row .remove-btn').each(…)` | `page.getByRole('button', { name: /remove/i })` | low | CSS class `.remove-btn`; accessible name unknown. May be icon-only with no text. See Q11. |
-| `cy.get('.empty-cart-banner')` | `page.getByRole('status')` | low | CSS class only. Could be `role="alert"`, `role="status"`, or no semantic role. See Q10. |
-| `cy.contains('Checkout').parent()` (line 53) | `page.getByRole('button', { name: /^checkout$/i })` | med | Assert disabled state directly on the button rather than on a CSS class on its parent. See Q7. |
+| `cy.get('.cart-row')` | `this.page.getByTestId('cart-row')` | low | No DOM snapshot; `.cart-row` CSS class may not correspond to `data-testid="cart-row"`. Fallback: `this.page.locator('.cart-row')`. See pin 1. |
+| `cy.get('.cart-row').eq(1).find('.qty-input')` | `this.cartRows.filter({ hasText: productName }).getByRole('spinbutton')` | low | `qty-input` label unknown; `spinbutton` role assumes `<input type="number">`. Fallback: `.getByRole('textbox')` or `locator('.qty-input')`. See pin 2. |
+| `cy.contains('Update cart').click()` | `this.page.getByRole('button', { name: /update cart/i })` | med | `cy.contains` suggests text is visible; assuming `<button>` element. Could be `<a>` or `<div role="button">`. See pin 3. |
+| `cy.contains('Checkout').click()` | `this.page.getByRole('button', { name: /^checkout$/i })` | med | Assuming `<button>`. `^checkout$` anchored to avoid matching "Proceed to checkout" variants. See pin 4. |
+| `cy.get('input[name="card"]')` | `this.page.getByLabel(/card number/i)` | low | Label text for card input unknown. If payment is inside a Stripe/Adyen iframe, requires `frameLocator`. See pin 5. |
+| `cy.get('input[name="exp"]')` | `this.page.getByLabel(/expiry date\|exp/i)` | low | Label text unknown; regex covers common variants. Same iframe caveat. See pin 6. |
+| `cy.get('input[name="cvc"]')` | `this.page.getByLabel(/cvc\|cvv/i)` | low | Label text unknown; regex covers common variants. Same iframe caveat. See pin 7. |
+| `cy.get('button.pay-now')` | `this.page.getByRole('button', { name: /pay now/i })` | med | Element is explicitly `button`; accessible name inferred from class `.pay-now`. See pin 8. |
+| `cy.contains('Order confirmed')` | `this.page.getByRole('heading', { name: /order confirmed/i })` | med | `cy.contains` suggests prominent label; assuming heading. Could be `<p>` or `<div>`. See pin 9. |
+| `cy.get('.summary-total')` | `this.page.getByTestId('summary-total')` | low | CSS class may not match a `data-testid`. Fallback: `locator('.summary-total')`. See pin 10. |
+| `cy.get('.cart-row .remove-btn').each(…)` | `this.cartRows.filter({ hasText: productName }).getByRole('button', { name: /remove/i })` | low | Button accessible name inferred from class `.remove-btn`. Actual label may differ. See pin 11. |
+| `cy.get('.empty-cart-banner')` | `this.page.getByRole('status')` | low | CSS class `.empty-cart-banner` does not guarantee `role="status"`. Could be `role="alert"` or plain `<div>`. See pin 12. |
 
 ---
 
 ## Hallucination-defense pins
 
-One pin per MED/LOW locator, ordered as they appear in the translation table above.
+1. **Cart rows collection** — assumed `this.page.getByTestId('cart-row')`. If DOM contradicts (no `data-testid="cart-row"`): keep `this.page.locator('.cart-row')`, add WHY-comment `'Q1 unresolved: cart-row testid absent, CSS fallback'`. Reviewer fallback: ask FE team to add `data-testid="cart-row"` to every cart row element.
 
-1. **Cart rows collection** — assumed `page.getByTestId('cart-row')`. If DOM has no `data-testid="cart-row"`: keep `page.locator('.cart-row')`, add WHY-comment `'Q4 unresolved: cart-row testid absent, CSS fallback'`. Reviewer fallback: ask FE team to add `data-testid="cart-row"` to each row element, OR confirm the row's semantic role (e.g. `role="row"` in a `<table>` layout).
+2. **Quantity input for a named cart row** — assumed `this.cartRows.filter({ hasText: productName }).getByRole('spinbutton')`. If DOM contradicts (qty input is `type="text"`, not `type="number"`): try `.getByRole('textbox')` first; if a visible label is present, use `.getByLabel(/qty|quantity/i)`. Add WHY-comment `'Q2 unresolved: qty input label unknown, spinbutton fallback'`. Reviewer fallback: ask FE team for input type or visible label text.
 
-2. **Quantity input for the second cart row** — assumed `cartPage.byCartRowQtyInput(productName)` resolving to a product-name-scoped `getByRole('spinbutton')`. If no spinbutton role or no stable product-name filter: keep `page.locator('.cart-row').nth(1).locator('.qty-input')`, add WHY-comment `'Q5 unresolved: qty input label unknown, fragile nth fallback'`. Reviewer fallback: confirm quantity input is `type="number"` and supply the second row's product name.
+3. **"Update cart" button** — assumed `getByRole('button', { name: /update cart/i })`. If DOM contradicts (element is a link or `div[role="button"]`): fall back to `getByText(/update cart/i)`. Add WHY-comment `'Q3 unresolved: Update cart element role unknown'`. Reviewer fallback: inspect element and confirm `<button>` vs `<a>`.
 
-3. **"Update cart" button** — assumed `page.getByRole('button', { name: /update cart/i })`. If element is `<a>`: use `getByRole('link', { name: /update cart/i })`, add WHY-comment `'Q6 unresolved: Update cart element role not confirmed'`. Reviewer fallback: inspect HTML; if neither `<button>` nor `<a>`, fall back to `getByText(/update cart/i)`.
+4. **Checkout CTA button** — assumed `getByRole('button', { name: /^checkout$/i })`. If DOM contradicts: try `getByRole('link', { name: /^checkout$/i })` then `getByText(/^checkout$/i)`. Add WHY-comment `'Q4 unresolved: Checkout element role unknown'`. Note for `expectCheckoutButtonDisabled()`: if the button uses `aria-disabled="true"` rather than HTML `disabled`, `toBeDisabled()` still fires correctly — this is the correct semantic check. Reviewer fallback: confirm button vs link, and `aria-disabled` vs `disabled` attribute.
 
-4. **Checkout CTA (click and disabled assertion)** — assumed `page.getByRole('button', { name: /^checkout$/i })` with `toBeDisabled()`. If element is `<a aria-disabled="true">`: switch to `getByRole('link', ...)` and assert `toHaveAttribute('aria-disabled', 'true')`, add WHY-comment `'Q7 unresolved: Checkout CTA role and disabled mechanism not confirmed'`. Reviewer fallback: inspect DOM for `<button disabled>` vs. `<a aria-disabled="true">` vs. CSS-only.
+5. **Card number input** — assumed `getByLabel(/card number/i)`. If the payment form is inside a Stripe/Adyen/hosted-fields iframe: wrap the locator as `page.frameLocator('iframe[name*="card"]').getByLabel(/card number/i)` (or equivalent iframe selector). Add WHY-comment `'Q5 unresolved: payment form may be in iframe; label text and frame selector unconfirmed'`. Reviewer fallback: check the rendered DOM for iframe boundaries and confirm accessible label text.
 
-5. **Card number input** — assumed `page.getByLabel(/card number/i)`. If payment form is inside a Stripe/Adyen/Braintree iframe: replace with `page.frameLocator('iframe[title*="card" i]').getByRole('textbox', { name: /card number/i })`, add WHY-comment `'Q8 unresolved: card input iframe nesting unknown'`. Reviewer fallback: inspect payment form HTML for any `<iframe>` wrappers and supply the iframe selector.
+6. **Expiry date input** — assumed `getByLabel(/expiry date|exp/i)`. Same iframe caveat as pin 5. Add WHY-comment `'Q5 unresolved: expiry label unknown, iframe possible'`. Reviewer fallback: same as pin 5.
 
-6. **Expiry date input** — assumed `page.getByLabel(/expiry date|exp/i)`. Same iframe caveat as pin 5. If label text differs: keep `page.locator('input[name="exp"]')`, add WHY-comment `'Q8 unresolved: expiry input label text unknown'`. Reviewer fallback: confirm visible label text.
+7. **CVC input** — assumed `getByLabel(/cvc|cvv/i)`. Same iframe caveat as pin 5. Add WHY-comment `'Q5 unresolved: CVC label unknown, iframe possible'`. Reviewer fallback: same as pin 5.
 
-7. **Summary total display** — assumed `page.getByTestId('summary-total')`. If no testid: keep `page.locator('.summary-total')`, add WHY-comment `'Q9 unresolved: summary-total testid absent, CSS fallback'`. Reviewer fallback: ask FE to add `data-testid="summary-total"`, or confirm role (e.g. `role="cell"` in a totals table).
+8. **"Pay now" button** — assumed `getByRole('button', { name: /pay now/i })`. Class `.pay-now` suggests the label but the visible button text may be "Place order", "Complete purchase", or similar. Add WHY-comment `'Q6 unresolved: pay-now button accessible name unknown, inferred from CSS class'`. Reviewer fallback: inspect rendered button text and update regex accordingly.
 
-8. **"Order confirmed" element** — assumed `page.getByRole('heading', { name: /order confirmed/i })`. If element is not a heading: use `page.getByText(/order confirmed/i)`, add WHY-comment `'Q10b unresolved: order-confirmed element role assumed heading'`. Reviewer fallback: confirm the element is `<h1>`–`<h6>`.
+9. **"Order confirmed" heading** — assumed `getByRole('heading', { name: /order confirmed/i })`. If no heading element: fall back to `getByText(/order confirmed/i)`. Add WHY-comment `'Q7 unresolved: Order confirmed element type unknown, heading assumed'`. Reviewer fallback: inspect DOM and switch to `getByText` if it is a paragraph or `<div>`.
 
-9. **Remove item button** — assumed `page.getByRole('button', { name: /remove/i })`. If button is icon-only (no accessible name): keep `page.locator('.remove-btn')`, add WHY-comment `'Q11 unresolved: remove button accessible name unknown'`. Reviewer fallback: request FE adds `aria-label="Remove"` to icon buttons, or supply a testid.
+10. **Summary-total element** — assumed `getByTestId('summary-total')`. If no testid: fall back to `locator('.summary-total')`. Add WHY-comment `'Q8 unresolved: summary-total testid absent, CSS fallback'`. Reviewer fallback: ask FE team to add `data-testid="summary-total"`.
 
-10. **Empty-cart banner** — assumed `page.getByRole('status')`. If element has no ARIA role: keep `page.locator('.empty-cart-banner')`, add WHY-comment `'Q10 unresolved: empty-cart-banner ARIA role not confirmed'`. Reviewer fallback: confirm `role="status"` or `role="alert"`, or request `data-testid="empty-cart-banner"`.
+11. **Remove button for a named cart row** — assumed `this.cartRows.filter({ hasText: productName }).getByRole('button', { name: /remove/i })`. Button label inferred from CSS class `.remove-btn`; actual accessible name may be "Remove", "Delete", "×", or an icon with `aria-label`. Add WHY-comment `'Q9 unresolved: remove-button accessible name inferred from class'`. Reviewer fallback: inspect the DOM for button text or `aria-label`.
+
+12. **Empty-cart banner** — assumed `getByRole('status')`. If DOM has no `role="status"`: try `getByRole('alert')`, then `getByTestId('empty-cart-banner')`, then `locator('.empty-cart-banner')`. Add WHY-comment `'Q10 unresolved: empty-cart-banner ARIA role unknown'`. Reviewer fallback: ask FE team to add `role="status"` or a stable `data-testid`.
 
 ---
 
 ## Structural changes
 
-The source test is a **Cypress → Playwright TypeScript** translation (non-subtractive). The checkout journey crosses three pages (Cart → Checkout → Order Confirmation), so the qa-master Action layer is justified per `migration-rules.md` §5e.
-
-### 5a — Pages
+### Pages
 
 **`outputs/helper/page-object/pages/cart.page.ts`** — `PageClassCart extends BasePage`
-- `readonly url = '/cart'`
-- Static locators: `arrayCartRows`, `buttonUpdateCart`, `buttonCheckout`, `textEmptyCartBanner`
-- Parameterised: `byCartRowQtyInput(productNameFilter: string)` — quantity input scoped to a named cart row
-- Parameterised: `byRemoveButton(productNameFilter: string)` — remove button for a named row (falls back to `nth()` if no accessible name confirmed — see Q11)
-- Methods: `open()`, `waitForPageLoad()`, `updateItemQuantity(productNameFilter: string, qty: string): Promise<void>`, `removeAllItems(count: number): Promise<void>`, `clickCheckout(): Promise<void>`
-- Required `LABEL_CART` constant in `outputs/helper/test-data/labels.ts`
+
+No own constructor. Locator fields (all `readonly`, each `.describe('[Cart] …')`):
+
+| Field | Type | Target locator |
+|---|---|---|
+| `cartRows` | static | `getByTestId('cart-row')` — pin 1 |
+| `buttonUpdateCart` | static | `getByRole('button', { name: /update cart/i })` — pin 3 |
+| `buttonCheckout` | static | `getByRole('button', { name: /^checkout$/i })` — pin 4 |
+| `textEmptyCartBanner` | static | `getByRole('status')` — pin 12 |
+| `byCartRowQtyInput` | **readonly arrow-function field** | `(productName: string) => this.cartRows.filter({ hasText: productName }).getByRole('spinbutton')` — pin 2 |
+| `byRemoveButton` | **readonly arrow-function field** | `(productName: string) => this.cartRows.filter({ hasText: productName }).getByRole('button', { name: /remove/i })` — pin 11 |
+
+> **Critical — qa-master conformance gate:** `byCartRowQtyInput` and `byRemoveButton` MUST be declared as `readonly` arrow-function fields, NOT class methods. The validator enforces: `readonly byCartRowQtyInput = (productName: string) => this.cartRows…`. Methods are reserved for actions; parameterised locators are declarative fields. See KB `qa-master/architecture/parameterised-locator-method`. Stage 2 that emits these as `byCartRowQtyInput(productName: string): Locator { … }` method syntax FAILS the conformance gate.
+
+Action methods:
+
+- `open(): Promise<void>` — `goto(URL_CART)`, then `waitForPageLoad()`
+- `waitForPageLoad(): Promise<void>` — `expect(this.cartRows, '[Cart] Rows visible').toHaveCount(MOCK_CART_ITEM_COUNT)` — replaces `cy.wait('@getCart')` + `cy.wait(800)` sync points
+- `updateItemQuantity(productName: string, qty: string): Promise<void>` — `byCartRowQtyInput(productName).fill(qty)`, click `buttonUpdateCart`, then `expect(this.byCartRowQtyInput(productName), '[Cart] Qty should persist after update').toHaveValue(qty)` — this web-first guard replaces `cy.wait(500)` and satisfies the Q13 post-update checklist item
+- `clickCheckout(): Promise<void>` — `buttonCheckout.click()`
+- `removeAllItems(productNames: string[]): Promise<void>` — for each `name` in `productNames`: `await this.byRemoveButton(name).click()`; after loop: `await expect(this.cartRows, '[Cart] All items removed').toHaveCount(0)`. The `byRemoveButton` arrow-function field re-evaluates the live DOM on each iteration — no stale reference risk. Addresses the `.each()` stale-snapshot smell.
+- `expectCheckoutButtonDisabled(): Promise<void>` — `expect(this.buttonCheckout, '[Cart] Checkout button must be disabled on empty cart').toBeDisabled()` — semantic upgrade from CSS-class check
+- `expectEmptyCartVisible(): Promise<void>` — `expect(this.textEmptyCartBanner, '[Cart] Empty cart banner visible').toBeVisible()`
+
+Required `LABEL_CART` constant in `outputs/helper/test-data/labels.ts`.
+
+---
 
 **`outputs/helper/page-object/pages/checkout.page.ts`** — `PageClassCheckout extends BasePage`
-- `readonly url = '/checkout'` (assumed navigation URL — see Q7)
-- Static locators: `inputCard`, `inputExp`, `inputCvc`, `buttonPayNow`, `headingCheckout`
-- Methods: `waitForPageLoad()`, `fillPaymentCard(card: CheckoutCardData): Promise<void>`, `submitPayment(): Promise<void>`
-- **If Q8 confirms payment fields are in an iframe:** add `readonly framePayment = this.page.frameLocator('...')` with sub-locators scoped inside it
-- Required `LABEL_CHECKOUT` constant in `outputs/helper/test-data/labels.ts`
+
+No own constructor. Locator fields:
+
+| Field | Type | Target locator |
+|---|---|---|
+| `inputCardNumber` | static | `getByLabel(/card number/i)` — pin 5 |
+| `inputExpiry` | static | `getByLabel(/expiry date\|exp/i)` — pin 6 |
+| `inputCvc` | static | `getByLabel(/cvc\|cvv/i)` — pin 7 |
+| `buttonPayNow` | static | `getByRole('button', { name: /pay now/i })` — pin 8 |
+
+`readonly url = URL_CHECKOUT` — sourced from `@test-data/urls` (not hardcoded as a string literal in the class body). No `open()` method because in this flow the checkout page is reached by clicking the Cart's "Checkout" button; navigation lives on `PageClassCart`. The `url` field exists for consistency and for future direct-navigation tests.
+
+Action methods:
+
+- `waitForPageLoad(): Promise<void>` — `expect(this.inputCardNumber, '[Checkout] Card number input visible').toBeVisible()` — card number input appearing signals the form is ready
+- `fillPaymentDetails(card: { number: string; expiry: string; cvc: string }): Promise<void>` — `fill()` each input in sequence (no `.clear()` prefix — `fill()` replaces atomically)
+- `clickPayNow(): Promise<void>` — `buttonPayNow.click()`
+
+Required `LABEL_CHECKOUT` constant in `outputs/helper/test-data/labels.ts`.
+
+---
 
 **`outputs/helper/page-object/pages/order-confirmation.page.ts`** — `PageClassOrderConfirmation extends BasePage`
-- `readonly url = '/order-confirmed'`
-- Static locators: `headingOrderConfirmed`, `textSummaryTotal`
-- Methods: `waitForPageLoad()`
-- Required `LABEL_ORDER` constant in `outputs/helper/test-data/labels.ts`
 
-### 5b — Blocks
+No own constructor. Locator fields:
 
-None. The payment form has 3 inputs + 1 button (4 locators), below the ~5 locator / 3 method extraction threshold. The cart page's locators are numerous but the section is not shared across multiple pages.
-
-### 5c — Fixtures
-
-**`outputs/helper/fixtures/base.fixture.ts`** (mutate) — add injectable POMs:
-- `cartPage: PageClassCart`
-- `checkoutPage: PageClassCheckout`
-- `orderConfirmationPage: PageClassOrderConfirmation`
-
-**`outputs/helper/fixtures/checkout-mocks.fixture.ts`** (create) — network stubs, `auto: true`:
-- Stubs `**/api/cart` GET with a typed `CartApiResponse` mock containing exactly 2 items
-- Stubs `**/api/checkout/pay` POST with `PaymentApiResponse` `{ orderId: 'ord_test_001', status: 'confirmed' }` at status 201
-- Active for all tests in the spec that import from this fixture; eliminates real-backend dependency
-
-### 5d — API wrappers
-
-None. Network mocks via `page.route()` replace real-backend calls. No data-prep API wrapper is needed because the cart state is injected via the mock fixture.
-
-### 5e — Actions
-
-**`outputs/helper/actions/complete-checkout.ts`** (create)
-- Extracted because the happy-path journey composes CartPage → CheckoutPage → OrderConfirmationPage (3 pages), meeting the §5e threshold
-- Signature: `completeCheckout(params: { cartPage: PageClassCart; checkoutPage: PageClassCheckout; orderPage: PageClassOrderConfirmation; card: CheckoutCardData }): Promise<void>`
-- Steps: `cartPage.clickCheckout()` → `checkoutPage.waitForPageLoad()` → `checkoutPage.fillPaymentCard(card)` → `checkoutPage.submitPayment()` → `orderPage.waitForPageLoad()`
-
-### 5f — Utilities
-
-None. No DOM string parsing is required (the `$` symbol check is a simple `toContainText`).
-
-### 5g — Test data
-
-**`outputs/helper/test-data/labels.ts`** (mutate) — add:
-- `export const LABEL_CART = 'Cart'`
-- `export const LABEL_CHECKOUT = 'Checkout'`
-- `export const LABEL_ORDER = 'Order Confirmation'`
-
-**`outputs/helper/test-data/checkout.ts`** (create) — payment constants:
-- `export const TEST_CARD_NUMBER = '4242 4242 4242 4242'`
-- `export const TEST_CARD_EXPIRY = '12/30'`
-- `export const TEST_CARD_CVC = '123'`
-- `export type CheckoutCardData = { number: string; expiry: string; cvc: string }`
-- `export const TEST_CARD: CheckoutCardData = { number: TEST_CARD_NUMBER, expiry: TEST_CARD_EXPIRY, cvc: TEST_CARD_CVC }`
-
-**`outputs/helper/test-data/urls.ts`** (mutate) — add:
-- `export const URL_CART = '/cart'`
-- `export const URL_ORDER_CONFIRMED = '/order-confirmed'`
-
-### 5h — Types
-
-**`outputs/helper/types/external/cart-api.ts`** (create) — shape for `/api/cart` GET mock:
-- `export type CartItem = { id: string; name: string; quantity: number; unitPrice: string }`
-- `export type CartApiResponse = { items: CartItem[] }`
-- Reviewer must confirm actual field names (see Q1)
-
-**`outputs/helper/types/external/payment-api.ts`** (create) — shape for `/api/checkout/pay` 201 response:
-- `export type PaymentApiResponse = { orderId: string; status: string }`
-- Reviewer must confirm actual field names (see Q2)
-
-### 5i — Spec file
-
-**`outputs/tests/checkout-flow.spec.ts`** — no split; both scenarios cover the same checkout feature.
-- `import { test, expect } from "@fixtures/base.fixture"`
-- `test.describe('Checkout flow', () => { ... })`
-- Scenario 1.1 title: `[CHK-1] - Check that a credit-card payment completes the order` tagged `@positive @e2e`
-- Scenario 1.2 title: `[CHK-2] - Check that the checkout CTA is disabled on an empty cart` tagged `@negative`
-
-### File summary table
-
-| Layer | File path | Why it exists |
+| Field | Type | Target locator |
 |---|---|---|
-| Page | `outputs/helper/page-object/pages/cart.page.ts` | Cart row locators, qty input, remove buttons, update/checkout CTAs, empty-cart banner |
-| Page | `outputs/helper/page-object/pages/checkout.page.ts` | Payment form (card/exp/cvc inputs) + pay-now button |
-| Page | `outputs/helper/page-object/pages/order-confirmation.page.ts` | Order confirmed heading + summary total display |
-| Block | (none) | Payment form is 4 locators — below the ~5 locator extraction threshold |
-| Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add `cartPage`, `checkoutPage`, `orderConfirmationPage` injection |
-| Fixture | `outputs/helper/fixtures/checkout-mocks.fixture.ts` (create) | Auto-stubs `/api/cart` + `/api/checkout/pay`; eliminates real-backend coupling |
-| API | (none) | Route mocks handle data injection; no backend data-prep wrapper needed |
-| Action | `outputs/helper/actions/complete-checkout.ts` (create) | Journey crosses CartPage → CheckoutPage → OrderConfirmationPage (3 pages) |
-| Utility | (none) | No DOM string parsing required |
-| Test-data | `outputs/helper/test-data/labels.ts` (mutate) | `LABEL_CART`, `LABEL_CHECKOUT`, `LABEL_ORDER` |
-| Test-data | `outputs/helper/test-data/checkout.ts` (create) | `TEST_CARD_*` constants + `CheckoutCardData` type |
-| Test-data | `outputs/helper/test-data/urls.ts` (mutate) | `URL_CART`, `URL_ORDER_CONFIRMED` |
-| Type | `outputs/helper/types/external/cart-api.ts` (create) | `CartApiResponse` + `CartItem` shapes for `/api/cart` mock |
-| Type | `outputs/helper/types/external/payment-api.ts` (create) | `PaymentApiResponse` shape for `/api/checkout/pay` mock |
-| Spec | `outputs/tests/checkout-flow.spec.ts` (create) | The migrated test file |
+| `headingOrderConfirmed` | static | `getByRole('heading', { name: /order confirmed/i })` — pin 9 |
+| `textSummaryTotal` | static | `getByTestId('summary-total')` — pin 10 |
+
+`readonly url = URL_ORDER_CONFIRMED` — sourced from `@test-data/urls`.
+
+Action methods:
+
+- `waitForPageLoad(): Promise<void>` — `expect(this.headingOrderConfirmed, '[Order Confirmation] Heading visible').toBeVisible()`
+- `expectUrl(): Promise<void>` — `expect(this.page).toHaveURL(/\/order-confirmed/)`
+- `expectOrderConfirmedVisible(): Promise<void>` — `expect(this.headingOrderConfirmed, '[Order Confirmation] Confirmed heading').toBeVisible()`
+- `expectSummaryContainsCurrency(): Promise<void>` — `expect(this.textSummaryTotal, '[Order Confirmation] Summary contains $').toContainText('$')`
+
+Required `LABEL_ORDER_CONFIRMATION` constant in `outputs/helper/test-data/labels.ts`.
+
+---
+
+### Fixture: `outputs/helper/fixtures/base.fixture.ts` (mutate)
+
+Add `cartPage`, `checkoutPage`, `orderConfirmationPage` as injected `PageClass*` fixtures following the existing `base.extend<Fixtures>({…})` pattern. This file remains the only one importing from `@playwright/test`.
+
+### Fixture: `outputs/helper/fixtures/checkout-mocks.fixture.ts` (new)
+
+Extends `base.fixture.ts`. Declares two `auto: true` route stubs:
+
+- `GET **/api/cart` → `route.fulfill({ status: 200, json: MOCK_CART })` typed as `CartApiResponse` from `@type-defs/external/cart-api`
+- `POST **/api/checkout/pay` → `route.fulfill({ status: 201, json: MOCK_PAYMENT })` typed as `PaymentApiResponse` from `@type-defs/external/payment-api`
+
+**Must re-export `expect`:** `export { expect }` re-exported from `@fixtures/base.fixture`. The spec imports `{ test, expect }` from `@fixtures/checkout-mocks.fixture` — this satisfies the "single import source for both test and expect" invariant while scoping the mock routes to only the checkout spec. Stage 2 must NOT emit a spec that imports only `test` (without `expect`) or imports from a path other than `@fixtures/checkout-mocks.fixture`. This import pattern is the intentional deviation from the global "import from base.fixture" principle when a spec requires feature-specific auto-mocks; it is acceptable when the mocks fixture re-exports `expect`.
+
+### Action: `outputs/helper/actions/complete-checkout.ts` (new)
+
+Justification: the happy-path journey crosses three page objects (Cart → Checkout → OrderConfirmation).
+
+Signature:
+```
+completeCheckout({
+  cartPage, checkoutPage, orderConfirmationPage,
+  productName, newQuantity, card
+}: CompleteCheckoutParams): Promise<PageClassOrderConfirmation>
+```
+
+Steps in order:
+1. `cartPage.updateItemQuantity(productName, newQuantity)`
+2. `cartPage.clickCheckout()`
+3. `checkoutPage.waitForPageLoad()`
+4. `checkoutPage.fillPaymentDetails(card)`
+5. `checkoutPage.clickPayNow()`
+6. `orderConfirmationPage.waitForPageLoad()`
+7. `return orderConfirmationPage`
+
+`CompleteCheckoutParams` is an inline type in this file (no separate `helper/types/internal/` file needed for a single-use param shape).
+
+### Test-data files
+
+**`outputs/helper/test-data/checkout.ts`** (new): exports `MOCK_CART` (type `CartApiResponse`), `MOCK_PAYMENT` (type `PaymentApiResponse`), `TEST_CARD_NUMBER`, `TEST_CARD_EXPIRY`, `TEST_CARD_CVC`, `MOCK_CART_ITEM_COUNT` (number), `PRODUCT_NAMES` (string array of item names in MOCK_CART, used by `removeAllItems`). Payment values are extracted from the hardcoded strings on lines 32–34.
+
+**`outputs/helper/test-data/labels.ts`** (mutate): add `LABEL_CART`, `LABEL_CHECKOUT`, `LABEL_ORDER_CONFIRMATION`.
+
+**`outputs/helper/test-data/urls.ts`** (mutate): add `URL_CART = '/cart'`, `URL_CHECKOUT = '/checkout'`, `URL_ORDER_CONFIRMED = '/order-confirmed'`. All three URL constants are referenced from POM `url` fields — no hardcoded string literals in page objects.
+
+### Type files
+
+**`outputs/helper/types/external/cart-api.ts`** (new): `CartApiResponse` — typed shape for the GET `/api/cart` stub payload (items array with name, qty, price; cart total).
+
+**`outputs/helper/types/external/payment-api.ts`** (new): `PaymentApiResponse` — typed shape for the POST `/api/checkout/pay` stub response (orderId, status).
+
+> **Import alias note (KB-1.1.27):** Both type files must be imported via the `@type-defs/external/` alias, NOT `@types/external/`. The `@types/` prefix collides with npm's DefinitelyTyped scope and causes `TS6137` at compile time. Stage 2 must emit `import type { CartApiResponse } from '@type-defs/external/cart-api'` throughout — including in `checkout.ts` test-data and `checkout-mocks.fixture.ts`.
+
+### Spec file
+
+**`outputs/tests/checkout-flow.spec.ts`** (new):
+
+```
+import { test, expect } from '@fixtures/checkout-mocks.fixture';
+import { completeCheckout } from '@actions/complete-checkout';
+import { TEST_CARD_NUMBER, TEST_CARD_EXPIRY, TEST_CARD_CVC,
+         PRODUCT_NAMES, MOCK_CART_ITEM_COUNT } from '@test-data/checkout';
+```
+
+One `test.describe('Beacon Shop — checkout', () => { … })` block (single level). `test.beforeEach` calls `cartPage.open()` only (≤3 lines). Two `test(…)` calls with `// plan:scenario=1.1` and `// plan:scenario=1.2` comments respectively.
+
+### Summary table
+
+| Layer | File path | Why |
+|---|---|---|
+| Page | `outputs/helper/page-object/pages/cart.page.ts` | Cart rows, qty input, checkout/remove/update actions |
+| Page | `outputs/helper/page-object/pages/checkout.page.ts` | Payment form (card/exp/cvc/pay-now) |
+| Page | `outputs/helper/page-object/pages/order-confirmation.page.ts` | Confirmed heading + summary-total |
+| Block | (none) | No section exceeds 5 locators or appears on 3+ pages |
+| Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add cartPage, checkoutPage, orderConfirmationPage injections |
+| Fixture | `outputs/helper/fixtures/checkout-mocks.fixture.ts` (new) | Auto-route /api/cart + /api/checkout/pay; re-exports expect |
+| API | (none) | No data prep needed; cart pre-populated via mock |
+| Action | `outputs/helper/actions/complete-checkout.ts` (new) | Cross-page flow: Cart → Checkout → OrderConfirmation |
+| Utility | (none) | No numeric/date parsing required |
+| Test-data | `outputs/helper/test-data/checkout.ts` (new) | MOCK_CART, MOCK_PAYMENT, TEST_CARD_*, PRODUCT_NAMES |
+| Test-data | `outputs/helper/test-data/labels.ts` (mutate) | LABEL_CART, LABEL_CHECKOUT, LABEL_ORDER_CONFIRMATION |
+| Test-data | `outputs/helper/test-data/urls.ts` (mutate) | URL_CART, URL_CHECKOUT, URL_ORDER_CONFIRMED |
+| Type | `outputs/helper/types/external/cart-api.ts` (new) | CartApiResponse shape for /api/cart stub |
+| Type | `outputs/helper/types/external/payment-api.ts` (new) | PaymentApiResponse shape for /api/checkout/pay stub |
+| Spec | `outputs/tests/checkout-flow.spec.ts` (new) | The migrated test |
 
 ---
 
 ## Open questions for reviewer
 
-**Q1: Cart API mock response shape**
-Context: lines 16, 19 — `cy.intercept('GET', '/api/cart').as('getCart')` — source spies without a stub body.
-What I assumed (proceeding): `{ items: [{ id: string, name: string, quantity: number, unitPrice: string }] }`.
-Impact if wrong: the mock may fail to parse on the app side; the cart page renders incorrectly and all assertions fail.
+```
+Q1: Do cart rows have a data-testid attribute?
+Context: source uses `.cart-row` CSS class (line 24). Plan assumes data-testid="cart-row".
+What I assumed: testid exists matching the class name pattern.
+Impact if wrong: cartRows locator does not resolve; must fall back to locator('.cart-row') per pin 1.
+```
 
-**Q2: Payment API response shape**
-Context: lines 17, 37-40 — source checks `interception.response.body.orderId`.
-What I assumed: `{ orderId: 'ord_test_001', status: 'confirmed' }`.
-Impact if wrong: if the SUT looks for a field like `redirectUrl` in the 201 body to drive the navigation to `/order-confirmed`, the mock will keep the user on the checkout page and all confirmation-page assertions will time out.
+```
+Q2: What is the accessible role and label of the quantity input?
+Context: source uses .find('.qty-input') scoped inside .cart-row (line 26).
+         Plan assumes <input type="number"> (role=spinbutton) scoped via filter({ hasText: productName }).
+What I assumed: qty input is type="number" with no associated label.
+Impact if wrong: byCartRowQtyInput will not resolve;
+         Stage 2 must use getByRole('textbox') or getByLabel if a label is present.
+```
 
-**Q3: Authentication — is `/cart` a protected route?**
-Context: line 18 — `cy.visit('/cart')` with no preceding login step anywhere in the file.
-What I assumed: the cart route is accessible without authentication (guest checkout or pre-authenticated test environment).
-Impact if wrong: every test gets redirected to `/login` instead of `/cart`, and all assertions fail with an unhelpful "element not found" error rather than an auth error.
+```
+Q3: Is the "Update cart" element a <button>?
+Context: cy.contains('Update cart').click() (line 27). Plan assumes getByRole('button', …).
+What I assumed: it is a <button> element.
+Impact if wrong: role-based locator times out; need getByText(/update cart/i) or getByRole('link').
+```
 
-**Q4: Cart row identity — what distinguishes row 2 from row 1?**
-Context: line 27 — `cy.get('.cart-row').eq(1).find('.qty-input')` — index-based with no stable anchor.
-What I assumed: `data-testid="cart-row"` can be added, and the second row corresponds to a known product name usable as a `filter({ hasText: ... })`.
-Impact if wrong: Stage 2 emits `locator('.cart-row').nth(1)` as a fragile fallback with a `// TODO: fragile selector` comment; breaks the moment DOM order changes.
+```
+Q4: Is the "Checkout" CTA a <button> or <a>?
+Context: cy.contains('Checkout').click() (lines 30, 53). Plan assumes getByRole('button', …).
+What I assumed: it is a <button>. Also: toBeDisabled() catches semantic disabled (HTML disabled attr
+         or aria-disabled="true") but NOT purely visual CSS-only states.
+Impact if wrong: incorrect role causes locator to not resolve; also expectCheckoutButtonDisabled()
+         may always return false if element is <a> with no aria-disabled.
+```
 
-**Q5: Quantity input — label text and input type**
-Context: line 27 — `.find('.qty-input')`.
-What I assumed: `type="number"` (giving `role="spinbutton"`) with a visible label matching `/quantity|qty/i`.
-Impact if wrong: `getByRole('spinbutton')` matches nothing; Stage 2 falls back to `locator('.qty-input')`.
+```
+Q5: Is the payment form inside a third-party iframe (Stripe, Adyen, Braintree)?
+Context: cy.get('input[name="card"]') (line 32). If inside an iframe, getByLabel will not resolve
+         without frameLocator.
+What I assumed: payment inputs are in the top-level document.
+Impact if wrong: all three payment input locators (pins 5-7) fail silently;
+         need frameLocator wrapping with correct iframe selector.
+```
 
-**Q6: "Update cart" — is it a `<button>` or `<a>`?**
-Context: line 28 — `cy.contains('Update cart').click()`.
-What I assumed: `<button>` element.
-Impact if wrong: `getByRole('button', { name: /update cart/i })` matches nothing; must switch to `getByRole('link', ...)`.
+```
+Q6: What accessible name does the "Pay now" button have?
+Context: cy.get('button.pay-now').click() (line 35). Accessible name inferred from class .pay-now.
+What I assumed: button text is /pay now/i.
+Impact if wrong: locator times out; must update regex in buttonPayNow.
+```
 
-**Q7: Checkout CTA — element role AND disabled mechanism**
-Context: lines 31, 53 — clicked in test 1; parent checked for `.is-disabled` CSS class in test 2.
-What I assumed: `<button>` with HTML `disabled` attribute, so `toBeDisabled()` is the correct assertion.
-Impact if wrong: if the element is `<a aria-disabled="true">`, `toBeDisabled()` never passes (it only checks HTML `disabled`). If disabling is purely CSS, `toBeDisabled()` always fails on a legitimately empty cart, incorrectly flagging a broken test.
+```
+Q7: What is the exact URL slug for the order confirmation page?
+Context: cy.url().should('include', '/order-confirmed') (line 42).
+What I assumed: URL contains /order-confirmed (not /order-confirmation or /orders/confirm).
+Impact if wrong: expectUrl() assertion fails; update URL_ORDER_CONFIRMED and regex.
+```
 
-**Q8: Payment form — visible label texts AND iframe structure**
-Context: lines 33-36 — `input[name="card"]`, `input[name="exp"]`, `input[name="cvc"]`, `button.pay-now`.
-What I assumed: all inputs are in the top-level DOM (not inside a payment-provider iframe) with labels matching `/card number/i`, `/expiry/i`, `/cvc|cvv/i`.
-Impact if wrong: if the form is inside a Stripe/Adyen/Braintree iframe, ALL `page.getByLabel(...)` calls silently miss and the test times out. This is the highest-risk assumption in the plan — resolve before Stage 2.
+```
+Q8: Does the summary total element have a data-testid="summary-total"?
+Context: cy.get('.summary-total') (line 44). Plan assumes testid exists.
+What I assumed: testid matches class name.
+Impact if wrong: fall back to locator('.summary-total') per pin 10.
+```
 
-**Q9: Summary total — role and testid**
-Context: line 44 — `cy.get('.summary-total').should('contain', '$')`.
-What I assumed: `data-testid="summary-total"` can be added, or the element has a discoverable role (e.g. `role="cell"` in a totals table).
-Impact if wrong: Stage 2 falls back to `locator('.summary-total')` — same CSS fragility as the source.
+```
+Q9: What is the accessible name of the remove button on each cart row?
+Context: cy.get('.cart-row .remove-btn').each(…) (line 48). Accessible name inferred from class.
+What I assumed: accessible name matches /remove/i.
+Impact if wrong: byRemoveButton locator does not resolve; update regex in arrow-function field.
+```
 
-**Q10: Empty-cart banner — ARIA role**
-Context: line 52 — `cy.get('.empty-cart-banner').should('be.visible')`.
-What I assumed: the banner has `role="status"` (informative, not urgent).
-Impact if wrong: `getByRole('status')` matches nothing if it's a plain `<div>`; Stage 2 falls back to `locator('.empty-cart-banner')`.
+```
+Q10: What ARIA role does the empty-cart banner have?
+Context: cy.get('.empty-cart-banner') (line 52). Plan assumes role="status".
+What I assumed: role="status" (non-urgent informational).
+Impact if wrong: getByRole('status') returns empty;
+         fall back to getByRole('alert') or getByTestId('empty-cart-banner') per pin 12.
+```
 
-**Q11: Remove button — accessible name**
-Context: lines 48-50 — `.cart-row .remove-btn`.
-What I assumed: each remove button has visible text or `aria-label` matching `/remove/i`.
-Impact if wrong: `getByRole('button', { name: /remove/i })` returns an empty locator and `.click()` times out. FE must add `aria-label="Remove"` or a testid.
+```
+Q11: How many items are in the cart at test start, and what are their names?
+Context: source asserts cy.get('.cart-row').should('have.length.gte', 2) (line 24).
+         With page.route stubbing, MOCK_CART determines item count and names exactly.
+What I assumed: MOCK_CART has 2 items; their names populate PRODUCT_NAMES constant.
+Impact if wrong: waitForPageLoad() count assertion fails; removeAllItems() receives wrong names.
+```
 
-**Q12: Should the `orderId` assertion be preserved?**
-Context: lines 37-40 — `expect(interception.response.body.orderId).to.match(/^ord_/)`.
-What I assumed: drop the backend assertion; confirm completion by URL change + "Order confirmed" heading only.
-Impact if wrong: if the orderId format regression is meaningful and the order ID is displayed on the confirmation page (e.g. "Your order #ord_xxx"), Stage 2 should add a locator + assertion for it; otherwise the migration creates a blind spot for orderId format regressions.
+```
+Q12: Should the non-user-perceivable backend assertions (statusCode, orderId) be dropped?
+Context: cy.wait('@payReq').then(interception => { expect(statusCode === 201)… }) (lines 37-40).
+         These assert on raw HTTP internals, not on what the user perceives.
+What I assumed: YES — drop these. URL + "Order confirmed" heading are stronger oracles.
+         If backend contract testing is needed, a dedicated API test is more appropriate.
+Impact if wrong: if reviewer requires orderId validation, note that re-introducing
+         cy.wait('@alias').then() style is forbidden; use a separate API-layer assertion instead.
+```
 
-**Q13: Post-update-cart assertion gap**
-Context: lines 27-29 — qty update, then `cy.wait(500)`, then proceed with no intermediate assertion.
-What I assumed: Stage 2 should add a web-first guard after `updateItemQuantity()` — either `toHaveValue('3')` on the qty input or `toContainText('3')` on a cart-total element — to confirm the async update completed before navigating to checkout.
-Impact if wrong: the migrated test may click "Checkout" before the update commits; the test intermittently submits the wrong quantity.
+```
+Q13: What visible state confirms "Update cart" completed?
+Context: source uses cy.wait(500) after cy.contains('Update cart').click() (lines 27-28).
+What I assumed: the quantity input retains the new value — toHaveValue(qty) inside
+         updateItemQuantity() is the web-first guard replacing the hard wait.
+Impact if wrong: if the update triggers a full page reload that removes the qty input temporarily,
+         the assertion will time out. Reviewer should confirm observable state after update click.
+```
 
 ---
 
 ## Risk callouts
 
-- **Payment iframe (HIGH):** If card inputs are inside a Stripe/Adyen iframe, all `page.getByLabel(...)` calls silently miss and the test times out with no descriptive error. Must confirm Q8 before Stage 2 generates payment form code.
+**1. Payment form iframe boundary (blocking if present):** If the real payment form is served from a Stripe/Adyen hosted-fields iframe, `getByLabel(/card number/i)` will not find the input without a `frameLocator`. With `page.route` stubbing `/api/checkout/pay`, the test may still encounter the iframe if the payment SDK mounts before the mock triggers. Mitigation: confirm whether checkout page renders a local form or embeds a third-party SDK iframe (Q5). If iframe, pins 5–7 must be revised to use `page.frameLocator(…).getByLabel(…)`.
 
-- **Real backend dependency if mocks are omitted:** The source spies on `/api/cart` and `/api/checkout/pay` without stubs — it relies on a real backend with pre-populated cart data. The mock fixture eliminates that coupling. If a reviewer intentionally removes the mocks, the test reverts to hitting a live backend and becomes susceptible to backend state drift.
+**2. CSS-class disabled → semantic `toBeDisabled()` (intentional stricter assertion):** The source asserts `have.class 'is-disabled'` on the Checkout button's parent element. The migration asserts `toBeDisabled()` on the button itself — a deliberate stricter upgrade. This WILL FAIL if the button uses purely visual CSS-disabled state with no `disabled` HTML attribute or `aria-disabled="true"`. That failure is the correct behavior — it surfaces a real accessibility bug. Reviewer decision: if the app uses CSS-only disabled state, the FE team must add semantic disabled to the element before this assertion can pass.
 
-- **`cy.wait(800)` / `cy.wait(500)` masked real async latency:** Removing hard waits exposes the underlying async operations. If the migrated test times out on the post-update assertion or the cart-load assertion, it is surfacing a real backend latency — not a test bug.
+**3. `removeAllItems` DOM re-render between clicks:** After each `byRemoveButton(name).click()`, the cart re-renders removing the row. The `byRemoveButton` lazy field re-evaluates the DOM on each iteration — correct Playwright behavior. However, if the cart re-render triggers a loading spinner that hides remaining rows, `byRemoveButton(nextName)` may time out. Mitigation: `page.route` mock returns instantly so no loading state should appear; if it does, add a `waitForLoadingGone()` guard between iterations.
 
-- **CSS disability check is an intentionally stricter assertion:** `should('have.class', 'is-disabled')` passes even if the button is still clickable. The migration's `toBeDisabled()` is stricter; if it fails, the FE team must add the `disabled` attribute to the Checkout button on empty cart. This is an intentional quality improvement, not a test regression.
+**4. Dropped backend assertions (non-user-perceivable):** The source asserts `response.statusCode === 201` and `response.body.orderId.match(/^ord_/)` via `.then()`. The migration drops these — they check internal API contracts, not user-visible outcomes, and the `cy.wait('@req').then()` pattern (KB-1.2.11) is forbidden in target code. If the reviewer requires backend contract verification, a dedicated API-layer test is the correct venue.
 
-- **`.each()` iteration on unknown cart size:** Test 2 clicks every `.remove-btn` found on the page. The migrated version uses the mock-provided count (2 items); `removeAllItems(2)` must match the mock. If the mock item count changes, the test and the mock must be updated together.
-
-- **`toHaveCount(≥2)` — Playwright has no direct `gte` assertion:** The source asserts `.should('have.length.gte', 2)`. Playwright's `toHaveCount(N)` requires an exact value. Stage 2 should assert `toHaveCount(2)` matching the fixed mock, or assert `toBeVisible()` on each of the two row locators explicitly.
-
-- **`cy.wait('@getCart')` sync point disappears with full stub:** With `page.route(...)` fulfilling synchronously, the explicit response wait is no longer needed. If the test is ever run against a real backend, add `await page.waitForResponse('**/api/cart')` after `goto`.
+**5. `waitForPageLoad()` uses exact item count from mock:** The migrated `waitForPageLoad()` asserts `expect(cartRows).toHaveCount(MOCK_CART_ITEM_COUNT)` — stricter than the source's `have.length.gte, 2`. This is intentional: with an owned stub, the exact count is known and deterministic. Reviewer should confirm `MOCK_CART_ITEM_COUNT` before merge.
 
 ---
 
 ## Expected metrics
 
-- **Selector quality score (estimated post-migration):** 0.58 — 7/13 distinct locator targets are role/label-based at MED+ confidence; the remaining 6 depend on reviewer DOM confirmation. Score rises toward 1.0 once Q4–Q11 are resolved.
-- **Smell count delta:** −26 (all 26 catalogued anti-pattern instances removed; 0 new smells introduced)
-- **LOC delta:** +345 (source: 55 LOC → target outputs: ~400 LOC across spec + 3 pages + 1 action + 1 mock fixture + 3 test-data files + 2 type files)
-- **Anti-pattern coverage:** 26/26
+- **Selector quality score (estimated post-migration):** 14/14 = 1.00 — all locator fields in the three PageClass POMs use `getByRole`, `getByLabel`, or `getByTestId`; zero CSS-class or index-based selectors emitted
+- **Smell count delta:** −30 (−2 hard waits, −2 intercepts without stub, −6 CSS-class selectors, −3 attribute selectors, −5 `cy.contains` ambiguous, −3 hardcoded credentials, −2 `cy.wait(@alias)` no timeout, −1 index selector, −1 `clear().type()`, −1 `.each()` stale iteration, −1 URL over-spec, −1 `.then()` nested assertions, −1 CSS-class disabled check, −1 viewport magic numbers; +0 new smells)
+- **LOC delta:** source 55 LOC → estimated output ~400 LOC across all emitted files → **delta ≈ +345**
+- **Anti-pattern coverage:** 14/14 distinct anti-pattern categories addressed

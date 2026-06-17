@@ -41,10 +41,12 @@ test("lean profile relaxes the spec @playwright/test import-source rule (qa-mast
   try {
     mkdirSync(join(dir, "tests"), { recursive: true });
     writeFileSync(join(dir, "tests", "lean-demo.spec.ts"), LEAN_SPEC);
-    // Default qa-master: the @playwright/test spec import is blocked.
-    assert.match(runValidator(dir, "qa-master"), /import-source/);
-    // Lean: that specific rule no longer fires.
-    assert.doesNotMatch(runValidator(dir, "lean"), /specs must import .* from `@fixtures\/base\.fixture`/);
+    // Default qa-master: both the @playwright/test import AND page.goto are blocked.
+    const def = runValidator(dir, "qa-master");
+    assert.match(def, /import-source/);
+    assert.match(def, /page-goto-in-spec/);
+    // Lean: a minimal spec (raw page + @playwright/test import) is fully CLEAN.
+    assert.match(runValidator(dir, "lean"), /clean\./);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

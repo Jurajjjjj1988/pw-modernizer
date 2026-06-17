@@ -403,6 +403,9 @@ function checkNamingPrefix(rootAbs: string, file: string): Violation[] {
 
 /** Check 7 — `page.goto(` in a spec file (Page should own navigation). */
 function checkSpecPageGoto(rootAbs: string, file: string): Violation[] {
+  // Under the `lean` profile (ADR 0002), specs drive a raw `page` and navigate
+  // directly — page.goto() in a spec is allowed. Default qa-master unchanged.
+  if (activeProfile === "lean") return [];
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const out: Violation[] = [];

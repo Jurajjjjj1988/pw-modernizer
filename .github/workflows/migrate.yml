@@ -982,7 +982,15 @@ jobs:
           # markdown style: `\`outputs/tests/x.spec.ts\` (29 LOC)`). The regex
           # tolerates optional backticks + makes the `(N LOC)` clause optional
           # so naked filename mentions get corrected too.
-          sed -E -i "s#\`?outputs/tests/[A-Za-z0-9._-]+\\.spec\\.ts\`?( \\([0-9]+ LOC\\))?#\`outputs/tests/${ACTUAL_BASENAME}\` (${ACTUAL_LOC} LOC)#g" "$REPORT"
+          # Character class includes `/` to match subdirectory paths Sonnet
+          # sometimes copies from prior reports (e.g.
+          # `outputs/tests/_legacy-v0.1.x/using_selenium_tests.spec.ts`).
+          # Without `/` in the class, the regex bailed at the first `/` after
+          # `outputs/tests/` and the auto-correct silently no-op'd — the
+          # downstream metric self-consistency gate then failed because the
+          # report still pointed at the wrong spec. Observed 2026-06-17 on
+          # cypress checkout-flow PR #173 verify START OVER reasons.
+          sed -E -i "s#\`?outputs/tests/[A-Za-z0-9._/-]+\\.spec\\.ts\`?( \\([0-9]+ LOC\\))?#\`outputs/tests/${ACTUAL_BASENAME}\` (${ACTUAL_LOC} LOC)#g" "$REPORT"
           echo "Pre-flight: report Output line set to outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)"
 
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)

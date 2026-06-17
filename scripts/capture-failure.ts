@@ -110,7 +110,9 @@ function fetchFileAtRef(slug: string, path: string, ref: string): string | null 
   );
   if (res.status !== 0) return null;
   const b64 = res.stdout.trim();
-  if (!b64) return null;
+  // gh api --jq .content prints the literal "null" (exit 0) for submodule/symlink
+  // entries that have no base64 content; decoding "null" yields garbage bytes.
+  if (!b64 || b64 === "null") return null;
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
@@ -180,8 +182,9 @@ export function filenameDrift(sourceInput: string | null, outputSpec: string | n
 export function scanReport(report: string | null): Anomaly[] {
   if (!report) return [];
   const out: Anomaly[] = [];
-  const planAvg = grab(report, /Plan confidence:[^\n]*avg\s*([\d.]+)/i);
-  if (planAvg && Number(planAvg) < 0.5) {
+  const planAvg = grab(report, /Plan confidence:[^\n]*avg\s*(\d+(?:\.\d+)?)/i);
+  const planAvgNum = planAvg === null ? Number.NaN : Number(planAvg);
+  if (Number.isFinite(planAvgNum) && planAvgNum < 0.5) {
     out.push({ kind: "low-plan-confidence", detail: `plan avg ${planAvg} (< 0.5)` });
   }
   // Residual smells: any "Output" column > 0 in the smell table (delta not fully removed).
@@ -199,7 +202,10 @@ export function scanReport(report: string | null): Anomaly[] {
       out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
     }
   }
-  if (/Forbidden patterns in output[\s\S]*?❌/.test(report)) {
+  // Anchor to the "Forbidden patterns" SECTION only — a ❌ in a later section
+  // (AST-diff "Trivial? ❌", human-checks, verify lens) must not leak in.
+  const forbiddenSection = /## Forbidden patterns in output\n([\s\S]*?)(?:\n## |$)/.exec(report)?.[1] ?? "";
+  if (forbiddenSection.includes("❌")) {
     out.push({ kind: "forbidden-pattern", detail: "report flags forbidden patterns present" });
   }
   return out;

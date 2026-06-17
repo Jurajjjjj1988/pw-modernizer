@@ -31,8 +31,8 @@ Fork or clone PWmodernizer into your own GitHub org. The repo runs entirely
 on GitHub Actions — your migrations stay on your infra.
 
 ```bash
-gh repo fork Jurajjjjj1988/pw-modernizer --org your-org --clone
-cd pw-modernizer
+gh repo fork Jurajjjjj1988/PWmodernizer --org your-org --clone
+cd PWmodernizer
 npm install
 npm run try-it
 ```

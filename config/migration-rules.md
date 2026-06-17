@@ -797,7 +797,7 @@ A failed self-check means edit before emit, not emit and apologise.
 
 ## Footer
 
-- Owner: Migrator project, `/Users/kapusansky/DEV/Migrator`.
+- Owner: PWmodernizer (`github.com/Jurajjjjj1988/PWmodernizer`).
 - Pairs with: `config/knowledge-base.md` (anti-patterns + API translations).
 - Last reviewed: 2026-06-03.
 - Update procedure: see "How to update this file" at the top.

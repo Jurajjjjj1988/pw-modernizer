@@ -1180,6 +1180,7 @@ jobs:
           fi
 
       - name: Open code PR
+        id: open_pr
         if: steps.budget_guard.outputs.over_budget != 'true'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
         with:
@@ -1219,6 +1220,25 @@ jobs:
               Set `MIGRATION_TARGET_URL` secret to enable playwright-mcp grounding (v1).
             - Generated tests pass static gates but may flake. Run
               `npx playwright test` against staging before merging.
+
+      - name: Strip stale confidence:* label (replace, don't stack)
+        # peter-evans/create-pull-request adds the new label without
+        # stripping the prior one when the PR already exists from an
+        # earlier dispatch. Without this step, an update that flips a
+        # PR from low to high confidence leaves both labels stacked.
+        # Same bug class as PR #166 fixed for verify:* labels.
+        # Observed 2026-06-17 cypress checkout-flow PR #173.
+        if: steps.budget_guard.outputs.over_budget != 'true' && steps.open_pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.open_pr.outputs.pull-request-number }}
+          NEW_LABEL: ${{ steps.clabel.outputs.label }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          STALE_LABEL="confidence:low"
+          [ "$NEW_LABEL" = "confidence:low" ] && STALE_LABEL="confidence:high"
+          gh pr edit "$PR_NUMBER" --remove-label "$STALE_LABEL" 2>/dev/null || true
 
       - name: Trigger verify.yml on low confidence (per-leg)
         if: steps.budget_guard.outputs.over_budget != 'true' && steps.evaluate.outputs.confidence < '0.7'

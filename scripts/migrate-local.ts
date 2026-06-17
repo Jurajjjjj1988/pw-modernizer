@@ -31,6 +31,7 @@ import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -82,7 +83,7 @@ function printHelp(): void {
 }
 
 /** Resolve every derived path the way migrate.yml does (BASE = basename(input)). */
-function derivePaths(args: Args): Paths {
+export function derivePaths(args: Args): Paths {
   const input = resolve(REPO_ROOT, args.input);
   const base = basename(input);
   const plan = args.plan
@@ -251,7 +252,7 @@ function listOutputSpecs(): string[] {
 }
 
 /** Kebab spec basenames Stage 2 may emit for an input (kebab + optional trailing `-test` drop + leading `test-` drop) — mirrors the conformance/report-metrics derivation. */
-function expectedSpecBasenames(inputBasename: string): string[] {
+export function expectedSpecBasenames(inputBasename: string): string[] {
   const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
   const kebab = stem.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replaceAll("_", "-").toLowerCase();
   const out = new Set<string>([`${kebab}.spec.ts`]);
@@ -348,4 +349,7 @@ function reportOutcome(p: Paths, results: WallResult[]): number {
   return 0;
 }
 
-process.exit(main());
+// Only run the CLI when invoked directly — importing for tests must not migrate.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

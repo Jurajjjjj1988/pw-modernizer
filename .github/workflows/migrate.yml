@@ -1124,8 +1124,15 @@ jobs:
         run: |
           set -euo pipefail
           # Sonnet may rename input basename on cross-language (Java→TS).
-          # Locate the actual generated spec inside outputs/tests/.
-          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' | head -1)
+          # Locate the actual generated spec inside outputs/tests/. Exclude
+          # the v0.1.x archive — without this, alphabetical 'head -1' could
+          # pick up `_legacy-v0.1.x/X.spec.ts` and feed evaluate.ts the wrong
+          # spec, which then writes a stale Output path to the report. Same
+          # filter the Bullet-12 auto-correct pre-flight applies upstream.
+          # Observed 2026-06-17 cypress checkout-flow PR #173 verify START
+          # OVER (CR block-severity: Output path referenced legacy file).
+          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' \
+            -not -path '*/_legacy-v0.1.x/*' | head -1)
           USAGE_FILE="outputs/.usage/${{ steps.guard.outputs.input_basename }}-migration.json"
           USAGE_ARG=""
           [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"

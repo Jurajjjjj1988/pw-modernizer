@@ -3,3 +3,7 @@
 
 export const LABEL_SEARCH_FILTERS = 'Search Filters';
 export const LABEL_SEARCH_FILTER_BLOCK = 'Filter Sidebar';
+
+export const LABEL_CART = 'Cart';
+export const LABEL_CHECKOUT = 'Checkout';
+export const LABEL_ORDER = 'Order Confirmation';

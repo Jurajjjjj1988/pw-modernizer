@@ -5,41 +5,37 @@
   "scenarios": [
     {
       "id": "1.1",
-      "title": "displays the personalised welcome banner on the dashboard @positive",
-      "userAction": "Load the dashboard as an authenticated user with the A/B welcome-banner variant forced ON via fixture cookie, and verify the banner is visible and contains the user's display name.",
+      "title": "[DASHBOARD-1] - Check that the welcome banner shows the logged-in user's name @positive",
+      "userAction": "Load the Acme Shop dashboard as an authenticated user (A/B variant forced ON via fixture per Q5) and verify the welcome banner is visible and contains the user's display name.",
       "expectedAssertions": [
-        "welcome banner is visible after dashboard load",
-        "welcome banner contains the authenticated user's display name (or matches EXPECTED_GREETING_PATTERN)"
+        "welcome banner element is visible after dashboard load",
+        "welcome banner text matches /welcome back.*jane/i"
       ]
     },
     {
       "id": "1.2",
-      "title": "shows at least one item in the notifications widget @positive",
-      "userAction": "Load the dashboard as an authenticated user, interact with the notifications widget (expand or open if needed), and verify at least one notification item is visible with content.",
+      "title": "[DASHBOARD-2] - Check that the notifications widget shows the most recent notification @positive",
+      "userAction": "Load the Acme Shop dashboard as an authenticated user, click the notifications widget, and verify at least one notification item is visible containing expected text.",
       "expectedAssertions": [
-        "notifications widget is visible after dashboard load",
-        "first notification item is visible after opening the widget",
-        "first notification item contains notification text"
+        "notifications widget element is visible before interaction",
+        "after clicking the widget, at least one notification item is visible",
+        "first visible notification item text matches /new order/i"
       ]
     }
   ],
   "requiredPOMs": [],
   "requiredFixtures": [
-    "outputs/helper/fixtures/base.fixture.ts",
-    "outputs/helper/fixtures/authenticated.fixture.ts"
+    "outputs/helper/fixtures/base.fixture.ts"
   ],
   "requiredPages": [
     "outputs/helper/page-object/pages/dashboard.page.ts"
   ],
   "requiredBlocks": [],
-  "requiredApi": [
-    "outputs/helper/api/accounts.api.ts"
-  ],
+  "requiredApi": [],
   "requiredActions": [],
   "requiredUtilities": [],
   "requiredTestData": [
-    "outputs/helper/test-data/labels.ts",
-    "outputs/helper/test-data/cookies.ts"
+    "outputs/helper/test-data/labels.ts"
   ],
   "requiredTypes": [],
   "locatorTable": [
@@ -47,85 +43,85 @@
       "original": "page.locator('#email')",
       "target": "page.getByLabel(/email/i)",
       "confidence": "med",
-      "notes": "Assumes login form has <label> for the email input. Moves to authenticated.fixture.ts. Fall back: getByRole('textbox', { name: /email/i })."
+      "notes": "Assumes login form has <label for='email'> or aria-label='Email'. Moves to auth fixture. Fall back: getByRole('textbox', { name: /email/i }). See pin 1."
     },
     {
       "original": "page.locator('#password')",
       "target": "page.getByLabel(/password/i)",
       "confidence": "med",
-      "notes": "Assumes login form has <label> for the password input. Moves to authenticated.fixture.ts. Fall back: getByRole('textbox', { name: /password/i })."
+      "notes": "Same label assumption. Moves to auth fixture. Fall back: getByRole('textbox', { name: /password/i }). See pin 2."
     },
     {
       "original": "page.getByRole('button', { name: 'Sign in' })",
       "target": "page.getByRole('button', { name: /sign in/i })",
       "confidence": "high",
-      "notes": "Already role-based; widen to regex for copy-variation resilience. Moves to authenticated.fixture.ts."
+      "notes": "Already canonical in source; minor regex upgrade for copy-variation resilience. Moves to auth fixture."
     },
     {
       "original": "page.locator('.welcome-banner')",
-      "target": "page.getByRole('region', { name: /welcome/i })",
+      "target": "page.locator('.welcome-banner')",
       "confidence": "low",
-      "notes": "No DOM snapshot. Element could be <section>, <aside>, <div>, role=alert, or role=status. See pin 1."
+      "notes": "No DOM snapshot. Hallucination-defense rule 4 prohibits inventing a role without evidence. Retained as CSS class with WHY comment. Reviewer to add data-testid='welcome-banner'. See pin 3."
     },
     {
       "original": "page.locator('.notifications-widget')",
-      "target": "page.getByRole('region', { name: /notifications/i })",
-      "confidence": "low",
-      "notes": "No DOM snapshot. Same uncertainty as welcome-banner. See pin 2."
+      "target": "page.getByRole('button', { name: /notifications/i })",
+      "confidence": "med",
+      "notes": "Element is clicked in source — inferred as interactive. Assumes button role with accessible name including 'notifications'. See pin 4."
     },
     {
       "original": "page.locator('.notification-item').first()",
-      "target": "page.getByRole('listitem').first()",
+      "target": "page.locator('.notification-item').first()",
       "confidence": "low",
-      "notes": "No DOM snapshot. Items could be <li>, <tr>, <article>, or a custom element. See pin 3."
+      "notes": "No DOM snapshot. Cannot determine element role or accessible name. Retained with // TODO: fragile selector comment. Reviewer to add data-testid='notification-item'. See pin 5."
     }
   ],
   "hallucinationDefensePins": [
     {
       "pinId": 1,
-      "elementDescription": "Welcome banner",
-      "assumedLocator": "page.getByRole('region', { name: /welcome/i })",
-      "sourceLocator": "page.locator('.welcome-banner')",
-      "whyComment": "Q1 unresolved: .welcome-banner element role unknown — assumed sectioning element with accessible name matching /welcome/.",
-      "reviewerFallback": "Ask FE team for the element type. If no region/accessible-name, add data-testid='welcome-banner' and switch to page.getByTestId('welcome-banner')."
+      "elementDescription": "Email input (login form)",
+      "assumedLocator": "page.getByLabel(/email/i)",
+      "sourceLocator": "page.locator('#email')",
+      "whyComment": "Q3 unresolved: email input label association not confirmed from source — assumed <label for='email'> or aria-label='Email'.",
+      "reviewerFallback": "Confirm <label for='email'> exists in login form DOM. If absent, use getByRole('textbox', { name: /email/i }) or keep locator('#email')."
     },
     {
       "pinId": 2,
-      "elementDescription": "Notifications widget",
-      "assumedLocator": "page.getByRole('region', { name: /notifications/i })",
-      "sourceLocator": "page.locator('.notifications-widget')",
-      "whyComment": "Q2 unresolved: .notifications-widget element role unknown — assumed sectioning element with accessible name matching /notifications/.",
-      "reviewerFallback": "Ask FE team for the element type. If no region/accessible-name, add data-testid='notifications-widget' and switch to page.getByTestId('notifications-widget')."
+      "elementDescription": "Password input (login form)",
+      "assumedLocator": "page.getByLabel(/password/i)",
+      "sourceLocator": "page.locator('#password')",
+      "whyComment": "Q3 unresolved: password input label association not confirmed — assumed <label for='password'> or aria-label='Password'.",
+      "reviewerFallback": "Same as pin 1: confirm label association or add aria-label='Password'."
     },
     {
       "pinId": 3,
-      "elementDescription": "First notification item",
-      "assumedLocator": "page.getByRole('listitem').first()",
-      "sourceLocator": "page.locator('.notification-item').first()",
-      "whyComment": "Q3 unresolved: .notification-item element type unknown — assumed <li> inside <ul>/<ol>.",
-      "reviewerFallback": "Confirm element is <li>. If not (e.g. <tr>, <article>), add data-testid='notification-item' and switch to page.getByTestId('notification-item').first()."
+      "elementDescription": "Welcome banner",
+      "assumedLocator": "page.locator('.welcome-banner')",
+      "sourceLocator": "page.locator('.welcome-banner')",
+      "whyComment": "Q4 unresolved: .welcome-banner ARIA role unknown — CSS class last-resort retained, see plan pin 3.",
+      "reviewerFallback": "Inspect DOM for ARIA role/testid. Ask FE to add data-testid='welcome-banner', then upgrade to getByTestId('welcome-banner')."
     },
     {
       "pinId": 4,
-      "elementDescription": "Email input (auth fixture)",
-      "assumedLocator": "page.getByLabel(/email/i)",
-      "sourceLocator": "page.locator('#email')",
-      "whyComment": "Q1-auth: assumes login form has a <label> associated with the email input.",
-      "reviewerFallback": "If no label exists, use page.getByRole('textbox', { name: /email/i }) or page.getByPlaceholder(/email/i) as fallback."
+      "elementDescription": "Notifications widget",
+      "assumedLocator": "page.getByRole('button', { name: /notifications/i })",
+      "sourceLocator": "page.locator('.notifications-widget')",
+      "whyComment": "Q4 unresolved: .notifications-widget role assumed button (element is clicked in source). Accessible name assumed to contain 'notifications'.",
+      "reviewerFallback": "If not a button or accessible name differs: keep locator('.notifications-widget'), add WHY-comment 'Q4 unresolved: widget role not confirmed — CSS class fallback'."
     },
     {
       "pinId": 5,
-      "elementDescription": "Password input (auth fixture)",
-      "assumedLocator": "page.getByLabel(/password/i)",
-      "sourceLocator": "page.locator('#password')",
-      "whyComment": "Q1-auth: assumes login form has a <label> associated with the password input.",
-      "reviewerFallback": "If no label exists, use page.getByRole('textbox', { name: /password/i }) or page.getByPlaceholder(/password/i) as fallback."
+      "elementDescription": "Notification item (first)",
+      "assumedLocator": "page.locator('.notification-item').first()",
+      "sourceLocator": "page.locator('.notification-item').first()",
+      "whyComment": "Q4 unresolved: .notification-item accessible role unknown — CSS class + .first() last-resort fallback, see plan pin 5.",
+      "reviewerFallback": "Ask FE to add data-testid='notification-item'. Then upgrade to getByTestId('notification-item').first()."
     }
   ],
   "expectedMetrics": {
     "selectorQualityScore": 0.67,
-    "smellCountDelta": -17,
-    "locDelta": 85,
-    "antiPatternCoverage": "17/17"
+    "smellCountDelta": -14,
+    "locDelta": 50,
+    "antiPatternCoverage": "16/16"
   }
 }

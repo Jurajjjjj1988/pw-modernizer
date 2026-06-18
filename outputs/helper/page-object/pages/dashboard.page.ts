@@ -25,6 +25,25 @@ export class PageClassDashboard extends BasePage {
     .getByRole("button", { name: "Logout" })
     .describe(`[${LABEL_DASHBOARD}] Logout button`);
 
+  // silent-conditionals migration (2026-06-18)
+  // Q4 unresolved: .welcome-banner ARIA role unknown — CSS class last-resort retained, see plan pin 3.
+  // Reviewer: inspect DOM for ARIA role/testid, or ask FE to add data-testid="welcome-banner".
+  readonly textWelcomeBanner: Locator = this.page
+    .locator(".welcome-banner")
+    .describe(`[${LABEL_DASHBOARD}] Welcome banner`);
+
+  // Q4 unresolved: .notifications-widget role assumed button (element is clicked in source). See plan pin 4.
+  // If widget is not a button: fall back to locator('.notifications-widget') + WHY comment.
+  readonly buttonNotificationsWidget: Locator = this.page
+    .getByRole("button", { name: /notifications/i })
+    .describe(`[${LABEL_DASHBOARD}] Notifications widget button`);
+
+  // TODO: fragile selector — add testid. Q4 unresolved: .notification-item accessible role unknown — CSS class + .first() last-resort fallback, see plan pin 5.
+  readonly textFirstNotification: Locator = this.page
+    .locator(".notification-item")
+    .first()
+    .describe(`[${LABEL_DASHBOARD}] First notification item`);
+
   async waitForPageLoad(): Promise<void> {
     await expect(
       this.headingWelcome,
@@ -59,5 +78,46 @@ export class PageClassDashboard extends BasePage {
       this.buttonLogout,
       `[${LABEL_DASHBOARD}] Logout button visible confirming authenticated state`
     ).toBeVisible();
+  }
+
+  async expectWelcomeBannerVisible(): Promise<void> {
+    await expect(
+      this.textWelcomeBanner,
+      `[${LABEL_DASHBOARD}] Welcome banner visible after authenticated dashboard load`
+    ).toBeVisible();
+  }
+
+  async expectWelcomeBannerContainsName(): Promise<void> {
+    // TODO: Q10 unresolved — /welcome back.*jane/i assumes "Jane" is the stable CI test-account display name; widen to /welcome back/i if profile rename is possible.
+    await expect(
+      this.textWelcomeBanner,
+      `[${LABEL_DASHBOARD}] Welcome banner text matches user display name`
+    ).toContainText(/welcome back.*jane/i);
+  }
+
+  async expectNotificationsWidgetVisible(): Promise<void> {
+    await expect(
+      this.buttonNotificationsWidget,
+      `[${LABEL_DASHBOARD}] Notifications widget button visible before interaction`
+    ).toBeVisible();
+  }
+
+  async clickNotificationsWidget(): Promise<void> {
+    await this.buttonNotificationsWidget.click();
+  }
+
+  async expectNotificationItemVisible(): Promise<void> {
+    await expect(
+      this.textFirstNotification,
+      `[${LABEL_DASHBOARD}] At least one notification item visible after widget opened`
+    ).toBeVisible();
+  }
+
+  async expectFirstNotificationText(): Promise<void> {
+    // TODO: Q7 unresolved — /new order/i assumes environment has pre-seeded "New order" notification; loosen to expectNotificationItemVisible() if seeding is not feasible.
+    await expect(
+      this.textFirstNotification,
+      `[${LABEL_DASHBOARD}] First notification item contains expected text`
+    ).toContainText(/new order/i);
   }
 }

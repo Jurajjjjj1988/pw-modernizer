@@ -65,6 +65,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -186,17 +187,41 @@ function parseLocatorConfidence(envelopePath: string): PlanDocument["locatorConf
   }
 }
 
+/**
+ * Derive a retrieval verdict from a report's raw markdown body.
+ *
+ * Two tiers, in order:
+ *   1. Explicit `Verdict: **SHIP IT**` header (bolded or not) — present only
+ *      when Stage 3 verify ran (confidence was < 0.7).
+ *   2. Fallback: the evaluate.ts report's `Aggregate confidence:` line. A
+ *      migration that scored >= 0.7 was auto-shipped WITHOUT verify (the < 0.7
+ *      fire threshold), so it is a de-facto SHIP IT and a valid retrieval
+ *      candidate. Real `outputs/plans` reports carry only
+ *      `- **Aggregate confidence:** 0.81` and previously parsed as `unknown`,
+ *      excluding the entire real corpus from RAG. Trustworthy only because the
+ *      scorer no longer over-inflates confidence (PR #215 — evaluate.ts scores
+ *      the whole emitted tree, not just the spec).
+ *
+ * Pure (string in, verdict out) so it is unit-testable without a temp report.
+ * @param body raw markdown of a report file
+ * @returns one of the KNOWN_VERDICTS
+ */
+export function verdictFromReportBody(body: string): Verdict {
+  const match = /^(?:- )?Verdict:\s*\**\s*(SHIP IT|FIX FIRST|START OVER)\s*\**/im.exec(body);
+  if (match !== null) {
+    for (const known of KNOWN_VERDICTS) {
+      if (known === match[1]) return known;
+    }
+  }
+  const conf = /Aggregate confidence:\**\s*(\d+(?:\.\d+)?)/i.exec(body);
+  if (conf !== null && Number(conf[1]) >= 0.7) return "SHIP IT";
+  return "unknown";
+}
+
 function parseReportVerdict(reportPath: string): Verdict {
   const body = safeRead(reportPath);
   if (body === null) return "unknown";
-  // Verify report standardised header: `Verdict: **SHIP IT**` or unbolded.
-  const match = /^(?:- )?Verdict:\s*\**\s*(SHIP IT|FIX FIRST|START OVER)\s*\**/im.exec(body);
-  if (match === null) return "unknown";
-  const v = match[1];
-  for (const known of KNOWN_VERDICTS) {
-    if (known === v) return known;
-  }
-  return "unknown";
+  return verdictFromReportBody(body);
 }
 
 function capBody(body: string): string {
@@ -318,4 +343,6 @@ function main(): void {
   );
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

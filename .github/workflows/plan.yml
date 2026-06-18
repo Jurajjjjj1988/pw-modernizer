@@ -652,14 +652,19 @@ jobs:
             M4=$(grep -cE '\.parent\(\)|interception\.response|expect.*response' "$F" 2>/dev/null || true)
             SCORE=$((SCORE + M1 + M2 + M3 + M4))
           done
+          # 2026-06-18 bump: ShadowDomJupiterTest hit error_max_turns at 17/16
+          # (medium tier) with zero permission_denials — Sonnet was making legit
+          # progress, just out of budget. Cypress checkout-flow already pushed the
+          # complex tier to 20. Add +4 across the board so marginal-complex
+          # inputs have headroom without forcing a full re-tier classification.
           if [ "$SCORE" -le 3 ]; then
-            MAX_TURNS=12
+            MAX_TURNS=16
             TIER=simple
           elif [ "$SCORE" -le 6 ]; then
-            MAX_TURNS=16
+            MAX_TURNS=20
             TIER=medium
           else
-            MAX_TURNS=20
+            MAX_TURNS=24
             TIER=complex
           fi
           echo "Input complexity score: $SCORE → tier: $TIER → max-turns: $MAX_TURNS"

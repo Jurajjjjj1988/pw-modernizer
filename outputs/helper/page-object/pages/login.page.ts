@@ -23,6 +23,10 @@ export class PageClassLogin extends BasePage {
   readonly buttonNewsletterClose: Locator = this.page
     .getByRole("button", { name: /close|dismiss/i })
     .describe(`[${LABEL_LOGIN}] Newsletter modal close button`);
+  // TODO: Q4 unresolved — role="alert" assumed on .error-banner element; fallback is page.locator('.error-banner') if role absent.
+  readonly alertError: Locator = this.page
+    .getByRole("alert")
+    .describe(`[${LABEL_LOGIN}] Error alert`);
 
   async waitForPageLoad(): Promise<void> {
     await expect(
@@ -52,5 +56,21 @@ export class PageClassLogin extends BasePage {
       this.inputEmail,
       `[${LABEL_LOGIN}] Login page navigated away after sign-in`
     ).toBeHidden();
+  }
+
+  async clickSignIn(): Promise<void> {
+    await this.buttonSignIn.click();
+  }
+
+  async expectErrorMessage(expectedText: string): Promise<void> {
+    // Q8 unresolved — source waitForTimeout(7000) suggests backend auth rejection may take 5–7 s; override guards against flake on slow backends.
+    await expect(
+      this.alertError,
+      `[${LABEL_LOGIN}] Error alert visible`
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      this.alertError,
+      `[${LABEL_LOGIN}] Error alert contains expected message`
+    ).toContainText(expectedText);
   }
 }

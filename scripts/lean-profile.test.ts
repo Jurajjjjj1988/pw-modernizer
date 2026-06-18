@@ -51,3 +51,36 @@ test("lean profile relaxes the spec @playwright/test import-source rule (qa-mast
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("lean accepts a realistic spec + page object (relative import) that qa-master blocks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pwm-lean2-"));
+  try {
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    mkdirSync(join(dir, "helper", "page-object", "pages"), { recursive: true });
+    writeFileSync(join(dir, "tests", "login.spec.ts"), [
+      'import { test, expect } from "@playwright/test";',
+      'import { LoginPage } from "../helper/page-object/pages/login.page";',
+      "",
+      'test("[ACME-1] - Check that valid credentials sign in", async ({ page }) => {',
+      "  const login = new LoginPage(page);",
+      '  await test.step("sign in", async () => { await login.signIn("u", "p"); });',
+      '  await expect(page.getByRole("heading")).toBeVisible();',
+      "});",
+    ].join("\n"));
+    writeFileSync(join(dir, "helper", "page-object", "pages", "login.page.ts"), [
+      'import { type Page, type Locator } from "@playwright/test";',
+      "",
+      "export class LoginPage {",
+      "  readonly email: Locator;",
+      "  constructor(private readonly page: Page) { this.email = page.getByLabel(\"Email\"); }",
+      "  async signIn(u: string, p: string): Promise<void> { await this.email.fill(u); }",
+      "}",
+    ].join("\n"));
+    // Lean: a plain spec + page object via relative import is fully clean.
+    assert.match(runValidator(dir, "lean"), /clean\./);
+    // qa-master: blocked (the relative parent-dir import among others).
+    assert.match(runValidator(dir, "qa-master"), /relative-imports/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

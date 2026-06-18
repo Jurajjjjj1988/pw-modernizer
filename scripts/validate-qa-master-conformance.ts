@@ -355,6 +355,10 @@ function checkExpectLabel(rootAbs: string, file: string): Violation[] {
 
 /** Check 5 — no relative imports between helper subdirs. */
 function checkRelativeImports(rootAbs: string, file: string): Violation[] {
+  // Under `lean` (ADR 0002) there is no `@page-object`/`@fixtures` path-alias
+  // tsconfig, so specs reference page objects by relative path — allowed.
+  // Default qa-master still requires the aliases.
+  if (activeProfile === "lean") return [];
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const out: Violation[] = [];
@@ -844,6 +848,8 @@ function checkKebabCaseFilename(rootAbs: string, file: string): Violation[] {
  * paired `.block.ts` to its barrel `./index`) are still flagged — promote to
  * `@page-object/...` alias instead. KB qa-master/architecture/relative-imports-sibling. */
 function checkSiblingRelativeImports(rootAbs: string, file: string): Violation[] {
+  // Lean (ADR 0002) uses relative paths, not aliases — see checkRelativeImports.
+  if (activeProfile === "lean") return [];
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const out: Violation[] = [];

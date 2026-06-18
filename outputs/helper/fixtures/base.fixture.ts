@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import { PageClassCart } from "@page-object/pages/cart.page";
 import { PageClassDashboard } from "@page-object/pages/dashboard.page";
 import { PageClassLogin } from "@page-object/pages/login.page";
 import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
@@ -15,12 +16,14 @@ import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
  */
 
 type Fixtures = {
+  cartPage: PageClassCart;
   dashboardPage: PageClassDashboard;
   loginPage: PageClassLogin;
   searchFiltersPage: PageClassSearchFilters;
 };
 
 const test = base.extend<Fixtures>({
+  cartPage: async ({ page }, use) => use(new PageClassCart(page)),
   dashboardPage: async ({ page }, use) => use(new PageClassDashboard(page)),
   loginPage: async ({ page }, use) => use(new PageClassLogin(page)),
   searchFiltersPage: async ({ page }, use) => use(new PageClassSearchFilters(page)),

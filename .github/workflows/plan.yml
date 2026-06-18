@@ -733,6 +733,16 @@ jobs:
           plan schema in config/migration-rules.md §9 — every section must
           be present. Mark each locator translation with HIGH / MED / LOW
           confidence per prompts/_assembled/analyze.md hallucination-defense rules.
+
+          ## Do NOT self-validate
+
+          Do NOT run \`npx tsx scripts/plan-envelope-validate.ts\`, \`node -e ...\`,
+          or any other script to check your own envelope output. Those tools
+          may be denied in this sandbox and retrying burns your max-turns
+          budget (root cause of \`error_max_turns\` on inputs/selenium-python/
+          using_selenium_tests.py + inputs/bad-playwright/silent-conditionals.spec.ts,
+          2026-06-18). CI runs every validator after you finish — trust the
+          pipeline. Write the plan + envelope, then stop.
           EOF
           )
           # stream-json output: each turn emits one NDJSON event; the final

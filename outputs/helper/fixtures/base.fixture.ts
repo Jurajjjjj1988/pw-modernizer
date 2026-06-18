@@ -1,7 +1,9 @@
 import { test as base, expect } from "@playwright/test";
+import { setupProductsMock } from "@fixtures/products-mocks.fixture";
 import { PageClassCart } from "@page-object/pages/cart.page";
 import { PageClassDashboard } from "@page-object/pages/dashboard.page";
 import { PageClassLogin } from "@page-object/pages/login.page";
+import { PageClassProductListing } from "@page-object/pages/product-listing.page";
 import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
 
 /**
@@ -19,6 +21,7 @@ type Fixtures = {
   cartPage: PageClassCart;
   dashboardPage: PageClassDashboard;
   loginPage: PageClassLogin;
+  productListingPage: PageClassProductListing;
   searchFiltersPage: PageClassSearchFilters;
 };
 
@@ -26,6 +29,10 @@ const test = base.extend<Fixtures>({
   cartPage: async ({ page }, use) => use(new PageClassCart(page)),
   dashboardPage: async ({ page }, use) => use(new PageClassDashboard(page)),
   loginPage: async ({ page }, use) => use(new PageClassLogin(page)),
+  productListingPage: async ({ page }, use) => {
+    await setupProductsMock(page);
+    await use(new PageClassProductListing(page));
+  },
   searchFiltersPage: async ({ page }, use) => use(new PageClassSearchFilters(page)),
 });
 

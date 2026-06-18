@@ -10,3 +10,7 @@ export const LABEL_DASHBOARD = 'Dashboard';
 
 // missing-await migration (2026-06-18)
 export const LABEL_CART = "Cart";
+
+// wishlist migration (2026-06-18)
+export const LABEL_PRODUCTS = "Products";
+export const LABEL_WISHLIST = "Wishlist";

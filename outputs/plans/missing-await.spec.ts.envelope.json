@@ -13,10 +13,10 @@
     },
     {
       "id": "1.2",
-      "title": "[CART-2] - Check that setting item quantity to zero clears the cart @positive",
-      "userAction": "Navigate to the cart page with at least one item present, set the quantity input to 0, click Update, and verify the empty-cart message appears.",
+      "title": "[CART-2] - Check that setting item quantity to zero clears the cart @edge",
+      "userAction": "Navigate to the cart page, click 'Add Wool Beanie', set the quantity input to 0, click Update, and verify the empty-cart message appears.",
       "expectedAssertions": [
-        "'Your cart is empty' message is visible after quantity is set to 0 and Update is clicked"
+        "'Your cart is empty' message is visible after Wool Beanie quantity is set to 0 and Update is clicked"
       ]
     }
   ],
@@ -46,13 +46,13 @@
       "original": "page.fill('.qty-input', '0')",
       "target": "page.getByLabel(/quantity/i)",
       "confidence": "low",
-      "notes": "CSS class only; qty input accessible label unknown. Fallback: keep locator('.qty-input') with WHY-comment 'Q2 unresolved: qty-input accessible label not confirmed'. See pin 2."
+      "notes": "CSS class only; qty-input accessible label unknown. Fallback: keep locator('.qty-input') with WHY-comment 'Q2 unresolved: qty-input accessible label not confirmed'. See pin 2."
     },
     {
       "original": "page.getByText('Your cart is empty')",
       "target": "page.getByText(/your cart is empty/i)",
       "confidence": "high",
-      "notes": "Already canonical getByText; upgrade from exact string to case-insensitive regex for copy-change resilience."
+      "notes": "Already canonical getByText; upgrade from exact string to case-insensitive regex for copy-change resilience. No DOM evidence available for role promotion."
     }
   ],
   "hallucinationDefensePins": [
@@ -62,7 +62,7 @@
       "assumedLocator": "page.getByTestId('cart-subtotal')",
       "sourceLocator": "page.locator('.cart-subtotal')",
       "whyComment": "Q1 unresolved: cart-subtotal testid not confirmed — CSS class locator kept as fallback",
-      "reviewerFallback": "Ask FE team to add data-testid=\"cart-subtotal\". If the element has an ARIA role (e.g. role=\"status\" or role=\"region\"), switch to getByRole(role, { name: /subtotal/i }) instead."
+      "reviewerFallback": "Ask FE team to add data-testid=\"cart-subtotal\". If the element carries an ARIA role (e.g. role=\"status\" or role=\"region\"), switch to getByRole(role, { name: /subtotal/i }) instead."
     },
     {
       "pinId": 2,
@@ -70,13 +70,13 @@
       "assumedLocator": "page.getByLabel(/quantity/i)",
       "sourceLocator": "page.locator('.qty-input')",
       "whyComment": "Q2 unresolved: qty-input accessible label not confirmed — CSS class locator kept as fallback",
-      "reviewerFallback": "Confirm label text in DOM or ask FE to add aria-label=\"Quantity\". If element type is number (spinbutton), getByRole('spinbutton') is a valid intermediate upgrade."
+      "reviewerFallback": "Confirm label text in DOM or ask FE to add aria-label=\"Quantity\". If element type is number (spinbutton), getByRole('spinbutton') is a valid intermediate upgrade pending a real label."
     }
   ],
   "expectedMetrics": {
-    "selectorQualityScore": 0.7,
-    "smellCountDelta": -14,
-    "locDelta": 55,
-    "antiPatternCoverage": "14/14"
+    "selectorQualityScore": 0.71,
+    "smellCountDelta": -15,
+    "locDelta": 63,
+    "antiPatternCoverage": "15/15"
   }
 }

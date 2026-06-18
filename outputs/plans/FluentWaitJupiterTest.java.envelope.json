@@ -5,38 +5,42 @@
   "scenarios": [
     {
       "id": "1.1",
-      "title": "waits for landscape image to load and verifies its source attribute",
-      "userAction": "Navigate to the loading-images demo page and wait for the landscape image element to appear in the DOM with a src attribute containing 'landscape'.",
+      "title": "[FWJ-1] - Check that the landscape image loads with a valid src",
+      "userAction": "Navigate to the loading-images demo page and wait for the #landscape image element to become visible, then verify its src attribute contains 'landscape' (case-insensitive).",
       "expectedAssertions": [
-        "After page load: element #landscape is present in the DOM",
-        "After page load: #landscape src attribute contains the substring 'landscape' (case-insensitive)"
+        "After page navigation, the #landscape image element is visible in the DOM (waitForPageLoad passes)",
+        "The #landscape image src attribute value contains the substring 'landscape' (case-insensitive, toHaveAttribute with /landscape/i)"
       ]
     }
   ],
   "requiredPOMs": [],
-  "requiredFixtures": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/loading-images.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts"
+  ],
+  "requiredTypes": [],
   "locatorTable": [
     {
       "original": "By.id(\"landscape\")",
-      "target": "page.getByAltText(/landscape/i)",
-      "confidence": "med",
-      "notes": "Element id and page context (loading-images educational demo, bonigarcia author) strongly suggest <img alt='landscape'>. Fallback if alt text absent or differs: page.locator('#landscape') at HIGH confidence (mechanical By.id -> CSS-id per KB hallucination rule 1). Reviewer must resolve Q3 before Stage 2 runs."
+      "target": "page.locator('#landscape')",
+      "confidence": "high",
+      "notes": "Mechanical By.id -> CSS-id translation per mandatory hallucination-defense rule (analyze.md rule 1). No DOM snapshot; no alt-text or aria evidence available. Reviewer upgrade path (Q1): if confirmed alt attribute exists (e.g. alt='landscape'), Stage 2 should use page.getByAltText(/landscape/i) instead — raises selector quality from 0/1 to 1/1."
     }
   ],
-  "hallucinationDefensePins": [
-    {
-      "pinId": 1,
-      "elementDescription": "landscape image element",
-      "assumedLocator": "page.getByAltText(/landscape/i)",
-      "sourceLocator": "By.id(\"landscape\")",
-      "whyComment": "Q3 unresolved — alt text inferred from element id and bonigarcia demo conventions; not confirmed by DOM inspection",
-      "reviewerFallback": "Inspect https://bonigarcia.dev/selenium-webdriver-java/loading-images.html source. If <img id='landscape' alt='landscape'> confirmed, keep getByAltText. If alt is absent or differs, switch to page.locator('#landscape') and add inline WHY-comment explaining why role/label/altText hierarchy is unavailable."
-    }
-  ],
+  "hallucinationDefensePins": [],
   "expectedMetrics": {
-    "selectorQualityScore": 1.0,
+    "selectorQualityScore": 0.0,
     "smellCountDelta": -7,
-    "locDelta": -50,
+    "locDelta": -18,
     "antiPatternCoverage": "7/7"
   }
 }

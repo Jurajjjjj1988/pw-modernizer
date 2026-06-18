@@ -104,6 +104,6 @@
     "selectorQualityScore": 0.88,
     "smellCountDelta": -8,
     "locDelta": 70,
-    "antiPatternCoverage": "7/7"
+    "antiPatternCoverage": "8/8"
   }
 }

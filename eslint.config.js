@@ -16,6 +16,13 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import playwright from 'eslint-plugin-playwright';
 
+// Output profile (ADR 0002). Under PWM_PROFILE=lean the spec-layer import-source
+// and page-goto-in-spec restrictions are lifted so lean specs may import
+// test/expect straight from @playwright/test and navigate directly — matching
+// validate-qa-master-conformance.ts --profile lean. Default (unset) = qa-master,
+// byte-identical to before.
+const LEAN = process.env.PWM_PROFILE === 'lean';
+
 export default tseslint.config(
   {
     // Ignore everything else.
@@ -102,13 +109,13 @@ export default tseslint.config(
       // qa-master v0.2.0 architecture rules — first-class ESLint enforcement so
       // the validate step catches violations BEFORE the conformance gate, giving
       // Sonnet's fix-lint-errors retry a clear actionable error.
-      'no-restricted-imports': ['error', {
+      'no-restricted-imports': LEAN ? 'off' : ['error', {
         paths: [{
           name: '@playwright/test',
           message: 'KB qa-master/architecture/import-source: specs must import test+expect from @fixtures/base.fixture (the single spec-layer source).',
         }],
       }],
-      'no-restricted-syntax': ['error', {
+      'no-restricted-syntax': LEAN ? 'off' : ['error', {
         selector: "CallExpression[callee.object.name='page'][callee.property.name='goto']",
         message: 'KB qa-master/architecture/page-goto-in-spec: navigation lives on the Page (pageObject.open()) — specs must not call page.goto().',
       }],

@@ -36,7 +36,7 @@ concurrency:
   # Observed 2026-06-16: 4 parallel `gh workflow run plan.yml -f input_path=X`
   # → 2 cancelled before starting (queue collapse). Per-input grouping fixes
   # it: each input_path becomes its own concurrency lane.
-  group: pwm-plan-${{ github.event_name == 'workflow_dispatch' && inputs.input_path || github.ref }}
+  group: pwm-plan-${{ github.event_name == 'workflow_dispatch' && inputs.input_path || github.event_name == 'repository_dispatch' && github.event.client_payload.slash_command.args.named.input_path || github.ref }}
   cancel-in-progress: false
 
 permissions:

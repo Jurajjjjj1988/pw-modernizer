@@ -1,4 +1,6 @@
 import { test as base, expect } from "@playwright/test";
+import { PageClassDashboard } from "@page-object/pages/dashboard.page";
+import { PageClassLogin } from "@page-object/pages/login.page";
 import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
 
 /**
@@ -12,9 +14,15 @@ import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = { searchFiltersPage: PageClassSearchFilters };
+type Fixtures = {
+  dashboardPage: PageClassDashboard;
+  loginPage: PageClassLogin;
+  searchFiltersPage: PageClassSearchFilters;
+};
 
 const test = base.extend<Fixtures>({
+  dashboardPage: async ({ page }, use) => use(new PageClassDashboard(page)),
+  loginPage: async ({ page }, use) => use(new PageClassLogin(page)),
   searchFiltersPage: async ({ page }, use) => use(new PageClassSearchFilters(page)),
 });
 

@@ -172,6 +172,8 @@ None. The payment form has 3 inputs + 1 button (4 locators), below the ~5 locato
 - Stubs `**/api/checkout/pay` POST with `PaymentApiResponse` `{ orderId: 'ord_test_001', status: 'confirmed' }` at status 201
 - Active for all tests in the spec that import from this fixture; eliminates real-backend dependency
 
+**⚠ KB-1.1.27 MANDATORY guard for Stage 2:** All type imports in `checkout-mocks.fixture.ts` MUST use the `@type-defs/*` path alias (e.g. `import type { PaymentApiResponse } from '@type-defs/external/payment-api'`), NEVER `@types/*`. The `@types/` prefix collides with npm's DefinitelyTyped scope and triggers TS6137 at compile time. This exact error was observed on a prior Stage 2 run for this specific input file (`inputs/cypress/checkout-flow.cy.js` run 27672121245) — see KB-1.1.27.
+
 ### 5d — API wrappers
 
 None. Network mocks via `page.route()` replace real-backend calls. No data-prep API wrapper is needed because the cart state is injected via the mock fixture.
@@ -200,6 +202,8 @@ None. No DOM string parsing is required (the `$` symbol check is a simple `toCon
 - `export const TEST_CARD_CVC = '123'`
 - `export type CheckoutCardData = { number: string; expiry: string; cvc: string }`
 - `export const TEST_CARD: CheckoutCardData = { number: TEST_CARD_NUMBER, expiry: TEST_CARD_EXPIRY, cvc: TEST_CARD_CVC }`
+
+**⚠ KB-1.1.27 MANDATORY guard for Stage 2:** `checkout.ts` must NOT use `@types/*` for any local type imports. Use `@type-defs/*` only. Same TS6137 risk as `checkout-mocks.fixture.ts` above — observed on the prior Stage 2 run for this file.
 
 **`outputs/helper/test-data/urls.ts`** (mutate) — add:
 - `export const URL_CART = '/cart'`
@@ -330,6 +334,8 @@ Impact if wrong: the migrated test may click "Checkout" before the update commit
 - **`toHaveCount(≥2)` — Playwright has no direct `gte` assertion:** The source asserts `.should('have.length.gte', 2)`. Playwright's `toHaveCount(N)` requires an exact value. Stage 2 should assert `toHaveCount(2)` matching the fixed mock, or assert `toBeVisible()` on each of the two row locators explicitly.
 
 - **`cy.wait('@getCart')` sync point disappears with full stub:** With `page.route(...)` fulfilling synchronously, the explicit response wait is no longer needed. If the test is ever run against a real backend, add `await page.waitForResponse('**/api/cart')` after `goto`.
+
+- **KB-1.1.27 `@types/*` vs `@type-defs/*` import prefix (KNOWN Stage 2 defect):** A prior Stage 2 run on `inputs/cypress/checkout-flow.cy.js` (run 27672121245) produced 3 × TS6137 errors because the model emitted `import type { ... } from '@types/external/...'` instead of `'@type-defs/external/...'` in `helper/fixtures/checkout-mocks.fixture.ts` and `helper/test-data/checkout.ts`. TypeScript treats `@types/<pkg>` as the DefinitelyTyped scope and rejects it as a type-declaration import path. Stage 2 MUST use `@type-defs/*` for all project-local type imports. Guards are embedded in §5c and §5g above. This risk is HIGH because the defect pattern reproduces reliably on this file specifically.
 
 ---
 

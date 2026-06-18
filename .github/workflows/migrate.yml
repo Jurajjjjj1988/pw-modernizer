@@ -945,6 +945,22 @@ jobs:
             --root outputs \
             --input-basename "$BASE"
 
+      - name: TODO/FIXME discipline (PR #151 verify-CR root cause)
+        if: steps.budget_guard.outputs.over_budget != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bare TODOs in generated POMs / specs were the block-severity hit
+          # CR raised against #151 AddCookiesJupiterTest — the migration report
+          # claimed "Forbidden patterns: None" while a `// TODO:` lived in the
+          # committed page object. §8 of generate.md forbids TODO/FIXME unless
+          # the comment carries a recognized justification (plan Q-id, fragile
+          # selector, add testid, ticket id). This validator enforces it before
+          # the report ever ships.
+          npx tsx scripts/validate-todo-discipline.ts \
+            --root outputs/tests \
+            --root outputs/helper
+
       - name: Auto-correct report Output line (Bullet 12 pre-flight)
         if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash

@@ -14,8 +14,9 @@
     {
       "id": "1.2",
       "title": "[PL-2] - Check that removing the only cart item shows the empty-cart message @positive @edge",
-      "userAction": "Add the first product (Linen Tee) to the cart, open the cart drawer, remove the item, and verify that the cart drawer shows the empty-state message.",
+      "userAction": "Add the first product (Linen Tee) to the cart, assert the badge shows '1', open the cart drawer, remove the item, and verify that the empty-cart message is visible in the drawer.",
       "expectedAssertions": [
+        "after adding Linen Tee: cart badge text equals '1' (pre-condition guard)",
         "after removing Linen Tee from the cart drawer: empty-cart message is visible in the drawer"
       ]
     }
@@ -44,28 +45,28 @@
       "original": "page.locator('.product-card')",
       "target": "page.getByRole('article')",
       "confidence": "low",
-      "notes": "article role is common for product cards but unverified. Reviewer: check element semantics or request data-testid='product-card'."
+      "notes": "article role is common for product cards but unverified without DOM snapshot. Reviewer: check element semantics or request data-testid='product-card'. See pin 1, Q1."
     },
     {
-      "original": "productCards.nth(2)",
+      "original": "productCards.nth(2) (3rd product)",
       "target": ".filter({ hasText: /wool beanie/i })",
       "confidence": "low",
-      "notes": "Mock positions Wool Beanie at index 2; name-based filter decouples from DOM order. See pin 1."
+      "notes": "Mock positions Wool Beanie at index 2; name-based filter decouples from DOM order. Assumes product name is rendered inside the card. See pin 1."
     },
     {
       "original": ".locator('button').nth(0) (add-to-cart)",
       "target": ".getByRole('button', { name: /add to cart/i })",
       "confidence": "low",
-      "notes": "Common accessible label; multiple buttons per card are possible. nth(0) is ambiguous. See pin 2."
+      "notes": "Common accessible label; multiple buttons per card are possible (wishlist, compare). nth(0) is ambiguous without confirming accessible name. See pin 2, Q3."
     },
     {
       "original": "page.locator('header > div').nth(1).locator('span').nth(0)",
       "target": "page.getByTestId('cart-count')",
       "confidence": "low",
-      "notes": "Deeply structural path; data-testid='cart-count' is guessed from common convention. See pin 3."
+      "notes": "Deeply structural positional chain; data-testid='cart-count' is guessed from common convention. See pin 3, Q4."
     },
     {
-      "original": "page.locator('.product-card').nth(0)",
+      "original": "page.locator('.product-card').nth(0) (1st product, test 2)",
       "target": "page.getByRole('article').filter({ hasText: /linen tee/i })",
       "confidence": "low",
       "notes": "Mock places Linen Tee at index 0. Same reasoning as nth(2) row. See pin 1."
@@ -74,25 +75,25 @@
       "original": "page.locator('header > div').nth(1) (cart icon click)",
       "target": "page.getByRole('link', { name: /cart/i })",
       "confidence": "low",
-      "notes": "Structural index selector; cart icon may be a button rather than a link. See pin 4."
+      "notes": "Structural index selector; cart icon may be a button rather than a link. See pin 4, Q5."
     },
     {
       "original": "page.locator('.cart-drawer li').nth(0)",
       "target": "page.locator('[data-testid=\"cart-drawer\"]').getByRole('listitem').filter({ hasText: /linen tee/i })",
       "confidence": "low",
-      "notes": "Cart drawer testid assumed; listitem scope within drawer assumed. See pin 5."
+      "notes": "Cart drawer testid guessed; listitem scope within drawer assumed. CSS fallback .cart-drawer per pin 5 if no testid. See Q6."
     },
     {
       "original": ".locator('button').nth(1) (remove button)",
       "target": ".getByRole('button', { name: /remove/i })",
       "confidence": "med",
-      "notes": "'Remove' is the industry-standard accessible label; nth(1) implies another button at index 0 (possibly a quantity control). See pin 6."
+      "notes": "'Remove' is the industry-standard accessible label; nth(1) implies another button at index 0 (likely quantity control). Pattern is standard but label text unverified. See pin 6, Q7."
     },
     {
       "original": "page.locator('.cart-drawer .empty-message')",
       "target": "page.getByText(/your cart is empty/i)",
       "confidence": "low",
-      "notes": "Exact empty-state copy is unknown; regex covers the most common variation. See pin 7."
+      "notes": "Exact empty-state copy is unknown; regex covers the most common variation. See pin 7, Q8."
     }
   ],
   "hallucinationDefensePins": [
@@ -102,7 +103,7 @@
       "assumedLocator": "page.getByRole('article').filter({ hasText: /wool beanie/i })",
       "sourceLocator": "page.locator('.product-card').nth(2)",
       "whyComment": "Q1 unresolved: product card element role not confirmed — assumed article",
-      "reviewerFallback": "Verify semantic element type; if not article, ask FE team to add data-testid='product-card' to each card."
+      "reviewerFallback": "Verify semantic element type; if not article, ask FE team to add data-testid='product-card' to each card root element."
     },
     {
       "pinId": 2,
@@ -118,19 +119,19 @@
       "assumedLocator": "page.getByTestId('cart-count')",
       "sourceLocator": "page.locator('header > div').nth(1).locator('span').nth(0)",
       "whyComment": "Q4 unresolved: cart-count testid not confirmed",
-      "reviewerFallback": "Add data-testid='cart-count' to the badge span element; or fall back to page.locator('header').locator('[aria-label*=\"cart\" i]')."
+      "reviewerFallback": "Add data-testid='cart-count' to the badge span element; or use getByRole('status') if the badge has role='status'; or fall back to page.locator('header').locator('[aria-label*=\"cart\" i]')."
     },
     {
       "pinId": 4,
       "elementDescription": "Cart icon / navigation element in the header",
       "assumedLocator": "page.getByRole('link', { name: /cart/i })",
       "sourceLocator": "page.locator('header > div').nth(1)",
-      "whyComment": "Q5 unresolved: cart icon role (link vs button) not confirmed",
-      "reviewerFallback": "If element is a button, use getByRole('button', { name: /cart/i }); if icon-only, add aria-label='Open cart'."
+      "whyComment": "Q5 unresolved: cart icon role (link vs button) and accessible name not confirmed",
+      "reviewerFallback": "If element is a button, use getByRole('button', { name: /cart/i }); if icon-only with no accessible name, add aria-label='Open cart'."
     },
     {
       "pinId": 5,
-      "elementDescription": "Cart drawer panel scope and item",
+      "elementDescription": "Cart drawer panel scope and list item",
       "assumedLocator": "page.locator('[data-testid=\"cart-drawer\"]').getByRole('listitem').filter({ hasText: /linen tee/i })",
       "sourceLocator": "page.locator('.cart-drawer li').nth(0)",
       "whyComment": "Q6 unresolved: cart-drawer testid not confirmed",
@@ -156,7 +157,7 @@
   "expectedMetrics": {
     "selectorQualityScore": 0.56,
     "smellCountDelta": -19,
-    "locDelta": 212,
+    "locDelta": 217,
     "antiPatternCoverage": "19/19"
   }
 }

@@ -5,29 +5,44 @@
   "scenarios": [
     {
       "id": "1.1",
-      "title": "displays landscape image with correct src after async load @positive @e2e",
-      "userAction": "Navigate to the loading-images demo page; wait for the landscape photograph element to appear and assert its src attribute contains 'landscape' (case-insensitive).",
+      "title": "[EWT-1] - Check that the landscape image loads with the correct src",
+      "userAction": "Navigate to the loading-images demo page and wait for the lazy-loaded landscape image to appear in the DOM, then verify its src attribute contains 'landscape'.",
       "expectedAssertions": [
-        "img#landscape is present in the document after page navigation",
-        "img#landscape src attribute value matches /landscape/i"
+        "landscape image (#landscape) is attached to the DOM within 10 000 ms of page load",
+        "landscape image src attribute matches /landscape/i after lazy-load completes"
       ]
     }
   ],
-  "requiredPOMs": [],
-  "requiredFixtures": [],
+  "requiredPOMs": [
+    "outputs/helper/page-object/pages/loading-images.page.ts"
+  ],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/loading-images.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts"
+  ],
+  "requiredTypes": [],
   "locatorTable": [
     {
       "original": "By.id(\"landscape\")",
       "target": "page.locator('#landscape')",
       "confidence": "high",
-      "notes": "Mechanical By.id translation. If the reviewer confirms <img id='landscape' alt='...'> carries a 'landscape'-containing alt attribute (Q1), upgrade to page.getByAltText(/landscape/i) for 1.0 selector quality score."
+      "notes": "Mechanical By.id → CSS id mapping per KB hallucination rule. No DOM evidence for alt attribute; if reviewer confirms alt='Landscape' on the img element, upgrade to page.getByAltText(/landscape/i) for higher selector quality."
     }
   ],
   "hallucinationDefensePins": [],
   "expectedMetrics": {
     "selectorQualityScore": 0.0,
     "smellCountDelta": -6,
-    "locDelta": -35,
+    "locDelta": -1,
     "antiPatternCoverage": "6/6"
   }
 }

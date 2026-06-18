@@ -2,7 +2,9 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassCart } from "@page-object/pages/cart.page";
 import { PageClassDashboard } from "@page-object/pages/dashboard.page";
 import { PageClassLogin } from "@page-object/pages/login.page";
+import { PageClassProducts } from "@page-object/pages/products.page";
 import { PageClassSearchFilters } from "@page-object/pages/search-filters.page";
+import { PageClassWishlist } from "@page-object/pages/wishlist.page";
 
 /**
  * Single import source for `test` + `expect` in every spec.
@@ -19,14 +21,18 @@ type Fixtures = {
   cartPage: PageClassCart;
   dashboardPage: PageClassDashboard;
   loginPage: PageClassLogin;
+  productsPage: PageClassProducts;
   searchFiltersPage: PageClassSearchFilters;
+  wishlistPage: PageClassWishlist;
 };
 
 const test = base.extend<Fixtures>({
   cartPage: async ({ page }, use) => use(new PageClassCart(page)),
   dashboardPage: async ({ page }, use) => use(new PageClassDashboard(page)),
   loginPage: async ({ page }, use) => use(new PageClassLogin(page)),
+  productsPage: async ({ page }, use) => use(new PageClassProducts(page)),
   searchFiltersPage: async ({ page }, use) => use(new PageClassSearchFilters(page)),
+  wishlistPage: async ({ page }, use) => use(new PageClassWishlist(page)),
 });
 
 export { test, expect };

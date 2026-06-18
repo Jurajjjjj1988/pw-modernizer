@@ -26,7 +26,8 @@ Catches a regression where the login form stops navigating the user to `/dashboa
 
 | Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
 |---|---|---|---|---|---|
-| H | 7 | KB-1.1.14 | hardcoded-url | `page.goto('https://shop.acme.test/login')` | configure `baseURL`; use relative `page.goto('/login')` |
+| H | 1 | KB-1.1.26 | bypassed-fixture-layer | `import { test, expect } from '@playwright/test'` | `import { test, expect } from '@fixtures/base.fixture'` |
+| H | 6 | KB-1.1.14 | hardcoded-url | `page.goto('https://shop.acme.test/login')` | configure `baseURL`; use relative `page.goto('/login')` |
 | H | 8 | KB-1.1.9 | hardcoded-credential | `fill('jane.doe@acme.test')` | `process.env.TEST_USER_EMAIL` extracted to named constant |
 | H | 9 | KB-1.1.9 | hardcoded-credential | `fill('Sup3rSecret!')` | `process.env.TEST_USER_PASSWORD` extracted to named constant |
 | H | 12 | KB-1.1.4 | force-click | `.click({ force: true })` | dismiss newsletter modal first; then plain `.click()` |
@@ -34,13 +35,7 @@ Catches a regression where the login form stops navigating the user to `/dashboa
 | M | 17 | KB-1.1.9 | magic-string | `.toContainText('Jane')` | extract `VALID_USER_DISPLAY_NAME` constant |
 | M | 16 | KB-1.1.9 | magic-number | `.toHaveCount(5)` | extract `NAV_LINK_COUNT = 5` or promote to named constant |
 
-### Unclassified smells
-
-**Wrong import source (qa-master conformance violation):**
-Line 1 imports `test`/`expect` from `'@playwright/test'` directly. In the qa-master architecture only `outputs/helper/fixtures/base.fixture.ts` may import from `@playwright/test`; all specs must import from `'@fixtures/base.fixture'`. This is not cataloged under a `KB-1.1.x` entry but is enforced by `validate-qa-master-conformance.ts`. Stage 2 must change this import.
-
-**Force-click root-cause note:**
-The inline comment on line 11 — `"Newsletter modal overlay blocks the sign-in button. Force-click past it."` — reveals that `force: true` is masking a real actionability failure. The newsletter modal is an active UI element that a real user would need to dismiss. The migration MUST replace the force-click with an explicit modal-dismissal step (see Open questions Q1–Q3). Leaving `force: true` would pass the `eslint-plugin-playwright/no-force-option` rule violation but the actual bug (modal blocking an interactive element) would remain untested.
+> **Force-click root-cause note:** The inline comment on line 11 — `"Newsletter modal overlay blocks the sign-in button. Force-click past it."` — reveals that `force: true` is masking a real actionability failure. The newsletter modal is an active UI element that a real user would need to dismiss. The migration MUST replace the force-click with an explicit modal-dismissal step (see Q1–Q3). Leaving `force: true` would silence `eslint-plugin-playwright/no-force-option` but the underlying bug (modal blocking an interactive element) would remain unexposed.
 
 ## Locator translation table
 
@@ -173,6 +168,6 @@ Impact if my assumption is wrong: any profile rename or locale change breaks the
 ## Expected metrics
 
 - **Selector quality score (estimated):** 0.88 (7/8 locators are role/label-based; the newsletter modal close locator is the one MED/LOW item)
-- **Smell count delta:** -1 hardcoded URL, -2 hardcoded credentials, -1 `force: true`, -1 magic string (`'Jane'`), -1 magic number (`5`), -1 assertion roulette, -1 wrong import source = **-8 smells removed, +0 introduced**
+- **Smell count delta:** -1 wrong import, -1 hardcoded URL, -2 hardcoded credentials, -1 `force: true`, -1 magic string (`'Jane'`), -1 magic number (`5`), -1 assertion roulette = **-8 smells removed, +0 introduced**
 - **LOC delta:** source ~21 LOC → spec ~35 LOC (+14); LoginPage ~30 LOC; DashboardPage ~25 LOC; net new code including POMs and test-data mutations: +~70 LOC vs source
-- **Anti-pattern coverage:** 7/7 cataloged (+ 1 unclassified import-source smell)
+- **Anti-pattern coverage:** 8/8 cataloged

@@ -28,7 +28,7 @@
  */
 
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -207,6 +207,39 @@ function runWall(steps: WallStep[]): WallResult[] {
   return results;
 }
 
+/** Locate the generated spec the way migrate.yml does — first *.spec.ts under outputs/tests, excluding the v0.1.x archive. */
+function findGeneratedSpec(): string | null {
+  if (!existsSync(OUT_DIR)) return null;
+  const stack = [OUT_DIR];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) break;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "_legacy-v0.1.x") stack.push(full);
+      } else if (entry.name.endsWith(".spec.ts")) {
+        return full;
+      }
+    }
+  }
+  return null;
+}
+
+/** Run evaluate.ts → aggregate confidence (0..1) + write the metrics report (mirrors migrate.yml). */
+function runEvaluate(p: Paths, spec: string): string | null {
+  const args = [
+    "tsx", "scripts/evaluate.ts",
+    "--input", p.input, "--plan", p.plan, "--output", spec, "--report-out", p.report,
+  ];
+  const usage = join(REPO_ROOT, "outputs/.usage", `${p.base}-migration.json`);
+  if (existsSync(usage)) args.push("--usage", usage);
+  const r = spawnSync("npx", args, { cwd: REPO_ROOT, encoding: "utf8" });
+  if (r.status !== 0) return null;
+  const out = (r.stdout ?? "").trim().split("\n").filter((l) => l.trim().length > 0);
+  return out.length > 0 ? out[out.length - 1] ?? null : null;
+}
+
 function main(): number {
   const args = parseCliArgs();
   if (args.help) { printHelp(); return 0; }
@@ -242,10 +275,26 @@ function main(): number {
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
   const results = runWall(validatorWall(p));
+  return reportOutcome(p, results);
+}
+
+/** Print the wall results + confidence score; return the process exit code. */
+function reportOutcome(p: Paths, results: WallResult[]): number {
   const failed = results.filter((r) => !r.ok);
+  // Confidence (informational — same evaluate.ts CI uses to decide if verify fires).
+  const spec = findGeneratedSpec();
+  const confidence = spec ? runEvaluate(p, spec) : null;
 
   process.stdout.write("\n  Summary:\n");
-  for (const r of results) process.stdout.write(`    ${r.ok ? "✓" : "✗"} ${r.name}${r.detail ? ` — ${r.detail}` : ""}\n`);
+  for (const r of results) {
+    const detail = r.detail ? ` — ${r.detail}` : "";
+    process.stdout.write(`    ${r.ok ? "✓" : "✗"} ${r.name}${detail}\n`);
+  }
+  if (confidence !== null) {
+    const verdict = Number(confidence) < 0.7 ? " (< 0.7 → CI would run Opus verify)" : " (≥ 0.7 → CI ships without verify)";
+    process.stdout.write(`    confidence: ${confidence}${verdict}\n`);
+    process.stdout.write(`    metrics report: ${p.report}\n`);
+  }
   if (failed.length > 0) {
     process.stdout.write(`\n  ${failed.length} gate(s) failed — review before trusting the output.\n\n`);
     return 1;

@@ -1,0 +1,7 @@
+# Exit 1. Report's Output references a snake_case basename copy-pasted from
+# another migration; it cannot derive from EmployeesTest.java. ONLY the
+# basename-derivation check fires (LOC claim is consistent). PR #13 root cause.
+::error
+report's Output references 'using_selenium_tests.spec.ts' but the input 'EmployeesTest.java' should produce one of [employees-test.spec.ts, employees.spec.ts]
+PR #13 root cause
+validate-report-metrics: 1 contract violation(s)

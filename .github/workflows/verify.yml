@@ -38,7 +38,11 @@ on:
         type: string
       generate_confidence:
         description: 'Aggregate confidence reported by Stage 2'
-        required: true
+        # Forwarded to the attempt-2 retry only; the verify tally never consumes
+        # it (the < 0.7 fire threshold lives in migrate.yml). Both real callers
+        # pass a value; default keeps the retry forward valid if ever omitted.
+        required: false
+        default: '0'
         type: string
       pr_branch:
         description: 'Optional branch ref to checkout (defaults to main). Use migrator/code-<name> to verify an unmerged Stage 2 PR.'
@@ -719,8 +723,13 @@ jobs:
           # verify:start-over AND verify:fix-first on the same PR.
           # Idempotent — ok if labels don't exist (|| true).
           # Does NOT touch verify:auto-regen-fired (informational, accumulates
-          # across regen attempts) or verify:start-over-attempt-1 (side tag
-          # already cleaned up at end of retry branch).
+          # across regen attempts). DOES strip verify:start-over-attempt-1 here:
+          # this helper runs only on TERMINAL verdicts (SHIP IT 925, FIX FIRST
+          # 917, attempt-2 auto-regen START OVER 839). The attempt-1 happy path
+          # exits 0 before reaching any terminal arm, so the in-flight retry tag
+          # stays live during the retry window and is cleared only once a
+          # terminal verdict lands — covering both the SHIP/FIX retry-success
+          # leak and the failed-dispatch fall-through leak.
           set_verify_terminal_label() {
             local pr="$1"
             local new_label="$2"
@@ -729,6 +738,7 @@ jobs:
                 gh pr edit "$pr" --remove-label "$old" 2>/dev/null || true
               fi
             done
+            gh pr edit "$pr" --remove-label "verify:start-over-attempt-1" 2>/dev/null || true
             gh pr edit "$pr" --add-label "$new_label"
           }
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"

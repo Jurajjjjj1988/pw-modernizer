@@ -101,7 +101,7 @@ test.describe("Prompt dialog", () => {
     "[CHK-1] - Check that a browser prompt dialog accepts a name and reflects it back",
     {
       annotation: [{ type: "Test", description: "Native prompt dialog acceptance flow" }],
-      tag: ["@positive", "@dialog"],
+      tag: ["@positive"],
     },
     async ({ promptDialogPage }) => {
       await test.step("Open the dialog-boxes demo page", async () => {
@@ -470,7 +470,7 @@ The hierarchy. Every locator in Migrator output must come from this list, in pri
 | Pattern | Why it fails |
 |---|---|
 | `page.waitForTimeout(N)` | Hard wait. Always wrong, no exceptions. Use web-first assertion. |
-| `.nth(N)` where N > 1 without a comment | Index selectors are fragile. Reorder the DOM and the test silently targets a different element. |
+| `.nth(N)` in a `*.spec.ts` (any N, incl. 0/1) | Hard-blocked by ESLint `playwright/no-nth-methods` (scoped to `outputs/tests/**`) — no comment escape hatch in specs. Index selectors are fragile: reorder the DOM and the test silently targets a different element. In a page-object/block, `.nth(N)` is tolerated only with a `// TODO: fragile selector — add testid` comment. |
 | `.click({ force: true })` | Forces past actionability checks, which means the bug it was added to suppress is still there. |
 | `expect(await el.isVisible()).toBe(true)` | Synchronous probe. Use `await expect(el).toBeVisible()`. |
 | `test.only` left in committed code | Skips every other test silently. Always a mistake in CI. |

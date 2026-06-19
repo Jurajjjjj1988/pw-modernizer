@@ -1,0 +1,7 @@
+# Exit 1. Bare `// TODO refactor later` — no colon, no allowlist match. The
+# scanner must annotate the line and report exactly one bare marker.
+# Temp sandbox path is not pinned (it varies per run).
+::error
+bare TODO/FIXME without recognized justification
+Found: 'refactor later'
+validate-todo-discipline: 1 bare TODO(s) across 1 file(s)

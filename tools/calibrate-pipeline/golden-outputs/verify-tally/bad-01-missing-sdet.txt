@@ -1,3 +1,0 @@
-# Missing SDET → START OVER conservatively → expected SHIP IT mismatches → exit 1
-verify-tally: SDET=START OVER CR=SHIP IT → FIX FIRST
-expected 'SHIP IT' but got 'FIX FIRST'

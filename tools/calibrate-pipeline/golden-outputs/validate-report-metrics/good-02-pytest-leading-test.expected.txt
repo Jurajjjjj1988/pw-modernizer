@@ -1,0 +1,5 @@
+# Exit 0. pytest test_login.py -> login.spec.ts (leading test_ stripped),
+# claimed 27 LOC matches, delta (-8) = output(27) - source(35). Clean.
+validate-report-metrics:
+report.md
+clean.

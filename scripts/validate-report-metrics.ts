@@ -32,6 +32,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 interface CliArgs {
@@ -48,17 +49,31 @@ interface Violation {
 /**
  * Convert envelope.inputBasename → list of plausible emitted spec basenames.
  * Kept in sync with `plan-envelope-validate.ts:expectedSpecBasenames`.
- * Sonnet often drops trailing `-test` because `.spec.ts` implies test-ness.
+ * Sonnet often drops trailing `-test` because `.spec.ts` implies test-ness,
+ * and drops a leading `test-` because pytest's `test_<thing>.py` convention
+ * maps to Playwright's `<thing>.spec.ts` (test-ness lives in the extension).
+ *
+ * @param inputBasename source file basename, e.g. `AddCookiesJupiterTest.java`
+ *   or `test_employees.py`.
+ * @returns kebab-case `.spec.ts` candidates the emitted spec may legitimately
+ *   use, e.g. `['add-cookies-jupiter-test.spec.ts']` or
+ *   `['test-employees.spec.ts', 'employees.spec.ts']`.
  */
-function expectedSpecBasenames(inputBasename: string): string[] {
+export function expectedSpecBasenames(inputBasename: string): string[] {
   const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
   const kebab = stem
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .replaceAll("_", "-")
     .toLowerCase();
   const out = new Set<string>([`${kebab}.spec.ts`]);
-  const dropTest = kebab.replace(/-tests?$/, "");
-  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  // Drop redundant trailing `-test` / `-tests` — `.spec.ts` already implies it.
+  const dropTrailingTest = kebab.replace(/-tests?$/, "");
+  if (dropTrailingTest !== kebab) out.add(`${dropTrailingTest}.spec.ts`);
+  // Drop leading `test-` — pytest's `test_employees.py` → `employees.spec.ts`.
+  // Ported from plan-envelope-validate.ts which already strips this; without
+  // it, legitimate pytest migrations false-fail basename derivation.
+  const dropLeadingTest = kebab.replace(/^test-/, "");
+  if (dropLeadingTest !== kebab) out.add(`${dropLeadingTest}.spec.ts`);
   return Array.from(out);
 }
 
@@ -97,7 +112,7 @@ function countLines(path: string): number {
  *
  * Returns `{ path, claimedLoc, line }` if found; null if no spec reference.
  */
-function extractEmittedSpec(report: string): { path: string; claimedLoc: number | null; line: number } | null {
+export function extractEmittedSpec(report: string): { path: string; claimedLoc: number | null; line: number } | null {
   const lines = report.split("\n");
   // Prefer the canonical schema's file-list form: `  - outputs/tests/<x>.spec.ts (N LOC)`
   for (let i = 0; i < lines.length; i++) {
@@ -121,7 +136,7 @@ function extractEmittedSpec(report: string): { path: string; claimedLoc: number 
  * Extract a claimed LOC delta from the report's `## Source → Target` block.
  * Pattern: `Output LOC: N` or `LOC delta: -N` or `Source LOC: M`.
  */
-function extractClaimedLocBlock(report: string): { sourceLoc: number | null; outputLoc: number | null; delta: number | null } {
+export function extractClaimedLocBlock(report: string): { sourceLoc: number | null; outputLoc: number | null; delta: number | null } {
   const sourceMatch = /Source LOC:\s*(\d+)/i.exec(report);
   const deltaMatch = /LOC delta:\s*(-?\d+)/i.exec(report);
 
@@ -162,7 +177,7 @@ interface EmittedSpec {
 }
 
 /** Check 1a: emitted basename must derive from input basename. */
-function checkBasenameDerivation(
+export function checkBasenameDerivation(
   emitted: EmittedSpec,
   inputBasename: string,
   reportPath: string,
@@ -178,7 +193,7 @@ function checkBasenameDerivation(
 }
 
 /** Check 2 + 3: report's claimed LOC matches actual file. */
-function checkLocConsistency(
+export function checkLocConsistency(
   emitted: EmittedSpec,
   specPath: string,
   report: string,
@@ -260,4 +275,7 @@ function main(): number {
   return 1;
 }
 
-process.exit(main());
+// Only run the CLI when invoked directly — importing for tests must not exit.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

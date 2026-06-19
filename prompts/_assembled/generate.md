@@ -16,7 +16,7 @@ Two things to internalize before you start:
 1. **`outputs/plans/<input-basename>.envelope.json`** — the machine-validatable contract. READ THIS FIRST. ROADMAP v1.0 "Plan envelope enforcement" guarantees this file exists (Stage 1 emits it; a derive-envelope safety net fills it in if Stage 1 didn't; `plan-envelope-validate.ts` gates both stages). It is the canonical source for:
    - `scenarios[].id` — emit one `// plan:scenario=<id>` comment on EVERY generated `test(...)` block. `scripts/plan-envelope-validate.ts --code` runs after generation and fails if any envelope scenario lacks a pin, if any pin is duplicated, or if any pin references an id not in the envelope.
    - `requiredPOMs[]` / `requiredFixtures[]` — the authoritative file list. Produce exactly those paths, no more, no less. Missing paths fail the post-generation gate.
-   - `subtractive` flag — when `true` (bad-playwright source), only `@playwright/test`, relative paths, and `node:*` imports are allowed in the output. Foreign framework imports fail the post-generation gate.
+   - `subtractive` flag — when `true` (bad-playwright source), the envelope's tree-wide foreign-import gate (`plan-envelope-validate.ts`) only permits `@playwright/test`/`playwright`, relative paths, `node:*`, and `@`-aliases; its job is to reject ADDED frameworks (Cypress/Selenium). It does NOT relax the spec import-source rule: in `outputs/tests/*.spec.ts`, `test`+`expect` still come from `@fixtures/base.fixture` (see §16(a)), and `validate-qa-master-conformance.ts` hard-fails `from '@playwright/test'` in a spec even for subtractive migrations. Raw `@playwright/test` is legal only in `outputs/helper/fixtures/base.fixture.ts`.
 2. **`outputs/plans/<input-basename>.md`** — the approved plan markdown. Read end-to-end after the envelope. Use it for human-reasoned context: reviewer notes, risk callouts, anti-pattern fixes, locator translation rationale. When markdown and envelope disagree on anything machine-checked (scenario IDs, file paths, subtractive flag), the envelope wins.
 3. **The original input file** — at `inputs/<framework>/<name>/<file>`. You need this to preserve assertion behaviour and intent. **You are not migrating from the input — you are executing the plan against the input.**
 4. **`config/migration-rules.md`** — target conventions, locator priority, file structure, naming, formatting. Every rule applies.
@@ -102,6 +102,18 @@ The following files exist in the repo and are committed to main as the v0.2.0 fr
 - `outputs/helper/page-object/baseblock.ts` — abstract `BaseBlock` with `readonly root: Locator`. Import via `@page-object/baseblock` when blocks are needed.
 - `outputs/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`. **EXTEND** this file (add per-Page fixture entries via `test = base.extend<{...}>({...})`) — never recreate.
 - `outputs/helper/utilities/logger.ts` — default-export `logger` with info/warn/error/debug. Import via `@logger`.
+
+### Concurrent-migration safety (PR #185 root cause, 2026-06-18)
+
+BEFORE writing ANY file under `outputs/helper/page-object/pages/`, `outputs/helper/page-object/blocks/`, `outputs/helper/actions/`, `outputs/helper/api/`, `outputs/helper/test-data/`, or `outputs/helper/utilities/`: **check if it already exists on main**. Two parallel migrations can both want the same shared file (e.g. `cart.page.ts` from checkout-flow AND force-clicks). When both Stage 2 runs blindly CREATE the file, the second PR hits an `add/add` conflict on merge and the confidence:high content is lost.
+
+Procedure for every helper file you intend to write:
+
+1. Read the file path with the Read tool (relative to repo root).
+2. If Read succeeds: the file ALREADY exists on main. **EXTEND** it — preserve every existing locator field, method, and import, then APPEND your additions in topical order. Do not delete or reorder existing entries.
+3. If Read fails with "file not found": the file is new. Create it fresh per qa-master conventions.
+
+This rule mirrors `base.fixture.ts` "EXTEND, never recreate" but generalizes to every shared helper. The only files exempt are per-migration outputs (`outputs/tests/<feature>.spec.ts`, `outputs/reports/<input>.md`) and the migration's own scenario-specific page (when the page name is unique to this input).
 
 ### Trivial-migration minimum (per-migration files Sonnet writes)
 
@@ -201,19 +213,19 @@ Additional generator-specific rules (not covered by the forbidden-patterns list)
 
 - **All imports correct (v0.2.0 qa-master, two scopes).** SPECS (`outputs/tests/*.spec.ts`) import `test` + `expect` from `@fixtures/base.fixture` — NEVER `@playwright/test`. HELPERS (`outputs/helper/**`) may import `expect` and types (`type Page`, `type Locator`) from `@playwright/test` (PageClass methods use `expect` for `[LABEL]`-prefixed page-level assertions — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1) — but only `outputs/helper/fixtures/base.fixture.ts` may import `test`. Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
-- **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
+- **Test titles use the `[TICKET-ID] - Check that <outcome>` form** (e.g. `[CHK-1] - Check that checkout opens when the cart has items`) — a user-perceivable outcome, never "should..." (per §1 and `migration-rules.md` §"Test titles").
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
 - **No `!` non-null assertions on locators** — use `await expect(locator).toBeVisible()` to assert presence then act.
 - **Every test block carries a `// plan:scenario=<id>` pin (MANDATORY — ROADMAP v1.0 enforcement).** Place the comment on the line immediately above each `test(...)` call. The `<id>` must exactly match an envelope `scenarios[].id` — typically `1.1`, `1.2`, `1.3`, ... in the order scenarios were declared in the envelope. Every envelope scenario MUST receive exactly one pin; orphan pins (referring to ids not in the envelope) and duplicate pins are rejected. `scripts/plan-envelope-validate.ts --code` runs after generation and annotates each violation inline on the code PR. Example:
 
   ```ts
   // plan:scenario=1.1
-  test('signs in with valid credentials @positive', async ({ page }) => {
+  test('[ACME-1] - Check that valid credentials sign the user in @positive', async ({ page }) => {
     // ...
   });
 
   // plan:scenario=1.2
-  test('rejects an invalid password @negative', async ({ page }) => {
+  test('[ACME-2] - Check that an invalid password is rejected @negative', async ({ page }) => {
     // ...
   });
   ```
@@ -345,7 +357,7 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
 <!-- include-end: web-first-assertions -->
 
 9. **Leaving `// TODO`s without plan Q-id reference.** If a TODO doesn't tie back to a specific plan open question or risk callout, it's noise and someone has to investigate from scratch.
-10. **Test titles starting with "should".** Verb phrase ("opens checkout when cart has items"), per `migration-rules.md` and `test-organization`.
+10. **Test titles starting with "should" or missing the `[TICKET-ID] - Check that` prefix.** Use `[CHK-1] - Check that checkout opens when the cart has items`, per `migration-rules.md` §"Test titles" (validator W10 hard-checks the `^\[…\] - Check ` shape).
 11. **Missing or wrong `// plan:scenario=<id>` pins on test blocks.** Per ROADMAP v1.0 "Plan envelope enforcement", every generated `test(...)` block needs a `// plan:scenario=<id>` comment immediately above it, with `<id>` matching exactly one envelope `scenarios[].id`. Missing pins, duplicate pins, and orphan pins (id not in envelope) all fail the `plan-envelope-validate.ts --code` gate in `migrate.yml`. This is the LPW contract closure (arXiv 2411.14503) — the envelope says what scenarios must exist; the pins prove they were generated.
 
 12. **Report metrics paraphrased from the plan instead of counted from your emitted code.** When you write the `## Metrics` section, you MUST count selectors, assertions, and locator-quality buckets **from the `.spec.ts` you just wrote**, not copy the plan's estimates. Verify-CR lens flags this specifically (PR #15 FluentWait FIX FIRST: report claimed "1 canonical / 1 fragile = 50%" for a spec with exactly 1 locator — arithmetic impossible). Concrete rules:
@@ -409,7 +421,7 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
     // ❌ WRONG — KB qa-master/architecture/import-source — block-severity fail
     import { test, expect } from "@playwright/test";
 
-    test("opens prompt dialog", async ({ page }) => {
+    test("[CHK-7] - Check that the prompt dialog opens", async ({ page }) => {
       await page.goto("/jupiter/prompt");      // ❌ ALSO WRONG — see (b)
       const heading = page.getByRole("heading", { name: /prompt/i });
       await expect(heading).toBeVisible();
@@ -420,7 +432,7 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
     // ✅ CORRECT — qa-master compliant, validator-clean
     import { test, expect } from "@fixtures/base.fixture";
 
-    test("opens prompt dialog", async ({ promptDialogPage }) => {
+    test("[CHK-7] - Check that the prompt dialog opens", async ({ promptDialogPage }) => {
       await test.step("open the prompt dialog page", async () => {
         await promptDialogPage.open();         // navigation owned by the Page
       });

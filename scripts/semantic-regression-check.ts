@@ -40,6 +40,7 @@
 
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 interface AntiPatternRow {
@@ -329,12 +330,18 @@ function relativeDiff(actual: number, expected: number): number {
  * Use for anti-pattern total + KB-ID coverage where Sonnet finding extra
  * is a quality signal, not a regression.
  */
-function regressionDiff(actual: number, expected: number): number {
+export function regressionDiff(actual: number, expected: number): number {
   if (actual >= expected) return 0;
   return relativeDiff(actual, expected);
 }
 
-function bandToVerdict(distance: number, passBand: number, failBand: number): "PASS" | "DEGRADED" | "FAIL" {
+/**
+ * Map a distance onto the three-band verdict: PASS at or below `passBand`,
+ * DEGRADED up to and including `failBand`, FAIL beyond. The band edges are
+ * inclusive on the better side, so a distance exactly equal to `passBand`
+ * is still a PASS and one equal to `failBand` is still DEGRADED.
+ */
+export function bandToVerdict(distance: number, passBand: number, failBand: number): "PASS" | "DEGRADED" | "FAIL" {
   if (distance <= passBand) return "PASS";
   if (distance <= failBand) return "DEGRADED";
   return "FAIL";
@@ -356,7 +363,7 @@ function intersectionRatio<T>(actual: Set<T>, expected: Set<T>): number {
  * Each histogram is normalised to sum=1 first, so distance ∈ [0, 2]; we
  * halve it so the metric sits in [0, 1] for clean threshold comparison.
  */
-function confidenceDistance(
+export function confidenceDistance(
   a: { high: number; med: number; low: number },
   b: { high: number; med: number; low: number },
 ): number {
@@ -429,7 +436,12 @@ function compareStats(actual: PlanStats, expected: PlanStats, threshold: number)
   return out;
 }
 
-function aggregate(axes: AxisResult[]): "PASS" | "DEGRADED" | "FAIL" {
+/**
+ * Roll up per-axis verdicts into one overall verdict. Worst-wins: any FAIL
+ * axis makes the whole run FAIL, any DEGRADED (with no FAIL) makes it
+ * DEGRADED, otherwise PASS.
+ */
+export function aggregate(axes: AxisResult[]): "PASS" | "DEGRADED" | "FAIL" {
   if (axes.some((a) => a.status === "FAIL")) return "FAIL";
   if (axes.some((a) => a.status === "DEGRADED")) return "DEGRADED";
   return "PASS";
@@ -487,4 +499,7 @@ function main(): number {
   return 1;
 }
 
-process.exit(main());
+// Only run the CLI when invoked directly — importing for tests must not exit.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

@@ -1,0 +1,3 @@
+# Exit 0. The lone deferral marker carries a Q<n> plan-question reference,
+# which is on the allowlist. Scanner must report the file as clean.
+validate-todo-discipline: 1 file(s) scanned — clean.

@@ -306,8 +306,8 @@ jobs:
           #       merge, accidental `> file` redirect). Claude would read
           #       0 bytes and hallucinate an entire plan from thin air.
           #   (b) Massive input — a 5000+ LOC monolith blows past the
-          #       analyze stage's max-turns=12 (and migrate stage's
-          #       max-turns=20), OR fills enough context that effective
+          #       analyze stage's adaptive max-turns 16-24 (and migrate
+          #       generate stage's max-turns=50), OR fills enough context that effective
           #       attention degrades (NVIDIA RULER on long-context
           #       Claude). The pipeline burns the run and produces a
           #       truncated, unusable plan.
@@ -423,8 +423,8 @@ jobs:
           fi
 
           # Check 3 — Size upper bound (5000 LOC / 200 KB).
-          # WHY: Stage 1 (plan.yml) caps Claude at max-turns=12 and
-          # Stage 2 (migrate.yml) at max-turns=20. A 5000+ LOC monolith
+          # WHY: Stage 1 (plan.yml) caps Claude at adaptive max-turns 16-24 and
+          # Stage 2 generate (migrate.yml) at max-turns=50. A 5000+ LOC monolith
           # exhausts both budgets reading the file before any planning /
           # generation work happens — the migration silently truncates.
           # 200 KB byte cap is the secondary safety: a single line that
@@ -635,10 +635,10 @@ jobs:
           #   M3 — form input clusters (input[name=...])
           #   M4 — DOM-up traversal & response-body assertions
           #
-          # Tiers (calibrated 2026-06-16):
-          #   score <= 3  → simple   → max-turns 12 (default; wishlist=3 OK)
-          #   score 4-6   → medium   → max-turns 16
-          #   score >= 7  → complex  → max-turns 20 (checkout-flow=13)
+          # Tiers (calibrated 2026-06-16, +4 re-cal 2026-06-18):
+          #   score <= 3  → simple   → max-turns 16 (default; wishlist=3 OK)
+          #   score 4-6   → medium   → max-turns 20 (ShadowDom=17 fits)
+          #   score >= 7  → complex  → max-turns 24 (checkout-flow=13)
           if [ -d "$INPUT_PATH" ]; then
             mapfile -t FILES < <(find "$INPUT_PATH" -type f \( -name '*.ts' -o -name '*.js' -o -name '*.java' -o -name '*.py' \))
           else

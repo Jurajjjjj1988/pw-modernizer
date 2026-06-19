@@ -57,8 +57,9 @@ Key gates: PR-based human approval after Stage 1, validator wall after Stage 2, 
 ## Commands you'll run most
 
 ```bash
+npm run triage <pr#>           # ZERO-TOKEN: freeze a failing migrator PR + print triage digest
 npm run smoke                  # typecheck:all + validate:all + lint — run before any commit
-npm run calibrate              # run 53-fixture corpus (8 validators) locally
+npm run calibrate              # run 100-fixture corpus (15 validators) locally
 npm run validate:all           # kb + examples + assemble + envelope (×2) + derive + coverage + calibrate
 npm run check:kb               # verify all KB IDs referenced in prompts/examples resolve
 npm run check:examples         # strict mode — examples must be plan/output coherent
@@ -81,6 +82,15 @@ gh workflow run regenerate-dispatch.yml -f path=outputs/tests/foo.spec.ts  # re-
 - **NEVER** declare an own constructor on a `PageClass`/`BlockClass` — `BasePage`/`BaseBlock` wires `page`; subclasses use `readonly` locator fields with `.describe('[LABEL] …')`
 - **NEVER** invent KB IDs — every ID in a plan must exist in `config/knowledge-base.md`
 - **NEVER** create wrapper helpers for things Playwright already provides (`test.step`, locator chaining, etc.)
+
+## Debugging discipline (save tokens)
+
+A pipeline failure is **deterministic** (parser, validator, ESLint, YAML, max-turns, envelope, coverage, naming) or **LLM-variability** (metric hallucination, `.nth()`, self-validation loops). Never re-run `migrate.yml`/`verify.yml` to test a deterministic fix — that burns Sonnet+Opus. Instead:
+
+1. `npm run triage <pr#>` — freezes the LLM output locally + prints the failure signature (zero tokens).
+2. Fix the deterministic cause, prove it with `npm run smoke` / `npm run calibrate` against the frozen artifact (zero tokens).
+3. For LLM-variability causes: **do not prompt-tune** (negative ROI, see ROADMAP "NOT to do") — the validator-block / auto-correct is the fix. Accept the block.
+4. Only one final confirmation run touches the cloud. Promote a stubborn case into `fixtures/<validator>/{good,bad}-NN/` so it never needs a cloud rerun again.
 
 ## When in doubt
 

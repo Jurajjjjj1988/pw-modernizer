@@ -44,7 +44,9 @@ type ValidatorName =
   | "cypress-conformance" | "selenium-python-conformance"
   | "selenium-java-conformance"
   | "rag-bm25"
-  | "helper-usage";
+  | "helper-usage"
+  | "validate-todo-discipline"
+  | "validate-report-metrics";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
@@ -55,6 +57,8 @@ const VALIDATORS: readonly ValidatorName[] = [
   "selenium-java-conformance",
   "rag-bm25",
   "helper-usage",
+  "validate-todo-discipline",
+  "validate-report-metrics",
 ];
 
 /**
@@ -439,6 +443,57 @@ function runRagBm25(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("rag-bm25", fixtureName)));
 }
 
+// validate-todo-discipline fixtures are FLAT single-file scanners — each
+// fixture is one `good-NN-*.ts` / `bad-NN-*.ts` file directly under the
+// fixture dir. The scanner walks directories (not bare files) via
+// `--root <dir>`, so we copy the lone fixture into a temp sandbox and point
+// the scanner at that dir. Good fixtures carry only justified TODO forms
+// (Q<n>, ticket id, `fragile selector`, `add testid`, `#<issue>`); bad
+// fixtures each trip exactly one rejection mode (bare TODO, no-colon TODO,
+// unjustified HACK).
+function runTodoDiscipline(fixtureName: string): FixtureResult {
+  const fixturePath = join(FIXTURES_ROOT, "validate-todo-discipline", fixtureName);
+  return withTempSandbox("pwm-cal-todo-", (sandbox) => {
+    const scanRoot = join(sandbox, "src");
+    mkdirSync(scanRoot, { recursive: true });
+    cpSync(fixturePath, join(scanRoot, fixtureName));
+    const r = spawnSync("npx", [
+      "tsx", join(SCRIPTS_DIR, "validate-todo-discipline.ts"),
+      "--root", scanRoot,
+    ], { cwd: sandbox, encoding: "utf8" });
+    const golden = parseGolden(goldenPath("validate-todo-discipline", basename(fixtureName, ".ts")));
+    return buildResult(fixtureName, r, golden);
+  });
+}
+
+// validate-report-metrics fixtures are nested `{good,bad}-NN/` dirs, each
+// containing report.md + the referenced source input file (kept under its
+// REAL basename, e.g. EmployeesTest.java, because the script derives the
+// expected spec basename from the input file's own name) + an emitted spec on
+// disk at `outputs/tests/<x>.spec.ts`. The script resolves the report's spec
+// reference against CWD, so we spawn with `cwd` = fixture dir. The input file
+// is the lone dir-root file that isn't report.md. Bad fixtures each trip ONE
+// mode: basename mismatch, claimed-LOC drift, or delta inconsistency.
+function runReportMetrics(fixtureName: string): FixtureResult {
+  const fixtureDir = join(FIXTURES_ROOT, "validate-report-metrics", fixtureName);
+  const report = join(fixtureDir, "report.md");
+  const inputName = readdirSync(fixtureDir).find((n) =>
+    n !== "report.md" && statSync(join(fixtureDir, n)).isFile());
+  if (inputName === undefined) {
+    return {
+      fixture: fixtureName, expectedExit: expectedExitFromName(fixtureName),
+      actualExit: -1, missingSubstrings: ["(no source input file)"], passed: false,
+    };
+  }
+  const input = join(fixtureDir, inputName);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-report-metrics.ts"),
+    "--report", report,
+    "--input", input,
+  ], { cwd: fixtureDir, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("validate-report-metrics", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -453,6 +508,8 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "selenium-java-conformance": runSeleniumJavaConformance,
   "rag-bm25": runRagBm25,
   "helper-usage": runHelperUsage,
+  "validate-todo-discipline": runTodoDiscipline,
+  "validate-report-metrics": runReportMetrics,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {
@@ -468,6 +525,21 @@ function runValidator(validator: ValidatorName): ValidatorReport {
   };
 }
 
+/**
+ * Hollow-green guard (NON-failing): a validator proving only one side is
+ * calibration theatre — e.g. rag-bm25 once had 5 good + 0 bad, so [OK] meant
+ * "never rejects anything". Returns a warning line (or "") without affecting the
+ * exit code. danger-policy is exempt: its fixtures carry no golden by design
+ * (the emitted JSON IS the spec), so a one-sided corpus is not hollow there.
+ */
+function underCalibratedWarning(rep: ValidatorReport): string {
+  if (rep.validator === "danger-policy") return "";
+  if (rep.goodTotal !== 0 && rep.badTotal !== 0) return "";
+  const side = rep.goodTotal === 0 ? "good" : "bad";
+  return `       [WARN under-calibrated] ${rep.validator} has zero ${side} fixtures — ` +
+    `green proves only one side. Add ${side} fixtures before trusting this gate.\n`;
+}
+
 function printReport(reports: ValidatorReport[]): boolean {
   let allPassed = true;
   for (const rep of reports) {
@@ -479,6 +551,7 @@ function printReport(reports: ValidatorReport[]): boolean {
       `[${allGreen ? "OK " : "FAIL"}] ${rep.validator}: ${passed}/${total} fixtures passed ` +
       `(${rep.good}/${rep.goodTotal} good + ${rep.bad}/${rep.badTotal} bad)\n`,
     );
+    process.stdout.write(underCalibratedWarning(rep));
     for (const r of rep.results) {
       if (r.passed) continue;
       const missing = r.missingSubstrings.length > 0

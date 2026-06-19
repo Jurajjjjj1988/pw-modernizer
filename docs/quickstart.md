@@ -113,9 +113,16 @@ exists (from `plan.yml` or `npm run try-it`), run Stage 2 on your own
 machine:
 
 ```bash
+npm run migrate -- --check                 # preflight: Node/auth/plan setup doctor (free)
 npm run migrate -- --input inputs/<framework>/your-bad-test.spec.ts
 npm run migrate -- --input <path> --mock   # wiring check, no Claude call (free)
+npm run migrate -- --input <path> --profile lean   # specs + page objects only (ADR 0002)
 ```
+
+By default the output is the full **qa-master** layered architecture. If your
+team wants a simpler shape — just specs + page objects, with specs importing
+`test`/`expect` straight from `@playwright/test` — pass `--profile lean`. The
+conformance gate relaxes accordingly; `qa-master` stays the default.
 
 This mirrors `migrate.yml` exactly — same prompt, inventory, model, and the
 full post-generate validator wall — so you evaluate the tool by cloning and

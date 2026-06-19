@@ -31,6 +31,7 @@ import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -38,7 +39,7 @@ const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-interface Args { input: string; plan: string; mock: boolean; help: boolean }
+interface Args { input: string; plan: string; mock: boolean; help: boolean; check: boolean }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -51,6 +52,7 @@ function parseCliArgs(): Args {
       plan: { type: "string" },
       mock: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
+      check: { type: "boolean", default: false },
     },
   });
   return {
@@ -58,6 +60,7 @@ function parseCliArgs(): Args {
     plan: values.plan ?? "",
     mock: values.mock === true,
     help: values.help === true,
+    check: values.check === true,
   };
 }
 
@@ -69,6 +72,7 @@ function printHelp(): void {
     "  npm run migrate -- --input <path>            generate (needs auth + an approved plan)",
     "  npm run migrate -- --input <path> --plan <p> explicit plan path",
     "  npm run migrate -- --input <path> --mock     wiring check, no Claude call",
+    "  npm run migrate -- --check                   preflight: Node/auth/plan setup doctor",
     "  npm run migrate -- --help",
     "",
     "Auth (one of):",
@@ -82,7 +86,7 @@ function printHelp(): void {
 }
 
 /** Resolve every derived path the way migrate.yml does (BASE = basename(input)). */
-function derivePaths(args: Args): Paths {
+export function derivePaths(args: Args): Paths {
   const input = resolve(REPO_ROOT, args.input);
   const base = basename(input);
   const plan = args.plan
@@ -103,6 +107,32 @@ function detectAuth(): Auth {
   if (oauth.length > 0) return { kind: "oauth", value: oauth };
   if (api.length > 0) return { kind: "api", value: api };
   return { kind: "none", value: "" };
+}
+
+/** Preflight doctor — checks a newcomer's environment before any migration. Returns 0 iff the critical checks (Node, auth) pass. */
+function preflight(args: Args): number {
+  process.stdout.write("\n  migrate --check (preflight)\n\n");
+  const line = (ok: boolean, label: string, hint: string): boolean => {
+    const suffix = ok ? "" : ` — ${hint}`;
+    process.stdout.write(`    ${ok ? "✓" : "✗"} ${label}${suffix}\n`);
+    return ok;
+  };
+  const nodeMajor = Number((process.versions.node ?? "0").split(".")[0]);
+  const nodeOk = line(nodeMajor >= 22, `Node ${process.versions.node} (need 22+)`, "install Node 22+ (nvm install 22)");
+  const auth = detectAuth();
+  const authOk = line(auth.kind !== "none", `Claude auth (${auth.kind})`, "set CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) or ANTHROPIC_API_KEY");
+  // gh is optional (only for the plan-PR flow), so it never fails the preflight.
+  line(spawnSync("gh", ["--version"], { encoding: "utf8" }).status === 0, "gh CLI (optional — for plan PRs)", "brew install gh / apt install gh");
+  if (args.input) {
+    const p = derivePaths(args);
+    line(existsSync(p.input), `input ${args.input}`, "path not found");
+    line(existsSync(p.plan), `plan ${p.plan.replace(REPO_ROOT + "/", "")}`, "run Stage 1 first (plan.yml or npm run try-it)");
+  }
+  const ready = nodeOk && authOk;
+  process.stdout.write(ready
+    ? "\n  Ready. Run: npm run migrate -- --input <your-test> (add --mock for a free wiring check).\n\n"
+    : "\n  Not ready — fix the ✗ items above.\n\n");
+  return ready ? 0 : 1;
 }
 
 function fail(msg: string): never {
@@ -251,7 +281,7 @@ function listOutputSpecs(): string[] {
 }
 
 /** Kebab spec basenames Stage 2 may emit for an input (kebab + optional trailing `-test` drop + leading `test-` drop) — mirrors the conformance/report-metrics derivation. */
-function expectedSpecBasenames(inputBasename: string): string[] {
+export function expectedSpecBasenames(inputBasename: string): string[] {
   const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
   const kebab = stem.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replaceAll("_", "-").toLowerCase();
   const out = new Set<string>([`${kebab}.spec.ts`]);
@@ -287,6 +317,7 @@ function runEvaluate(p: Paths, spec: string): string | null {
 function main(): number {
   const args = parseCliArgs();
   if (args.help) { printHelp(); return 0; }
+  if (args.check) return preflight(args);
   if (!args.input) { printHelp(); fail("--input <path> is required."); }
 
   const p = derivePaths(args);
@@ -348,4 +379,7 @@ function reportOutcome(p: Paths, results: WallResult[]): number {
   return 0;
 }
 
-process.exit(main());
+// Only run the CLI when invoked directly — importing for tests must not migrate.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

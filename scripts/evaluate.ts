@@ -26,6 +26,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
+
 import { MetricsDB, type UsageStats } from "./metrics.js";
 
 /**
@@ -109,7 +111,7 @@ function emptySmells(): SmellCount {
   };
 }
 
-function countSmells(rawSource: string): SmellCount {
+export function countSmells(rawSource: string): SmellCount {
   const c = emptySmells();
   // Strip comments before pattern detection — comments often reference the
   // ORIGINAL smell (e.g., 'replaces waitForTimeout(7000) from line 25') as
@@ -523,4 +525,7 @@ function parseSourceFrameworkFromPlan(planMd: string): string {
   return "unknown";
 }
 
-main();
+// Only run the scorer when invoked directly — importing for tests must not run.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

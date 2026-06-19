@@ -104,6 +104,32 @@ test("scanReport: nonWebFirstAsserts is a review-note, not a residual-smell (PR 
   assert.ok(!a.some((x) => x.kind === "residual-smell" && x.detail.includes("nonWebFirstAsserts")));
 });
 
+test("scanReport: forbidden-pattern is anchored to its section, not any later ❌", () => {
+  // A ❌ in the AST-diff section must NOT trip the forbidden-pattern detector.
+  const clean = [
+    "## Forbidden patterns in output",
+    "✅ None.",
+    "## AST diff",
+    "- **Trivial (cosmetic-only)?** ❌ YES — REJECT THIS MIGRATION",
+  ].join("\n");
+  assert.ok(!kinds(scanReport(clean)).includes("forbidden-pattern"));
+  // A ❌ INSIDE the forbidden-patterns section must trip it.
+  const dirty = [
+    "## Forbidden patterns in output",
+    "- ❌ `page.waitForTimeout(500)`",
+    "## AST diff",
+    "- **Trivial (cosmetic-only)?** ✅ no",
+  ].join("\n");
+  assert.ok(kinds(scanReport(dirty)).includes("forbidden-pattern"));
+});
+
+test("scanReport: plan confidence with a trailing sentence period still flags low (NaN guard)", () => {
+  // `avg 0.38.` — the old [\d.]+ regex captured `0.38.` → NaN → silently un-flagged.
+  assert.ok(kinds(scanReport("Plan confidence: 6 low → avg 0.38.")).includes("low-plan-confidence"));
+  // A healthy value with a trailing period must NOT flag.
+  assert.ok(!kinds(scanReport("Plan confidence: 8 high → avg 0.85.")).includes("low-plan-confidence"));
+});
+
 test("detectAnomalies: composes drift + report scan", () => {
   const report = "- Plan confidence: avg 0.40";
   const a = detectAnomalies(report, "inputs/cypress/wishlist.cy.js", "outputs/tests/search-filters.spec.ts");

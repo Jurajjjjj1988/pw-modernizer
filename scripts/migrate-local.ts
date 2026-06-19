@@ -120,13 +120,27 @@ function prepareContext(): void {
   process.stdout.write("ok\n");
 }
 
-/** Derive the plan envelope (Stage 1 -> Stage 2 contract) the way migrate.yml does. */
+/** Derive the plan envelope (Stage 1 -> Stage 2 contract), only when absent — mirrors migrate.yml's `if [ ! -f "$ENV" ]` safety net so a committed Stage-1 envelope is trusted, not clobbered. */
 function deriveEnvelope(p: Paths): void {
   process.stdout.write("  [step] derive plan envelope ... ");
+  if (existsSync(p.envelope)) {
+    process.stdout.write("ok (present — trusting committed Stage-1 envelope)\n");
+    return;
+  }
   const r = spawnSync("npx", [
     "tsx", "scripts/derive-envelope.ts", "--plan", p.plan, "--out", p.envelope,
   ], { cwd: REPO_ROOT, encoding: "utf8" });
   if (r.status !== 0) fail(`derive-envelope failed:\n${r.stderr ?? r.stdout ?? ""}`);
+  process.stdout.write("ok\n");
+}
+
+/** Schema-validate the envelope before spending tokens — mirrors migrate.yml's fail-fast FIRST gate. */
+function validateEnvelopeSchema(p: Paths): void {
+  process.stdout.write("  [step] validate envelope schema ... ");
+  const r = spawnSync("npx", [
+    "tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  if (r.status !== 0) fail(`envelope schema invalid:\n${r.stderr ?? r.stdout ?? ""}`);
   process.stdout.write("ok\n");
 }
 
@@ -180,9 +194,18 @@ function runClaude(auth: Auth, prompt: string): void {
 
 /** The post-generate validator wall — same scripts + args as migrate.yml. */
 function validatorWall(p: Paths): WallStep[] {
+  // Parse gate: `playwright test --list` over the literal spec paths (spawnSync
+  // takes argv, so no glob — and no --config so PW auto-discovers
+  // outputs/tests/playwright.config.ts exactly as migrate.yml does). Skipped
+  // cleanly when there are no specs.
+  const specs = listOutputSpecs();
+  const parseGate: WallStep[] = specs.length > 0
+    ? [{ name: "playwright test --list (parse)", cmd: "npx", args: ["playwright", "test", "--list", ...specs] }]
+    : [];
   return [
     { name: "tsc (outputs/tests)", cmd: "npx", args: ["tsc", "--noEmit", "-p", "outputs/tests/tsconfig.json"] },
     { name: "eslint --fix", cmd: "npx", args: ["eslint", "--fix", "outputs/tests/**/*.ts"] },
+    ...parseGate,
     { name: "ast-diff-not-trivial", cmd: "npx", args: ["tsx", "scripts/ast-diff-trivial-check.ts", "--input", p.input, "--output", "outputs/tests"] },
     { name: "plan-envelope coverage", cmd: "npx", args: ["tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope, "--code", "outputs/tests"] },
     { name: "plan-code coverage", cmd: "npx", args: ["tsx", "scripts/plan-code-coverage.ts", "--envelope", p.envelope, "--output", "outputs/tests"] },
@@ -207,9 +230,10 @@ function runWall(steps: WallStep[]): WallResult[] {
   return results;
 }
 
-/** Locate the generated spec the way migrate.yml does — first *.spec.ts under outputs/tests, excluding the v0.1.x archive. */
-function findGeneratedSpec(): string | null {
-  if (!existsSync(OUT_DIR)) return null;
+/** All *.spec.ts under outputs/tests (excluding the v0.1.x archive), lexically sorted for deterministic selection (matches `find` traversal order). */
+function listOutputSpecs(): string[] {
+  if (!existsSync(OUT_DIR)) return [];
+  const out: string[] = [];
   const stack = [OUT_DIR];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -219,11 +243,31 @@ function findGeneratedSpec(): string | null {
       if (entry.isDirectory()) {
         if (entry.name !== "_legacy-v0.1.x") stack.push(full);
       } else if (entry.name.endsWith(".spec.ts")) {
-        return full;
+        out.push(full);
       }
     }
   }
-  return null;
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+/** Kebab spec basenames Stage 2 may emit for an input (kebab + optional trailing `-test` drop + leading `test-` drop) — mirrors the conformance/report-metrics derivation. */
+function expectedSpecBasenames(inputBasename: string): string[] {
+  const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
+  const kebab = stem.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replaceAll("_", "-").toLowerCase();
+  const out = new Set<string>([`${kebab}.spec.ts`]);
+  const dropTrailing = kebab.replace(/-tests?$/, "");
+  if (dropTrailing !== kebab) out.add(`${dropTrailing}.spec.ts`);
+  const dropLeading = kebab.replace(/^test-/, "");
+  if (dropLeading !== kebab) out.add(`${dropLeading}.spec.ts`);
+  return [...out];
+}
+
+/** Locate THIS run's generated spec — prefer the spec whose basename matches the input, else the lexically-first (≡ migrate.yml `find … | head -1`). Scoping to the run's basename stops accumulated prior specs from being evaluated by mistake. */
+function findGeneratedSpec(base: string): string | null {
+  const specs = listOutputSpecs();
+  if (specs.length === 0) return null;
+  const expected = new Set(expectedSpecBasenames(base));
+  return specs.find((s) => expected.has(basename(s))) ?? specs[0] ?? null;
 }
 
 /** Run evaluate.ts → aggregate confidence (0..1) + write the metrics report (mirrors migrate.yml). */
@@ -258,6 +302,7 @@ function main(): number {
   if (args.mock) p.envelope = join(tmpdir(), `pwm-mock-${p.base}.envelope.json`);
   prepareContext();
   deriveEnvelope(p);
+  validateEnvelopeSchema(p);
 
   if (args.mock) {
     process.stdout.write("\n  [mock] wiring OK. Would invoke:\n");
@@ -282,7 +327,7 @@ function main(): number {
 function reportOutcome(p: Paths, results: WallResult[]): number {
   const failed = results.filter((r) => !r.ok);
   // Confidence (informational — same evaluate.ts CI uses to decide if verify fires).
-  const spec = findGeneratedSpec();
+  const spec = findGeneratedSpec(p.base);
   const confidence = spec ? runEvaluate(p, spec) : null;
 
   process.stdout.write("\n  Summary:\n");

@@ -118,7 +118,7 @@ function main(): void {
     "|---|---|---|---|",
   ];
   const tableRows = rows.map((r) =>
-    `| #${r.pr} | ${r.verdict} | ${r.anomalies.join(", ") || "—"} | ${r.title} |`,
+    `| #${r.pr} | ${r.verdict} | ${[...new Set(r.anomalies)].join(", ") || "—"} | ${r.title} |`,
   );
 
   // Recurring-anomaly rollup: a kind seen on 2+ PRs hints at a deterministic gap.

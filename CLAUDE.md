@@ -57,6 +57,7 @@ Key gates: PR-based human approval after Stage 1, validator wall after Stage 2, 
 ## Commands you'll run most
 
 ```bash
+npm run migrate -- --input <p> # Stage 2 LOCALLY (no CI/fork) — generate + full validator wall. --mock = zero-token wiring check. SPENDS TOKENS without --mock.
 npm run triage <pr#>           # ZERO-TOKEN: freeze a failing migrator PR + print triage digest
 npm run smoke                  # typecheck:all + validate:all + lint — run before any commit
 npm run calibrate              # run 100-fixture corpus (15 validators) locally

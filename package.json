@@ -22,6 +22,7 @@
     "metrics:export": "tsx scripts/metrics-export.ts",
     "dashboard": "tsx scripts/dashboard.ts",
     "cost:report": "tsx scripts/cost-report.ts",
+    "migrate": "tsx scripts/migrate-local.ts",
     "triage": "tsx scripts/capture-failure.ts",
     "test:triage": "tsx --test scripts/capture-failure.test.ts",
     "test:semantic": "tsx --test scripts/semantic-regression-check.test.ts",

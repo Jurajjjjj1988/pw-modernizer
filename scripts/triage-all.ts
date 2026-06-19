@@ -19,6 +19,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -68,13 +69,13 @@ function triageOne(pr: number): string | null {
 }
 
 /** Pull the `- verdict: **X**` value out of a digest. */
-function verdictOf(digest: string): string {
+export function verdictOf(digest: string): string {
   const m = /verdict:\s*\*\*([^*]+)\*\*/.exec(digest);
   return m?.[1]?.trim() ?? "?";
 }
 
 /** Pull `- [kind] ...` anomaly kinds out of a digest. */
-function anomaliesOf(digest: string): string[] {
+export function anomaliesOf(digest: string): string[] {
   const out: string[] = [];
   for (const line of digest.split("\n")) {
     const m = /^- \[([a-z-]+)\]/.exec(line.trim());
@@ -84,7 +85,7 @@ function anomaliesOf(digest: string): string[] {
 }
 
 /** Short title from the digest's first bullet. */
-function titleOf(digest: string): string {
+export function titleOf(digest: string): string {
   const m = /^- (\[Migration[^\n]+)/m.exec(digest);
   return m?.[1]?.trim() ?? "";
 }
@@ -144,4 +145,7 @@ function main(): void {
   process.stdout.write([...header, ...tableRows, ...rollup, "", `Full digests → ${indexPath}`].join("\n") + "\n");
 }
 
-main();
+// Only run the CLI when invoked directly — importing for tests must not call gh.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

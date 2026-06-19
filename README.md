@@ -43,7 +43,14 @@ PWmodernizer try-it — 5-minute first migration
 Full transcript in [`docs/assets/quickstart-demo.txt`](docs/assets/quickstart-demo.txt).
 
 Then run **Stage 2 locally** on your own test — no fork, no CI secrets:
-`npm run migrate -- --input inputs/<framework>/your-test.spec.ts` (add `--mock` for a free wiring check). See [`docs/quickstart.md`](docs/quickstart.md#run-stage-2-locally-instead-no-ci-no-fork).
+
+```bash
+npm run migrate -- --check                                  # preflight: Node/auth/plan doctor (free)
+npm run migrate -- --input inputs/<framework>/your-test.spec.ts   # generate (add --mock for a free wiring check)
+npm run migrate -- --input <path> --profile lean            # specs + page objects only (ADR 0002)
+```
+
+See [`docs/quickstart.md`](docs/quickstart.md#run-stage-2-locally-instead-no-ci-no-fork).
 
 </details>
 

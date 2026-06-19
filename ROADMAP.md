@@ -166,6 +166,7 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - Claude Code SDK rewrite of Stage 2 (currently uses raw CLI; SDK gives better tool routing) — recommended first post-v1.0 move
 - Auto-PR-merge after verify SHIP IT (currently requires manual click) — needs ≥ 10 manually-merged SHIP IT runs with no revert before enabling
 - GitHub App distribution (currently a workflow only) — needs v1.0 stability + cost model + compliance scope before MVP
+- **Execution-based mutation-kill-rate as a confidence signal** — today's scorer is static (selector quality + smell deltas + AST non-triviality); it never *runs* the migrated test against a mutated SUT to confirm the assertions actually catch regressions. A mutation-testing harness (seed a fault → confirm the migrated test fails) would turn confidence from "looks correct" into "provably catches bugs." Blocked on: a runnable SUT per migration + a mutation operator set. Referenced as "planned" in README's metrics section.
 
 ---
 

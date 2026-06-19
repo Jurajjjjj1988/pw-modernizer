@@ -31,6 +31,8 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, extname } from "node:path";
 
+import { FRAMEWORKS, type Framework } from "./lib/frameworks.js";
+
 export type Verdict = "SHIP IT" | "FIX FIRST" | "START OVER";
 
 /**
@@ -41,12 +43,7 @@ export type Verdict = "SHIP IT" | "FIX FIRST" | "START OVER";
  * `unknown` is the fallback bucket for legacy rows (DB existed before the
  * column was wired in) and for content that doesn't match any heuristic.
  */
-export type SourceFramework =
-  | "bad-playwright"
-  | "cypress"
-  | "selenium-java"
-  | "selenium-python"
-  | "unknown";
+export type SourceFramework = Framework | "unknown";
 
 /**
  * Claude usage stats for a single pipeline step. Captured from the CLI's
@@ -129,13 +126,7 @@ export function computeCostUsd(usage: UsageStats): number | null {
   );
 }
 
-const ALL_FRAMEWORKS: readonly SourceFramework[] = [
-  "bad-playwright",
-  "cypress",
-  "selenium-java",
-  "selenium-python",
-  "unknown",
-];
+const ALL_FRAMEWORKS: readonly SourceFramework[] = [...FRAMEWORKS, "unknown"];
 
 /**
  * Detect source framework from a file path + body. Used by dashboard /

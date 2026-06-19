@@ -73,7 +73,7 @@ const OUTPUTS_PLANS_DIR = join(REPO_ROOT, "outputs", "plans");
 const OUTPUTS_REPORTS_DIR = join(REPO_ROOT, "outputs", "reports");
 const EXAMPLES_DIR = join(REPO_ROOT, "examples");
 
-const KNOWN_FRAMEWORKS = ["bad-playwright", "cypress", "selenium-java", "selenium-python"] as const;
+import { FRAMEWORKS as KNOWN_FRAMEWORKS } from "./lib/frameworks.js";
 type Framework = (typeof KNOWN_FRAMEWORKS)[number] | "unknown";
 
 const KNOWN_VERDICTS = ["SHIP IT", "FIX FIRST", "START OVER", "unknown"] as const;

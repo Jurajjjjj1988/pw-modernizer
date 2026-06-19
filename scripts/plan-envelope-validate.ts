@@ -24,6 +24,8 @@ import { parseArgs } from "node:util";
 import { Project, SyntaxKind, type SourceFile, type Node } from "ts-morph";
 import Ajv2020, { type AnySchema, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
+import { type Framework } from "./lib/frameworks.js";
+
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const SCHEMA_PATH = join(REPO_ROOT, "scripts", "plan-envelope.schema.json");
 
@@ -31,7 +33,7 @@ interface Args { envelope: string; code?: string }
 interface Scenario { id: string; title: string; userAction: string; expectedAssertions: string[] }
 interface Envelope {
   inputBasename: string;
-  sourceFramework: "bad-playwright" | "selenium-java" | "selenium-python" | "cypress";
+  sourceFramework: Framework;
   subtractive: boolean;
   scenarios: Scenario[];
   requiredPOMs: string[];

@@ -53,7 +53,7 @@ const MAP_PASS_THRESHOLD = 0.6;
 const K1 = 1.5;
 const B = 0.75;
 
-const KNOWN_FRAMEWORKS = ["bad-playwright", "cypress", "selenium-java", "selenium-python"] as const;
+import { FRAMEWORKS as KNOWN_FRAMEWORKS } from "./lib/frameworks.js";
 type Framework = (typeof KNOWN_FRAMEWORKS)[number] | "unknown";
 
 const FRAMEWORK_BY_EXT: Record<string, Framework> = {

@@ -106,6 +106,23 @@ layered Playwright TypeScript output to `outputs/tests/` and
 The reviewer-facing PR description includes confidence scores, validator
 results, and links to the metrics report.
 
+### Run Stage 2 locally instead (no CI, no fork)
+
+You don't have to push and merge a plan PR to generate code. Once a plan
+exists (from `plan.yml` or `npm run try-it`), run Stage 2 on your own
+machine:
+
+```bash
+npm run migrate -- --input inputs/<framework>/your-bad-test.spec.ts
+npm run migrate -- --input <path> --mock   # wiring check, no Claude call (free)
+```
+
+This mirrors `migrate.yml` exactly — same prompt, inventory, model, and the
+full post-generate validator wall — so you evaluate the tool by cloning and
+running, without wiring GitHub Actions secrets. It needs `CLAUDE_CODE_OAUTH_TOKEN`
+or `ANTHROPIC_API_KEY` in your env (same as the real `try-it`), and prints a
+⚠ token-spend notice before the Claude call. CI remains the authoritative gate.
+
 ## 5. Where to go next
 
 - [`walkthrough.md`](walkthrough.md) — end-to-end narrative on a real

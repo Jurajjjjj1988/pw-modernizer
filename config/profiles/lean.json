@@ -1,0 +1,8 @@
+{
+  "name": "lean",
+  "description": "Specs + page objects only — no fixture barrel required (ADR 0002). For adopters whose 'clean Playwright' is simpler. Specs may import test/expect straight from @playwright/test.",
+  "specImportSource": "@playwright/test",
+  "allowPlaywrightTestInSpec": true,
+  "requiredLayers": ["tests", "page-object/pages"],
+  "validatorFlag": "--profile lean"
+}

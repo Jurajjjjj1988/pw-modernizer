@@ -1,6 +1,7 @@
 # ADR 0002 — Output profiles (a config escape hatch for the mandatory qa-master architecture)
 
-- **Status:** Proposed (design only — no implementation in this ADR)
+- **Status:** Phase 1 implemented (additive, opt-in) — Phase 2 (full layer relaxation + per-profile calibration fixtures) still open
+- **Phase 1 landed 2026-06-17:** `config/profiles/{qa-master,lean}.json`; `validate-qa-master-conformance.ts --profile lean` relaxes the spec import-source rule (Check 1) so lean specs may import `test`/`expect` from `@playwright/test`; `npm run migrate -- --profile lean` threads the flag to the conformance gate + injects a lean prompt note. Default `qa-master` is byte-identical (smoke green). Remaining (Phase 2, supervised, needs a real lean migration to verify): required-vs-allowed LAYER relaxation + per-profile good/bad calibration fixtures.
 - **Date:** 2026-06-17
 - **Author:** Juraj Kapusansky (`@Jurajjjjj1988`)
 - **Deciders:** Repo owner (single-maintainer project)

@@ -94,7 +94,17 @@ interface CliArgs {
   root: string;
   strict: boolean;
   inputBasename: string | null;
+  profile: "qa-master" | "lean";
 }
+
+/**
+ * Output profile (ADR 0002). Default `qa-master` is the full layered architecture
+ * and is byte-identical to the historical behaviour. `lean` relaxes the spec
+ * import-source rule (Check 1) so specs may import `test`/`expect` straight from
+ * `@playwright/test` — for adopters who want specs + page objects without the
+ * fixture barrel. ADDITIVE: nothing changes unless `--profile lean` is passed.
+ */
+let activeProfile: "qa-master" | "lean" = "qa-master";
 
 /**
  * Convert input basename → list of plausible emitted spec basenames.
@@ -127,6 +137,7 @@ function parseCliArgs(): CliArgs {
       root: { type: "string", default: "outputs" },
       strict: { type: "boolean", default: false },
       "input-basename": { type: "string" },
+      profile: { type: "string", default: "qa-master" },
     },
   });
   return {
@@ -135,6 +146,7 @@ function parseCliArgs(): CliArgs {
     inputBasename: typeof values["input-basename"] === "string" && values["input-basename"].length > 0
       ? values["input-basename"]
       : null,
+    profile: values.profile === "lean" ? "lean" : "qa-master",
   };
 }
 
@@ -217,6 +229,9 @@ function checkSpecImports(rootAbs: string, file: string): Violation[] {
       break;
     }
     // Spec-file rule: ANY non-type-only import from @playwright/test is blocked.
+    // Under the `lean` profile (ADR 0002), specs MAY import test/expect straight
+    // from @playwright/test — skip the spec restriction. Default qa-master unchanged.
+    if (activeProfile === "lean") break;
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
@@ -1004,6 +1019,7 @@ function checkUtilitiesCoverage(rootAbs: string): Violation[] {
 
 function main(): number {
   const args = parseCliArgs();
+  activeProfile = args.profile;
   const rootAbs = resolve(args.root);
   if (!existsSync(rootAbs)) {
     process.stderr.write(`::warning::root '${rootAbs}' does not exist — nothing to validate (treated as clean).\n`);

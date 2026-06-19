@@ -1,0 +1,8 @@
+{
+  "name": "qa-master",
+  "description": "Full layered architecture (default). Specs + page-objects + the base.fixture barrel + api/actions/utilities/test-data/types. This is the historical, byte-identical default.",
+  "specImportSource": "@fixtures/base.fixture",
+  "allowPlaywrightTestInSpec": false,
+  "requiredLayers": ["tests", "page-object/pages", "fixtures"],
+  "validatorFlag": ""
+}

@@ -10,12 +10,22 @@
  */
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { collectEmittedSources, countSmells } from "./evaluate.js";
+import {
+  checkAssertionFloor,
+  collectEmittedSources,
+  countAssertions,
+  countSmells,
+  findForbidden,
+} from "./evaluate.js";
+
+const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
+const EVALUATE = join(REPO_ROOT, "scripts", "evaluate.ts");
 
 test("countSmells: comments referencing the original smell are stripped, not counted", () => {
   const src = [
@@ -86,4 +96,140 @@ test("collectEmittedSources: scores the migration's POM (stem-matched), not just
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---- 2A: findForbidden flags non-functional placeholder code.
+
+test("findForbidden: flags a 'not implemented' throw that punts the assertion", () => {
+  const src = [
+    "test('[X-1] - submits the form', async ({ checkoutPage }) => {",
+    "  await checkoutPage.submit();",
+    "  throw new Error('not implemented');",
+    "});",
+  ].join("\n");
+  assert.ok(
+    findForbidden(src).some((f) => /placeholder/.test(f)),
+    "a non-functional 'not implemented' throw must be a forbidden pattern",
+  );
+});
+
+test("findForbidden: does NOT flag the word TODO inside a comment or string literal", () => {
+  const src = [
+    "// TODO: replaces the legacy waitForTimeout(7000) — see plan Q3",
+    "const note = 'parses the TODO column header';",
+    "await expect(page.getByText('FIXME label')).toBeVisible();",
+  ].join("\n");
+  assert.deepEqual(
+    findForbidden(src),
+    [],
+    "comment TODO is stripped (owned by validate-todo-discipline); TODO/FIXME as string data are not placeholders",
+  );
+});
+
+test("findForbidden: flags test.todo / it.fixme pending-test placeholders", () => {
+  assert.ok(findForbidden("test.todo('add edge case');").some((f) => /placeholder/.test(f)));
+  assert.ok(findForbidden("it.fixme('broken case', async () => {});").some((f) => /placeholder/.test(f)));
+});
+
+// ---- 1D: assertion floor.
+
+test("checkAssertionFloor: zero emitted assertions fails the floor", () => {
+  const r = checkAssertionFloor(0);
+  assert.equal(r.passed, false);
+  assert.equal(r.floor, 1);
+});
+
+test("checkAssertionFloor: at least one emitted assertion passes", () => {
+  assert.equal(checkAssertionFloor(1).passed, true);
+  assert.equal(checkAssertionFloor(7).passed, true);
+});
+
+test("countAssertions: counts POM assertions across the emitted tree, excludes comments", () => {
+  // The load-bearing reuse: an assertion living in a POM (not the spec) must
+  // count, and a commented-out `expect(` must not — else a no-op spec whose
+  // only 'assertion' is in a doc-comment would pass the floor.
+  const root = mkdtempSync(join(tmpdir(), "pwm-assert-"));
+  try {
+    const tests = join(root, "tests");
+    const pages = join(root, "helper", "page-object", "pages");
+    mkdirSync(tests, { recursive: true });
+    mkdirSync(pages, { recursive: true });
+    writeFileSync(join(tests, "checkout.spec.ts"),
+      "import { test } from '@fixtures/base.fixture';\n// expect( was here in the legacy test\ntest('x', async ({ p }) => { await p.assertOnPage(); });\n");
+    writeFileSync(join(pages, "checkout.page.ts"),
+      "export class C { async assertOnPage() { await expect(this.page).toHaveURL(/x/); } }\n");
+    const combined = collectEmittedSources(join(tests, "checkout.spec.ts"), join(root, "helper"));
+    assert.equal(countAssertions(combined), 1, "POM assertion counts; commented expect( does not");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("evaluate main(): a zero-assertion emitted tree is rejected with a non-zero exit", () => {
+  // Integration: prove the gate actually fires end-to-end (evaluate.ts is now a
+  // GATE, not just a scorer). Unique spec stem so no real outputs/helper file
+  // matches and the emitted tree is exactly the zero-assertion spec.
+  const root = mkdtempSync(join(tmpdir(), "pwm-gate-"));
+  try {
+    const input = join(root, "old.spec.ts");
+    const spec = join(root, "zero-assertion-fixture.spec.ts");
+    const plan = join(root, "plan.md");
+    const reportOut = join(root, "report.md");
+    writeFileSync(input, "test('old', async () => { await page.waitForTimeout(500); expect(x).toBe(1); });\n");
+    // Emitted spec asserts NOTHING — the silent no-op the gate must catch.
+    writeFileSync(spec, "import { test } from '@fixtures/base.fixture';\ntest('[X-1] - loads', async ({ p }) => { await p.open(); });\n");
+    writeFileSync(plan, "## Source framework\nbad-playwright\n\n| locator | confidence |\n|---|---|\n| getByRole | HIGH |\n");
+    const r = spawnSync("npx", ["tsx", EVALUATE,
+      "--input", input, "--output", spec, "--plan", plan, "--report-out", reportOut,
+    ], { cwd: REPO_ROOT, encoding: "utf8" });
+    assert.notEqual(r.status, 0, "zero-assertion emitted tree must exit non-zero");
+    assert.match(`${r.stderr ?? ""}`, /assert/i, "stderr must explain the assertion-floor rejection");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---- 2B: assertion roulette (low-recall v0 proxy: > 4 awaited expects in one body).
+
+test("countSmells: flags a test body with > 4 awaited expects as assertion roulette", () => {
+  const body = (n: number) => [
+    "test('[X-1] - roulette', async ({ page }) => {",
+    ...Array.from({ length: n }, (_, i) => `  await expect(page.getByTestId('f${i}')).toBeVisible();`),
+    "});",
+  ].join("\n");
+  assert.equal(countSmells(body(6)).assertionRoulette, 1, "6 awaited expects in one body is roulette");
+});
+
+test("countSmells: a coherent 4-assert form-save check is NOT flagged as roulette", () => {
+  // The deliberate false-positive guard — threshold is > 4 so the common
+  // 4-field check stays clean.
+  const src = [
+    "test('[X-2] - save profile', async ({ page }) => {",
+    "  await expect(page.getByLabel('First')).toHaveValue('Ann');",
+    "  await expect(page.getByLabel('Last')).toHaveValue('Lee');",
+    "  await expect(page.getByLabel('Email')).toHaveValue('a@b.c');",
+    "  await expect(page.getByRole('status')).toHaveText('Saved');",
+    "});",
+  ].join("\n");
+  assert.equal(countSmells(src).assertionRoulette, 0, "4 awaited expects is a coherent check, not roulette");
+});
+
+test("countSmells: documented v0 limitation — expects after a test.step boundary are under-counted", () => {
+  // The non-greedy test-body regex ends at the FIRST `\n})`, which here is the
+  // inner test.step's closer — so the 4 awaited expects that follow it (still in
+  // the real test body) fall outside the captured span and are not counted. Five
+  // real assertions read as one; the body is NOT flagged. Locked in as known v0
+  // behavior, not a silent surprise (the ts-morph v1 upgrade closes this).
+  const src = [
+    "test('[X-3] - stepped', async ({ page }) => {",
+    "  await test.step('open', async () => {",
+    "    await expect(page.getByTestId('f0')).toBeVisible();",
+    "  });",
+    "  await expect(page.getByTestId('f1')).toBeVisible();",
+    "  await expect(page.getByTestId('f2')).toBeVisible();",
+    "  await expect(page.getByTestId('f3')).toBeVisible();",
+    "  await expect(page.getByTestId('f4')).toBeVisible();",
+    "});",
+  ].join("\n");
+  assert.equal(countSmells(src).assertionRoulette, 0, "v0 regex under-counts across the test.step boundary (documented)");
 });

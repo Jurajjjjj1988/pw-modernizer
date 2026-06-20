@@ -198,6 +198,11 @@ export function scanReport(report: string | null): Anomaly[] {
     if (!m) continue;
     if (m[1] === "nonWebFirstAsserts") {
       out.push({ kind: "review-note", detail: `nonWebFirstAsserts ${m[2]} in output — confirm each is a prompt-sanctioned event/API value-assert, not a Locator probe` });
+    } else if (m[1] === "assertionRoulette") {
+      // Like nonWebFirstAsserts, a non-zero count is partly idiomatic — a
+      // coherent compound check can legitimately exceed the low-recall threshold
+      // — so it lowers confidence but must not hard-block. Review, don't reject.
+      out.push({ kind: "review-note", detail: `assertionRoulette ${m[2]} test body(ies) with > 4 awaited expects — confirm each is a coherent compound check, not unrelated assertions crammed into one test` });
     } else {
       out.push({ kind: "residual-smell", detail: `${m[1]} still ${m[2]} in output` });
     }

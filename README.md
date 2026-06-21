@@ -89,7 +89,7 @@ The pipeline is end-to-end PROVEN on random public GitHub tests. Status snapshot
 - **5/5 Stage 2 cross-language code outputs** (PR #13/#15/#16/#17/#18 — Java + Python → Playwright TS, all `confidence:high`, plan:scenario pins emitted, hallucination-defense WHY-comments materialised)
 - **CANDOR verify validated N=3** (PR #16 = 2/2 SHIP IT, PR #15/#17 = SHIP IT + FIX FIRST = reviewer required — real divergence, not synthetic agreement)
 - **DOM grounding** — Phase 7c live calibration 6/6 GREEN against `saucedemo.com` + `conduit.bondaracademy.com` + `practicetestautomation.com`; `DOM_GROUND_STRICT=true` set as repo var
-- **8 validators / 53 calibration fixtures** GREEN (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6 + danger-policy 6)
+- **15 validators / 100 calibration fixtures** GREEN (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 7 + verify-tally 6 + danger-policy 6 + cypress-conformance 8 + selenium-python-conformance 6 + selenium-java-conformance 6 + rag-bm25 8 + helper-usage 6 + todo-discipline 6 + report-metrics 6)
 - **9 real infra bugs found + fixed today** (Stage 0 `\b@Test\b` + `\bdef test_\b` regex, AST-diff cross-language path, plan-code-coverage path, evaluate path, peer-dep ERESOLVE, peter-evans 400 auth, regression-semantic checkbox parser, verify parser `Verdict: **SHIP IT**` format)
 - **Walkthrough** uses real bonigarcia migration (PR #6 → PR #13) as canonical example
 
@@ -220,9 +220,9 @@ If you cloned this to migrate your own tests, these are the five that matter —
 |---|---|---|
 | `npm run quickstart` | 10-check onboarding (Node, deps, types, KB, examples, fragments, envelope, derive-roundtrip, calibration) with hints | First time setup; debugging "why does CI fail?" |
 | `npm run rag:eval` | Gate retrieval quality locally — exits non-zero on a MAP@3 HOLD (mirrors the CI `rag-map3-gate`) | After editing the KB or the RAG corpus |
-| `npm run smoke` | Same as CI: typecheck:all + 8 validators + 53-fixture calibration + eslint. Silent on success | Pre-push, every commit |
-| `npm run validate:all` | 8 validators + 53 calibration fixtures | When touching scripts/ or examples/ |
-| `npm run check:kb` | KB ID uniqueness + references resolve (125 IDs, 55 refs as of 2026-06-04) | When editing knowledge-base.md or expected-plan.md |
+| `npm run smoke` | Same as CI: typecheck:all + 15 validators + 100-fixture calibration + eslint. Silent on success | Pre-push, every commit |
+| `npm run validate:all` | 15 validators + 100 calibration fixtures | When touching scripts/ or examples/ |
+| `npm run check:kb` | KB ID uniqueness + references resolve (130 IDs, 275 refs as of 2026-06-22) | When editing knowledge-base.md or expected-plan.md |
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve + `prompts/_assembled/` is in sync with source | When editing prompts/_fragments/ or prompts/*.md (stale detection catches forgotten `npm run assemble-prompts`) |
 | `npm run check:envelope` | Canonical envelope schema sanity | When editing scripts/plan-envelope.schema.json |
@@ -241,7 +241,7 @@ If you cloned this to migrate your own tests, these are the five that matter —
 | `npm run metrics:report` | Reads `outputs/.metrics.db` and prints cross-run trends (per-framework counts, KB-ID frequency, verdict distribution, confidence sparkline) | Inspecting pipeline trends after >=3 real runs |
 | `npm run metrics:export` | Exports the same data as JSON | CI artifact upload, future dashboard backend |
 | `npm run dashboard` | Starts a read-only web UI at http://localhost:8000 reading `outputs/.metrics.db` (5 charts including per-framework stacked verdict + multi-line confidence trend + "Migrator quality by framework" table) | Visual review of cross-run metrics |
-| `npm run calibrate` | Run 8 validators against 53 fixtures (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6 + danger-policy 6) | After validator code changes |
+| `npm run calibrate` | Run 15 validators against 100 fixtures (8 core + 7 conformance/helper/rag — see "Current state") | After validator code changes |
 | `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
 | `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
 | `npm run typecheck` | TS strict on outputs/tests/ | After editing playwright.config.ts or migrations |
@@ -299,7 +299,7 @@ PWmodernizer/
 │   └── regenerate-dispatch.yml   # /regenerate slash-command handler
 ├── config/
 │   ├── migration-rules.md        # Target style + structure contract (~4,300 words, 85 rules)
-│   ├── knowledge-base.md         # Anti-pattern catalog + API translation tables (125 KB IDs across 4 frameworks: pw 25, cy 50, sel-java 24, sel-py 26)
+│   ├── knowledge-base.md         # Anti-pattern catalog + API translation tables (130 KB IDs across 4 frameworks: pw 27, cy 50, sel-java 27, sel-py 26)
 │   └── kb-id-migration.md        # Old `KB-N.N.N` → new `<fw>/<topic>/<name>` alias table
 ├── prompts/
 │   ├── analyze.md                # Stage 1 system prompt
@@ -484,7 +484,7 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 - **Schema demotion under Tam et al. 2024:** the `Hallucination-defense pins` section was emergent in early runs; we considered making it mandatory, then demoted it back to ENCOURAGED after research showed forced structured-output sections degrade reasoning quality (JSON-mode dropped Claude 3 Haiku 86.5% → 23.4% on GSM8K).
 - **Token-based input gate (NVIDIA RULER):** Stage 0 uses character/4 token estimate capped at 25K (well below the ~50% degradation threshold of Claude's 1M context). 15 adversarial fixtures calibrate the gate.
 - **3-level verdict ladder (from QA-skills `22-reality-check.md`):** `SHIP IT` / `FIX FIRST` / `START OVER` — round-up rule, no soft middle. Lives in `prompts/_fragments/verdict-ladder.md`.
-- **Validator calibration (Sakasegawa 2026):** every validator promoted from `--warn` to `--strict` only after fixture-driven calibration. Current state: 8 validators, 53 fixtures, 100% calibrated. Premature gating produces false confidence.
+- **Validator calibration (Sakasegawa 2026):** every validator promoted from `--warn` to `--strict` only after fixture-driven calibration. Current state: 15 validators, 100 fixtures, 100% calibrated. Premature gating produces false confidence.
 - **Abandon-and-regenerate flow:** `/regenerate` slash command via `peter-evans/slash-command-dispatch` lets a reviewer close a bad plan PR and force fresh Stage 1 with comment body as feedback. Auto-fires on START OVER verdict, cap 3 attempts.
 - **tree-sitter AST diff for Java + Python** — real Zhang-Shasha tree-edit-distance with identifier normalization for Selenium `.java` and `.py` inputs. Replaces the LCS string-overlap fallback for non-TS inputs (commit `666332a`). Calibration 10/10.
 - **Plan-vs-code coverage check (LPW closure)** — `scripts/plan-code-coverage.ts` runs post-Stage-2: every `scenarios[].id` from the envelope must appear as exactly one `// plan:scenario=<id>` comment in the generated code; `requiredPOMs[]` and `requiredFixtures[]` files must exist; subtractive plans must only import `@playwright/test` + relative paths. arXiv 2411.14503 (LPW) contract enforced end-to-end.

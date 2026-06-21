@@ -26,7 +26,7 @@
  *
  * CLI:
  *   npx tsx scripts/rag-map3-evaluator.ts [--k <n>] [--min-queries <n>]
- *                                          [--json] [--quiet]
+ *                                          [--json] [--quiet] [--gate]
  *
  * --k            top-K used by retrieval (default 3, matches the exit
  *                criterion expression).
@@ -34,10 +34,21 @@
  *                DATA (default 5).
  * --json         emit machine-readable JSON instead of markdown.
  * --quiet        suppress the stderr summary line.
+ * --gate         exit non-zero on a HOLD verdict (MAP@3 below threshold), so
+ *                the script can gate locally (`npm run rag:eval`). Mirrors the
+ *                repo's PR gate in `.github/workflows/regression-test.yml`
+ *                (job `rag-map3-gate`): INSUFFICIENT-DATA is a warning, not a
+ *                failure, so a green-field/small corpus is not blocked.
+ *
+ * Env:
+ *   RAG_MAP3_EXAMPLES_DIR  override the corpus dir (tests point this at a
+ *                          synthetic corpus to exercise the gate).
  *
  * Exit codes:
- *   0 = report produced (signal only; this script is not a CI gate yet)
- *   1 = file-system error reading the corpus
+ *   0 = report produced (PASS, INSUFFICIENT-DATA, or any verdict without --gate)
+ *   1 = file-system error reading the corpus, OR --gate set and verdict is HOLD.
+ *       (The repo CI gate lives in regression-test.yml; this flag is the same
+ *       decision available locally — it does not replace the CI job.)
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -46,7 +57,9 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const EXAMPLES_DIR = join(REPO_ROOT, "examples");
+const EXAMPLES_DIR = process.env["RAG_MAP3_EXAMPLES_DIR"]
+  ? resolve(process.env["RAG_MAP3_EXAMPLES_DIR"])
+  : join(REPO_ROOT, "examples");
 const DEFAULT_K = 3;
 const DEFAULT_MIN_QUERIES = 5;
 const MAP_PASS_THRESHOLD = 0.6;
@@ -54,6 +67,7 @@ const K1 = 1.5;
 const B = 0.75;
 
 import { FRAMEWORKS as KNOWN_FRAMEWORKS } from "./lib/frameworks.js";
+import { fingerprintTokens } from "./retrieval-bm25.js";
 type Framework = (typeof KNOWN_FRAMEWORKS)[number] | "unknown";
 
 const FRAMEWORK_BY_EXT: Record<string, Framework> = {
@@ -69,6 +83,7 @@ interface CliArgs {
   minQueries: number;
   json: boolean;
   quiet: boolean;
+  gate: boolean;
 }
 
 interface CorpusDoc {
@@ -94,6 +109,7 @@ function parseCliArgs(): CliArgs {
       "min-queries": { type: "string" },
       json: { type: "boolean", default: false },
       quiet: { type: "boolean", default: false },
+      gate: { type: "boolean", default: false },
     },
   });
   let k = DEFAULT_K;
@@ -111,6 +127,7 @@ function parseCliArgs(): CliArgs {
     minQueries,
     json: values.json === true,
     quiet: values.quiet === true,
+    gate: values.gate === true,
   };
 }
 
@@ -241,14 +258,25 @@ function score(index: BM25Index, query: string[], docIdx: number): number {
   return total;
 }
 
-function buildQueryFromDoc(doc: CorpusDoc): string[] {
-  // Use the doc's own framework + KB-IDs + a slice of the input file as the
-  // query. Mirrors the production retrieval-bm25.ts query construction.
-  const tokens = new Set<string>([doc.framework, ...doc.kbIds]);
+export function buildQueryFromDoc(doc: CorpusDoc): string[] {
+  // Build the query the way PRODUCTION Stage 1 does — from the raw INPUT, never
+  // from the gold plan. Framework comes from gold metadata (kept on both the
+  // query and index sides so the framework arm of isRelevant stays consistent —
+  // the corpus's cypress inputs are named input.spec.ts, which a path heuristic
+  // would mis-map to bad-playwright). KB/anti-pattern tokens are EARNED by
+  // running production's fingerprint catalogue (retrieval-bm25.ts) over the
+  // input body, plus filename/body tokens.
+  //
+  // We deliberately do NOT add doc.kbIds: those are the gold plan's labels and
+  // isRelevant scores on shared KB-IDs, so feeding them back in is textbook
+  // train/test leakage — it inflated MAP@3 to a meaningless 0.931. Production
+  // has no plan at query time; it only has the input source.
+  const tokens = new Set<string>([doc.framework]);
   if (doc.inputPath !== null && existsSync(doc.inputPath)) {
     try {
       const body = readFileSync(doc.inputPath, "utf8");
       for (const t of tokenize(body.slice(0, 2000))) tokens.add(t);
+      for (const t of fingerprintTokens(body)) tokens.add(t.toLowerCase());
     } catch {
       // ignore
     }
@@ -386,6 +414,25 @@ function main(): void {
   }
   if (!args.quiet) {
     process.stderr.write(`rag-map3: queries=${perQuery.length} MAP@${args.k}=${map.toFixed(3)} verdict=${verdict}\n`);
+  }
+  // --gate: fail locally on a retrieval-quality regression, matching the repo's
+  // PR gate (regression-test.yml `rag-map3-gate`). HOLD is a hard failure;
+  // INSUFFICIENT-DATA is only a warning so a small/green-field corpus is never
+  // blocked. The report + summary are already emitted above, so the reviewer
+  // still sees the numbers before the non-zero exit.
+  if (args.gate) {
+    if (verdict === "HOLD") {
+      process.stderr.write(
+        `::error::rag-map3 GATE FAIL: verdict=HOLD (MAP@${args.k}=${map.toFixed(3)} < ${MAP_PASS_THRESHOLD.toFixed(2)}). `
+        + `Fix the change that lowered retrieval quality, or grow examples/.\n`,
+      );
+      process.exit(1);
+    }
+    if (verdict === "INSUFFICIENT-DATA") {
+      process.stderr.write(
+        `::warning::rag-map3 gate INSUFFICIENT-DATA — corpus too small (${perQuery.length} < ${args.minQueries} queries) for a verdict; not blocking.\n`,
+      );
+    }
   }
 }
 

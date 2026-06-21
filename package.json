@@ -66,6 +66,7 @@
     "rag:render": "tsx scripts/rag-context-render.ts",
     "rag:variance": "tsx scripts/rag-variance-report.ts",
     "rag:map3": "tsx scripts/rag-map3-evaluator.ts",
+    "rag:eval": "tsx scripts/rag-map3-evaluator.ts --gate --quiet",
     "pilot:dry-run": "tsx scripts/pilot-dry-run.ts"
   },
   "devDependencies": {

@@ -10,9 +10,12 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { countSmells } from "./evaluate.js";
+import { collectEmittedSources, countSmells } from "./evaluate.js";
 
 test("countSmells: comments referencing the original smell are stripped, not counted", () => {
   const src = [
@@ -57,4 +60,30 @@ test("countSmells: a clean web-first spec has zero hard waits / nth / forced cli
   assert.equal(c.hardWaits, 0);
   assert.equal(c.nthSelectors, 0);
   assert.equal(c.forcedClicks, 0);
+});
+
+test("collectEmittedSources: scores the migration's POM (stem-matched), not just the bare spec", () => {
+  // qa-master hides locators in POMs; a scorer reading only the spec is blind.
+  const root = mkdtempSync(join(tmpdir(), "pwm-emit-"));
+  try {
+    const tests = join(root, "tests");
+    const pages = join(root, "helper", "page-object", "pages");
+    mkdirSync(tests, { recursive: true });
+    mkdirSync(pages, { recursive: true });
+    // Spec imports test/expect from the fixture barrel (no locators in the spec).
+    writeFileSync(join(tests, "search-filters.spec.ts"),
+      "import { test, expect } from '@fixtures/base.fixture';\ntest('x', async ({ p }) => { await expect(p.results).toBeVisible(); });\n");
+    // The migration's own POM ships a fragile CSS-class locator.
+    writeFileSync(join(pages, "search-filters.page.ts"),
+      "export class SF { readonly results = this.page.locator('.product-card'); }\n");
+    // An UNRELATED migration's POM must NOT leak into this score.
+    writeFileSync(join(pages, "other.page.ts"),
+      "export class O { readonly x = this.page.locator('.unrelated'); }\n");
+
+    const combined = collectEmittedSources(join(tests, "search-filters.spec.ts"), join(root, "helper"));
+    assert.ok(combined.includes(".product-card"), "must include the migration's own POM");
+    assert.ok(!combined.includes(".unrelated"), "must NOT include an unrelated migration's POM");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

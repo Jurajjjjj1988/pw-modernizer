@@ -23,8 +23,8 @@
  *     --report-out outputs/reports/foo.spec.ts.md
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -414,6 +414,45 @@ ${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\
 `;
 }
 
+// ---- Emitted-tree collection.
+//
+// The qa-master architecture moves every locator, count, and conditional OUT of
+// the spec and into POM/block/fixture/api files under outputs/helper/. A scorer
+// that reads only the spec therefore sees an empty file and reports "100%
+// canonical / no forbidden patterns" even when a POM ships `.locator('.css')` or
+// a flake-prone optional click — over-scoring confidence past the 0.7 verify
+// gate. So the OUTPUT-quality signals must read the spec PLUS the helper files
+// this migration actually imports. We follow imports (transitively) and resolve
+// each trailing path segment to a file under outputs/helper/ — precise, so we
+// score THIS migration's helpers, not every accumulated migration's.
+export function collectEmittedSources(specPath: string, helperRootOverride?: string): string {
+  const specSrc = readFileSync(specPath, "utf8");
+  const helperRoot = helperRootOverride
+    ?? join(resolve(new URL("..", import.meta.url).pathname), "outputs", "helper");
+  if (!existsSync(helperRoot)) return specSrc;
+  // Scope to THIS migration's own helpers — files named `<spec-stem>.<layer>.ts`
+  // (search-filters.page.ts, search-filters.block.ts, …). qa-master names the
+  // POM/block after the feature, so stem-matching scores the migration's own
+  // contribution without pulling in every accumulated migration's POM through
+  // the shared base.fixture barrel.
+  const specStem = basename(specPath).replace(/\.spec\.ts$/i, "");
+  const parts = [specSrc];
+  const stack = [helperRoot];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) break;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "_legacy-v0.1.x") stack.push(full);
+      } else if (entry.name.endsWith(".ts") && entry.name.startsWith(`${specStem}.`)) {
+        parts.push(readFileSync(full, "utf8"));
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
 // ---- Main.
 function main(): void {
   const args = parseCliArgs();
@@ -435,13 +474,17 @@ function main(): void {
   const inputSrc = readFileSync(args.input, "utf8");
   const outputSrc = readFileSync(args.output, "utf8");
   const planMd = readFileSync(args.plan, "utf8");
+  // OUTPUT-quality signals score the WHOLE emitted tree (spec + the POM/block/
+  // helper files it imports), not the bare spec — qa-master hides locators,
+  // smells, and forbidden patterns in helpers. LOC/AST-diff stay spec-scoped.
+  const emittedSrc = collectEmittedSources(args.output);
 
   const sourceSmells = countSmells(inputSrc);
-  const outputSmells = countSmells(outputSrc);
-  const selector = selectorMix(outputSrc);
+  const outputSmells = countSmells(emittedSrc);
+  const selector = selectorMix(emittedSrc);
   const selectorQuality = selectorQualityScore(selector);
-  const webFirstRate = webFirstAssertionRate(outputSrc);
-  const forbidden = findForbidden(outputSrc);
+  const webFirstRate = webFirstAssertionRate(emittedSrc);
+  const forbidden = findForbidden(emittedSrc);
   const trivial = isAstDiffTrivial(inputSrc, outputSrc);
   const confidence = planConfidence(planMd);
   const inputLoc = inputSrc.split("\n").length;

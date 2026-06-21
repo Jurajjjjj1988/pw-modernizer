@@ -36,6 +36,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -139,7 +140,7 @@ function frameworkFromPath(path: string): string {
   return "unknown";
 }
 
-function fingerprintTokens(body: string): string[] {
+export function fingerprintTokens(body: string): string[] {
   const out = new Set<string>();
   for (const { regex, tokens } of FINGERPRINT_PATTERNS) {
     if (regex.test(body)) {
@@ -316,4 +317,8 @@ function main(): void {
   }
 }
 
-main();
+// Only run retrieval when invoked directly — importing for the MAP@3 evaluator
+// or tests (which reuse fingerprintTokens) must not execute a query / exit.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}

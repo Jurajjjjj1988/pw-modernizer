@@ -16,7 +16,8 @@
  * Usage:
  *   npm run migrate -- --input inputs/bad-playwright/foo.spec.ts
  *   npm run migrate -- --input <path> --plan outputs/plans/foo.spec.ts.md
- *   npm run migrate -- --input <path> --mock   # wiring check, no Claude call
+ *   npm run migrate -- --input <path> --mock   # wiring check + cost preview, no Claude call
+ *   npm run migrate -- --inputs 'inputs/bad-playwright/*.spec.ts'  # batch; --mock = free preview
  *   npm run migrate -- --help
  *
  * Auth (one of, same as try-it):
@@ -28,18 +29,20 @@
  */
 
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { computeCostUsd } from "./metrics.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-interface Args { input: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean" }
+export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean" }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -49,6 +52,7 @@ function parseCliArgs(): Args {
   const { values } = parseArgs({
     options: {
       input: { type: "string" },
+      inputs: { type: "string" },
       plan: { type: "string" },
       mock: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
@@ -58,6 +62,7 @@ function parseCliArgs(): Args {
   });
   return {
     input: values.input ?? "",
+    inputs: values.inputs ?? "",
     plan: values.plan ?? "",
     mock: values.mock === true,
     help: values.help === true,
@@ -73,7 +78,9 @@ function printHelp(): void {
     "Usage:",
     "  npm run migrate -- --input <path>            generate (needs auth + an approved plan)",
     "  npm run migrate -- --input <path> --plan <p> explicit plan path",
-    "  npm run migrate -- --input <path> --mock     wiring check, no Claude call",
+    "  npm run migrate -- --input <path> --mock     wiring check + cost preview, no Claude call",
+    "  npm run migrate -- --inputs '<glob>'         batch over many inputs (sequential)",
+    "  npm run migrate -- --inputs '<glob>' --mock  free batch wiring + cost preview",
     "  npm run migrate -- --check                   preflight: Node/auth/plan setup doctor",
     "  npm run migrate -- --input <p> --profile lean  emit specs + page objects only (ADR 0002; default qa-master)",
     "  npm run migrate -- --help",
@@ -153,28 +160,38 @@ function prepareContext(): void {
   process.stdout.write("ok\n");
 }
 
-/** Derive the plan envelope (Stage 1 -> Stage 2 contract), only when absent — mirrors migrate.yml's `if [ ! -f "$ENV" ]` safety net so a committed Stage-1 envelope is trusted, not clobbered. */
-function deriveEnvelope(p: Paths): void {
+/** Derive the plan envelope (Stage 1 -> Stage 2 contract), only when absent — mirrors migrate.yml's `if [ ! -f "$ENV" ]` safety net so a committed Stage-1 envelope is trusted, not clobbered. Returns false on failure (the batch loop continues to the next input; the single-input path turns it into a non-zero exit). */
+function deriveEnvelope(p: Paths): boolean {
   process.stdout.write("  [step] derive plan envelope ... ");
   if (existsSync(p.envelope)) {
     process.stdout.write("ok (present — trusting committed Stage-1 envelope)\n");
-    return;
+    return true;
   }
   const r = spawnSync("npx", [
     "tsx", "scripts/derive-envelope.ts", "--plan", p.plan, "--out", p.envelope,
   ], { cwd: REPO_ROOT, encoding: "utf8" });
-  if (r.status !== 0) fail(`derive-envelope failed:\n${r.stderr ?? r.stdout ?? ""}`);
+  if (r.status !== 0) {
+    process.stdout.write("FAIL\n");
+    process.stderr.write(`  derive-envelope failed:\n${r.stderr ?? r.stdout ?? ""}\n`);
+    return false;
+  }
   process.stdout.write("ok\n");
+  return true;
 }
 
-/** Schema-validate the envelope before spending tokens — mirrors migrate.yml's fail-fast FIRST gate. */
-function validateEnvelopeSchema(p: Paths): void {
+/** Schema-validate the envelope before spending tokens — mirrors migrate.yml's fail-fast FIRST gate. Returns false on failure. */
+function validateEnvelopeSchema(p: Paths): boolean {
   process.stdout.write("  [step] validate envelope schema ... ");
   const r = spawnSync("npx", [
     "tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope,
   ], { cwd: REPO_ROOT, encoding: "utf8" });
-  if (r.status !== 0) fail(`envelope schema invalid:\n${r.stderr ?? r.stdout ?? ""}`);
+  if (r.status !== 0) {
+    process.stdout.write("FAIL\n");
+    process.stderr.write(`  envelope schema invalid:\n${r.stderr ?? r.stdout ?? ""}\n`);
+    return false;
+  }
   process.stdout.write("ok\n");
+  return true;
 }
 
 /** The Stage-2 wrapper prompt — points Claude at the assembled spec + context, mirroring migrate.yml. */
@@ -298,6 +315,148 @@ export function expectedSpecBasenames(inputBasename: string): string[] {
   return [...out];
 }
 
+// ---- Cost preview (2E) -----------------------------------------------------
+
+/** Repo-standard chars→tokens heuristic (~4 chars/token; see claude-cached-call.ts). */
+export function estimateTokensFromChars(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+/** Estimate the Stage-2 INPUT cost of a real run from the assembled-prompt size.
+ * Reuses metrics.ts computeCostUsd (output_tokens 0) so the price is sourced once.
+ * This is a FLOOR: it excludes output tokens and the agentic multi-turn loop. */
+export function estimateInputCostUsd(totalChars: number): { tokens: number; usd: number } {
+  const tokens = estimateTokensFromChars(totalChars);
+  const usd = computeCostUsd({ model: "claude-sonnet-4-6", input_tokens: tokens, output_tokens: 0 }) ?? 0;
+  return { tokens, usd };
+}
+
+/** Sum the char length of every file the real Stage-2 prompt loads, plus the
+ * wrapper. Missing files contribute 0 (a preview must never throw). */
+function assembledPromptChars(p: Paths, wrapperPrompt: string): number {
+  const readChars = (path: string): number => {
+    try {
+      return existsSync(path) ? readFileSync(path, "utf8").length : 0;
+    } catch {
+      return 0;
+    }
+  };
+  let total = wrapperPrompt.length;
+  for (const f of [
+    ASSEMBLED_GENERATE,
+    join(REPO_ROOT, "config/migration-rules.md"),
+    join(REPO_ROOT, "config/knowledge-base.md"),
+    INVENTORY_PATH,
+    p.plan,
+    p.input,
+  ]) {
+    total += readChars(f);
+  }
+  // The qa-master reference dir is loaded as the style anchor — walk it.
+  const refDir = join(REPO_ROOT, "examples/reference/qa-master");
+  const stack = existsSync(refDir) ? [refDir] : [];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) break;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else total += readChars(full);
+    }
+  }
+  return total;
+}
+
+/** Print the zero-token mock preview: wiring + an input-cost floor estimate. */
+function printMockPreview(p: Paths, args: Args): void {
+  process.stdout.write("\n  [mock] wiring OK. Would invoke:\n");
+  process.stdout.write("    npx @anthropic-ai/claude-code --model claude-sonnet-4-6 --max-turns 50 \\\n");
+  process.stdout.write("      --print --permission-mode acceptEdits \"<stage-2 prompt>\"\n");
+  const { tokens, usd } = estimateInputCostUsd(assembledPromptChars(p, buildPrompt(p, args.profile)));
+  process.stdout.write("\n  [mock] cost preview (Stage 2, claude-sonnet-4-6 input):\n");
+  process.stdout.write(`    ~${tokens.toLocaleString()} input tokens, ~$${usd.toFixed(2)} at Sonnet rates (estimate)\n`);
+  process.stdout.write("    (input only; excludes output tokens + agentic turns — treat as a floor)\n");
+  process.stdout.write("\n  Re-run without --mock (and with auth set) to generate.\n\n");
+}
+
+// ---- Batch input expansion (3A) --------------------------------------------
+
+/** Translate a glob tail to an anchored RegExp. `**` spans directory
+ * boundaries (`.*`); a single `*` does not (`[^/]*`); `?` is one non-slash char. */
+function globTailToRegExp(tail: string): RegExp {
+  let re = "";
+  for (let j = 0; j < tail.length; j += 1) {
+    const c = tail[j] ?? "";
+    if (c === "*") {
+      if (tail[j + 1] === "*") {
+        re += ".*";
+        j += 1;
+        if (tail[j + 1] === "/") j += 1; // consume the slash in `**/`
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c === "?") {
+      re += "[^/]";
+    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+      re += `\\${c}`;
+    } else {
+      re += c; // literal, including `/`
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** Split a normalised glob into its literal leading dir segments and the
+ * remaining pattern segments (everything from the first magic char on). */
+function splitGlobBase(norm: string): { baseSegs: string[]; patternSegs: string[] } {
+  const segs = norm.split("/");
+  const baseSegs: string[] = [];
+  let i = 0;
+  for (; i < segs.length; i += 1) {
+    if (/[*?[\]]/.test(segs[i] ?? "")) break;
+    baseSegs.push(segs[i] ?? "");
+  }
+  return { baseSegs, patternSegs: segs.slice(i) };
+}
+
+/** Every file under a dir (recursive), skipping the `_legacy-v0.1.x` archive. */
+function walkFiles(baseDir: string): string[] {
+  const files: string[] = [];
+  const stack = [baseDir];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) break;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "_legacy-v0.1.x") stack.push(full);
+      } else {
+        files.push(full);
+      }
+    }
+  }
+  return files;
+}
+
+/** Expand an input glob to a sorted, de-duplicated list of absolute file paths.
+ * Splits a literal base dir off the front, then walks it and regex-matches each
+ * file's base-relative POSIX path. No new dependency, no symlink following. */
+export function expandInputs(glob: string, repoRoot: string = REPO_ROOT): string[] {
+  const norm = glob.replaceAll("\\", "/");
+  const { baseSegs, patternSegs } = splitGlobBase(norm);
+  // No magic char anywhere → treat the glob as a single literal file path.
+  if (patternSegs.length === 0) {
+    const full = resolve(repoRoot, norm);
+    return existsSync(full) && statSync(full).isFile() ? [full] : [];
+  }
+  const baseDir = baseSegs.length > 0 ? resolve(repoRoot, baseSegs.join("/")) : repoRoot;
+  if (!existsSync(baseDir)) return [];
+  const re = globTailToRegExp(patternSegs.join("/"));
+  const matches = walkFiles(baseDir)
+    .filter((full) => re.test(full.slice(baseDir.length + 1).replaceAll("\\", "/")));
+  return [...new Set(matches)].sort((a, b) => a.localeCompare(b));
+}
+
 /** Locate THIS run's generated spec — prefer the spec whose basename matches the input, else the lexically-first (≡ migrate.yml `find … | head -1`). Scoping to the run's basename stops accumulated prior specs from being evaluated by mistake. */
 function findGeneratedSpec(base: string): string | null {
   const specs = listOutputSpecs();
@@ -320,19 +479,18 @@ function runEvaluate(p: Paths, spec: string): string | null {
   return out.length > 0 ? out[out.length - 1] ?? null : null;
 }
 
-function main(): number {
-  const args = parseCliArgs();
-  if (args.help) { printHelp(); return 0; }
-  if (args.check) return preflight(args);
-  // Lean: also relax the eslint step (it reads PWM_PROFILE; child processes
-  // inherit process.env). The conformance gate gets --profile lean explicitly.
-  if (args.profile === "lean") process.env["PWM_PROFILE"] = "lean";
-  if (!args.input) { printHelp(); fail("--input <path> is required."); }
-
+/** Run the full Stage-2 pipeline for ONE input. Returns a code instead of
+ * exiting on a per-input error so the batch loop can continue to the next file.
+ * prepareContext() is run-global and is the CALLER's responsibility (once). */
+function runOne(args: Args): { base: string; code: number } {
   const p = derivePaths(args);
-  if (!existsSync(p.input)) fail(`input not found: ${p.input}`);
+  if (!existsSync(p.input)) {
+    process.stderr.write(`  ✗ input not found: ${p.input}\n`);
+    return { base: basename(p.input), code: 1 };
+  }
   if (!existsSync(p.plan)) {
-    fail(`no approved plan at ${p.plan}\n  Run Stage 1 first (plan.yml, or \`npm run try-it\` for the demo).`);
+    process.stderr.write(`  ✗ ${p.base}: no approved plan at ${p.plan}\n    Run Stage 1 first (plan.yml, or \`npm run try-it\` for the demo).\n`);
+    return { base: p.base, code: 1 };
   }
   for (const d of [OUT_DIR, dirname(p.report)]) mkdirSync(d, { recursive: true });
 
@@ -340,27 +498,54 @@ function main(): number {
   // In --mock, derive the envelope to a throwaway temp path so a wiring check
   // never mutates a committed outputs/plans/<base>.envelope.json.
   if (args.mock) p.envelope = join(tmpdir(), `pwm-mock-${p.base}.envelope.json`);
-  prepareContext();
-  deriveEnvelope(p);
-  validateEnvelopeSchema(p);
+  if (!deriveEnvelope(p)) return { base: p.base, code: 1 };
+  if (!validateEnvelopeSchema(p)) return { base: p.base, code: 1 };
 
   if (args.mock) {
-    process.stdout.write("\n  [mock] wiring OK. Would invoke:\n");
-    process.stdout.write("    npx @anthropic-ai/claude-code --model claude-sonnet-4-6 --max-turns 50 \\\n");
-    process.stdout.write("      --print --permission-mode acceptEdits \"<stage-2 prompt>\"\n");
-    process.stdout.write(`\n  Re-run without --mock (and with auth set) to generate.\n\n`);
-    return 0;
+    printMockPreview(p, args);
+    return { base: p.base, code: 0 };
   }
 
   const auth = detectAuth();
   if (auth.kind === "none") {
+    // A global setup error (no auth for ANY input) — hard-stop the whole run.
     fail("no Claude auth. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (see --help). Or --mock to check wiring.");
   }
   runClaude(auth, buildPrompt(p, args.profile));
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
   const results = runWall(validatorWall(p, args.profile));
-  return reportOutcome(p, results);
+  return { base: p.base, code: reportOutcome(p, results) };
+}
+
+/** Run the pipeline over every input matched by --inputs, sequentially (safest
+ * for token spend + clean interleaved logs). Exits non-zero if any input fails. */
+function runBatch(args: Args): number {
+  const files = expandInputs(args.inputs);
+  if (files.length === 0) fail(`--inputs matched 0 files: ${args.inputs}`);
+  process.stdout.write(`\n  migrate batch — ${files.length} input(s) for '${args.inputs}'${args.mock ? " (mock preview)" : ""}\n`);
+  prepareContext(); // run-global: assemble + inventory once, not per input.
+  const results = files.map((f) => runOne({ ...args, input: f, inputs: "" }));
+  const failed = results.filter((r) => r.code !== 0);
+  process.stdout.write(`\n  Batch summary: ${results.length - failed.length}/${results.length} succeeded${failed.length > 0 ? `, ${failed.length} failed` : ""}\n`);
+  for (const r of results) process.stdout.write(`    ${r.code === 0 ? "✓" : "✗"} ${r.base}\n`);
+  process.stdout.write("\n");
+  return failed.length === 0 ? 0 : 1;
+}
+
+function main(): number {
+  const args = parseCliArgs();
+  if (args.help) { printHelp(); return 0; }
+  if (args.check) return preflight(args);
+  // Lean: also relax the eslint step (it reads PWM_PROFILE; child processes
+  // inherit process.env). The conformance gate gets --profile lean explicitly.
+  if (args.profile === "lean") process.env["PWM_PROFILE"] = "lean";
+  if (args.input && args.inputs) fail("use --input OR --inputs, not both.");
+  if (args.inputs) return runBatch(args);
+  if (!args.input) { printHelp(); fail("--input <path> or --inputs <glob> is required."); }
+
+  prepareContext();
+  return runOne(args).code;
 }
 
 /** Print the wall results + confidence score; return the process exit code. */

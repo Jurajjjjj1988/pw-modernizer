@@ -324,6 +324,9 @@ function main(): number {
   const args = parseCliArgs();
   if (args.help) { printHelp(); return 0; }
   if (args.check) return preflight(args);
+  // Lean: also relax the eslint step (it reads PWM_PROFILE; child processes
+  // inherit process.env). The conformance gate gets --profile lean explicitly.
+  if (args.profile === "lean") process.env["PWM_PROFILE"] = "lean";
   if (!args.input) { printHelp(); fail("--input <path> is required."); }
 
   const p = derivePaths(args);

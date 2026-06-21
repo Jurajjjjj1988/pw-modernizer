@@ -9,12 +9,14 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  assembledPromptPath,
+  buildPrompt,
   derivePaths,
   estimateInputCostUsd,
   estimateTokensFromChars,
@@ -23,6 +25,7 @@ import {
   type Args,
 } from "./migrate-local.js";
 
+const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const baseArgs: Args = { input: "", inputs: "", plan: "", mock: false, help: false, check: false, profile: "qa-master" };
 
 test("derivePaths: BASE/plan/envelope/report mirror migrate.yml (BASE = basename(input))", () => {
@@ -105,5 +108,44 @@ test("expandInputs: single `*` stays within one dir; `**` spans directories", ()
 test("expandInputs: real bad-playwright specs resolve and sort", () => {
   const found = expandInputs("inputs/bad-playwright/*.spec.ts").map((p) => p.split("/").pop());
   assert.ok(found.includes("force-clicks.spec.ts"), found.join(","));
-  assert.deepEqual([...found].sort(), found, "results must be lexically sorted");
+  assert.deepEqual([...found].sort((a, b) => (a ?? "").localeCompare(b ?? "")), found, "results must be lexically sorted");
+});
+
+// ---- 3B: profile-aware Stage-2 wrapper prompt + assembled selection.
+
+const demoPaths = derivePaths({ ...baseArgs, input: "inputs/cypress/demo.cy.js" });
+
+test("buildPrompt qa-master: keeps the qa-master triad/STOP block + style anchor (unchanged)", () => {
+  const prompt = buildPrompt(demoPaths, "qa-master");
+  assert.match(prompt, /generate\.md/);
+  assert.match(prompt, /FULL qa-master triad/);
+  assert.match(prompt, /HARD-REJECTED/);
+  assert.match(prompt, /examples\/reference\/qa-master\/ — style anchor/);
+});
+
+test("buildPrompt lean: points at generate.lean.md, relaxes the contract, drops the STOP block", () => {
+  const prompt = buildPrompt(demoPaths, "lean");
+  assert.match(prompt, /generate\.lean\.md/);
+  assert.match(prompt, /MAY import test\/expect from @playwright\/test/);
+  assert.ok(!/FULL qa-master triad/.test(prompt), "lean must NOT carry the qa-master STOP block");
+  assert.ok(!/HARD-REJECTED/.test(prompt), "lean must NOT threaten the @playwright/test hard-reject");
+  assert.ok(!/style anchor/.test(prompt), "lean does not load the qa-master style anchor");
+});
+
+test("assembledPromptPath: lean resolves generate.lean.md, qa-master resolves generate.md", () => {
+  assert.ok(assembledPromptPath("lean").endsWith("prompts/_assembled/generate.lean.md"));
+  assert.ok(assembledPromptPath("qa-master").endsWith("prompts/_assembled/generate.md"));
+});
+
+test("assembled generate.lean.md: keeps quality fragments, drops qa-master layering directives (catches a copy-from-qa-master regression)", () => {
+  const lean = readFileSync(join(REPO_ROOT, "prompts/_assembled/generate.lean.md"), "utf8");
+  // Quality fragments survived the composition (the bar on the CODE is unchanged).
+  assert.match(lean, /force: true/, "forbidden-patterns fragment body present");
+  assert.match(lean, /getByRole/, "locator-priority fragment body present");
+  assert.match(lean, /LEAN profile|lean profile|spec \+ page object/i, "states the lean contract");
+  // qa-master-only DIRECTIVES must NOT leak in — if someone regenerates this from
+  // a copy of generate.md these positive-directive sentinels reappear and fail.
+  assert.ok(!lean.includes("qa-master multi-file layout"), "no qa-master files-to-produce heading");
+  assert.ok(!lean.includes("Always produce"), "no qa-master 'Always produce' layer directive");
+  assert.ok(!lean.includes("Imports policy — STRICT"), "no qa-master strict two-scope import policy");
 });

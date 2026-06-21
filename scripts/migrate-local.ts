@@ -194,20 +194,48 @@ function validateEnvelopeSchema(p: Paths): boolean {
   return true;
 }
 
-/** The Stage-2 wrapper prompt — points Claude at the assembled spec + context, mirroring migrate.yml. */
-function buildPrompt(p: Paths, profile: Args["profile"]): string {
-  const leanNote = profile === "lean"
-    ? "\nPROFILE: lean (ADR 0002). Emit specs + page objects only; the fixture barrel is NOT required and specs MAY import `test`/`expect` straight from `@playwright/test`. Keep page objects for locators.\n"
-    : "";
+/** The assembled system prompt for the active profile — lean reads
+ * generate.lean.md (spec + page object only); qa-master reads generate.md. */
+export function assembledPromptPath(profile: Args["profile"]): string {
+  if (profile === "lean") {
+    const lean = join(REPO_ROOT, "prompts/_assembled/generate.lean.md");
+    if (existsSync(lean)) return lean;
+  }
+  return ASSEMBLED_GENERATE;
+}
+
+/** The Stage-2 wrapper prompt — points Claude at the assembled spec + context,
+ * mirroring migrate.yml. Profile-aware: lean drops the qa-master triad/STOP
+ * block + style anchor and states the relaxed contract; qa-master is unchanged. */
+export function buildPrompt(p: Paths, profile: Args["profile"]): string {
+  const assembledRel = profile === "lean"
+    ? "prompts/_assembled/generate.lean.md"
+    : "prompts/_assembled/generate.md";
+  const lead = profile === "lean"
+    ? [
+      "You are running Stage 2 of the PWmodernizer pipeline (local migrate run, LEAN profile).",
+      `Read ${assembledRel} — that is your full system prompt. Follow it exactly.`,
+      "Emit a spec (it MAY import test/expect from @playwright/test and MAY call page.goto)",
+      "plus a page object per page in the plan. Do NOT produce the fixture barrel or the",
+      "api/actions/utilities/test-data/types layers — lean is spec + page object only.",
+    ]
+    : [
+      "You are running Stage 2 of the PWmodernizer pipeline (local migrate run).",
+      `Read ${assembledRel} — that is your full system prompt. Follow it`,
+      "exactly, including the STOP block: write the FULL qa-master triad (spec under",
+      "outputs/tests/<kebab>.spec.ts importing test/expect from @fixtures/base.fixture,",
+      "the PageClass under outputs/helper/page-object/pages/, and the extended",
+      "base.fixture) plus any helper layers the plan declares. A spec that imports from",
+      "@playwright/test or uses raw `page`/`page.goto` is HARD-REJECTED by the validator.",
+    ];
+  const context = [
+    `1. ${assembledRel} — task spec (READ FIRST)`,
+    "2. config/migration-rules.md + config/knowledge-base.md — rules + KB IDs",
+  ];
+  if (profile !== "lean") context.push("3. examples/reference/qa-master/ — style anchor");
+  context.push(`${context.length + 1}. ${p.plan} and ${p.input}`);
   return [
-    "You are running Stage 2 of the PWmodernizer pipeline (local migrate run).",
-    leanNote,
-    "Read prompts/_assembled/generate.md — that is your full system prompt. Follow it",
-    "exactly, including the STOP block: write the FULL qa-master triad (spec under",
-    "outputs/tests/<kebab>.spec.ts importing test/expect from @fixtures/base.fixture,",
-    "the PageClass under outputs/helper/page-object/pages/, and the extended",
-    "base.fixture) plus any helper layers the plan declares. A spec that imports from",
-    "@playwright/test or uses raw `page`/`page.goto` is HARD-REJECTED by the validator.",
+    ...lead,
     "",
     "## Inputs for this run",
     `- Approved plan (execute it; do not re-plan): ${p.plan}`,
@@ -216,10 +244,7 @@ function buildPrompt(p: Paths, profile: Args["profile"]): string {
     `- Reuse inventory (prefer existing helpers over new): ${INVENTORY_PATH}`,
     "",
     "## Context to load (in this order)",
-    "1. prompts/_assembled/generate.md — task spec (READ FIRST)",
-    "2. config/migration-rules.md + config/knowledge-base.md — rules + KB IDs",
-    "3. examples/reference/qa-master/ — style anchor",
-    `4. ${p.plan} and ${p.input}`,
+    ...context,
     "",
     `Write a migration report to ${p.report} per the report schema.`,
   ].join("\n");
@@ -333,7 +358,7 @@ export function estimateInputCostUsd(totalChars: number): { tokens: number; usd:
 
 /** Sum the char length of every file the real Stage-2 prompt loads, plus the
  * wrapper. Missing files contribute 0 (a preview must never throw). */
-function assembledPromptChars(p: Paths, wrapperPrompt: string): number {
+function assembledPromptChars(p: Paths, wrapperPrompt: string, profile: Args["profile"]): number {
   const readChars = (path: string): number => {
     try {
       return existsSync(path) ? readFileSync(path, "utf8").length : 0;
@@ -343,7 +368,7 @@ function assembledPromptChars(p: Paths, wrapperPrompt: string): number {
   };
   let total = wrapperPrompt.length;
   for (const f of [
-    ASSEMBLED_GENERATE,
+    assembledPromptPath(profile),
     join(REPO_ROOT, "config/migration-rules.md"),
     join(REPO_ROOT, "config/knowledge-base.md"),
     INVENTORY_PATH,
@@ -352,16 +377,12 @@ function assembledPromptChars(p: Paths, wrapperPrompt: string): number {
   ]) {
     total += readChars(f);
   }
-  // The qa-master reference dir is loaded as the style anchor — walk it.
-  const refDir = join(REPO_ROOT, "examples/reference/qa-master");
-  const stack = existsSync(refDir) ? [refDir] : [];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    if (dir === undefined) break;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) stack.push(full);
-      else total += readChars(full);
+  // The qa-master reference dir is the style anchor — loaded only for qa-master;
+  // lean does not read it (matching buildPrompt's context list).
+  if (profile !== "lean") {
+    const refDir = join(REPO_ROOT, "examples/reference/qa-master");
+    if (existsSync(refDir)) {
+      for (const f of walkFiles(refDir)) total += readChars(f);
     }
   }
   return total;
@@ -372,7 +393,7 @@ function printMockPreview(p: Paths, args: Args): void {
   process.stdout.write("\n  [mock] wiring OK. Would invoke:\n");
   process.stdout.write("    npx @anthropic-ai/claude-code --model claude-sonnet-4-6 --max-turns 50 \\\n");
   process.stdout.write("      --print --permission-mode acceptEdits \"<stage-2 prompt>\"\n");
-  const { tokens, usd } = estimateInputCostUsd(assembledPromptChars(p, buildPrompt(p, args.profile)));
+  const { tokens, usd } = estimateInputCostUsd(assembledPromptChars(p, buildPrompt(p, args.profile), args.profile));
   process.stdout.write("\n  [mock] cost preview (Stage 2, claude-sonnet-4-6 input):\n");
   process.stdout.write(`    ~${tokens.toLocaleString()} input tokens, ~$${usd.toFixed(2)} at Sonnet rates (estimate)\n`);
   process.stdout.write("    (input only; excludes output tokens + agentic turns — treat as a floor)\n");

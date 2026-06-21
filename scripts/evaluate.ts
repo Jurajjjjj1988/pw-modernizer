@@ -92,6 +92,7 @@ interface SmellCount {
   consoleLog: number;
   nonWebFirstAsserts: number;
   conditionalInTest: number;
+  assertionRoulette: number;
 }
 
 function emptySmells(): SmellCount {
@@ -108,6 +109,7 @@ function emptySmells(): SmellCount {
     consoleLog: 0,
     nonWebFirstAsserts: 0,
     conditionalInTest: 0,
+    assertionRoulette: 0,
   };
 }
 
@@ -174,6 +176,23 @@ export function countSmells(rawSource: string): SmellCount {
   const testBodies = source.matchAll(/test\s*\([\s\S]*?\)\s*=>\s*\{[\s\S]*?\n\s*\}\s*\)/g);
   for (const m of testBodies) {
     c.conditionalInTest += (m[0].match(/\n\s*if\s*\(/g) ?? []).length;
+    // Assertion Roulette (KB 1.1.10 / migration-rules §7.5): many awaited
+    // assertions crammed into one test body make a failure ambiguous (which
+    // expect failed, on what?). True roulette also asserts on UNRELATED
+    // subjects — reliably distinguishing that from a coherent compound check
+    // needs AST data-flow, so this is a deliberately LOW-RECALL v0 proxy: flag
+    // a body with > 4 awaited expects. The threshold is §7.5's "count > 3"
+    // bumped to 4 to clear the common, legitimate 4-field form-save check (a
+    // 5th awaited expect in one test is where ambiguity starts to bite). One
+    // +1 per offending body, like conditionalInTest. NOTE: the non-greedy
+    // body regex truncates at the first `\n})`, so awaited expects nested in a
+    // `test.step(...)` / inner callback are under-counted — accepted for v0;
+    // subject-distinctness + nested-scope detection is the ts-morph v1 upgrade.
+    // Demoted to a non-blocking review-note in capture-failure.ts (web-first
+    // asserts are partly idiomatic), so it lowers confidence but never hard-blocks.
+    if ((m[0].match(/await\s+expect\s*\(/g) ?? []).length > 4) {
+      c.assertionRoulette += 1;
+    }
   }
 
   return c;
@@ -231,7 +250,16 @@ function webFirstAssertionRate(source: string): number {
 
 // ---- Forbidden patterns hard list. Strip comments first to avoid flagging
 // references in WHY-comments (e.g., "// replaces waitForTimeout(7000)").
-function findForbidden(rawSource: string): string[] {
+//
+// Also flags NON-FUNCTIONAL placeholder CODE that survives comment-stripping —
+// an LLM that punts with `throw new Error('not implemented')` or a `test.todo`
+// stub ships a test that asserts nothing yet reads as smell-free. This is
+// distinct from the comment-TODO discipline owned by validate-todo-discipline.ts
+// (which scans raw comment lines in outputs/); here we only catch executable
+// placeholders. NB: findForbidden runs over outputs/ via evaluate.ts and is
+// never invoked by calibration, so the intentional `test.fixme(` calls in
+// examples/reference/qa-master/tests/** are out of scope and not flagged.
+export function findForbidden(rawSource: string): string[] {
   const source = rawSource
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
@@ -244,7 +272,56 @@ function findForbidden(rawSource: string): string[] {
   if (/:\s*any\b/.test(source)) hits.push("`: any` type");
   if (/\bas\s+unknown\s+as\b/.test(source)) hits.push("as unknown as cast");
   if (/console\.log\s*\(/.test(source)) hits.push("console.log");
+  // Placeholder code: a thrown not-implemented error punting real work. Anchored
+  // to the `throw new Error(<message>)` construct so a plain `const s = 'TODO'`
+  // string literal never matches — only an executable punt does. (Known v0 edge:
+  // a backtick message containing an apostrophe stops the char-class early, e.g.
+  // `` `it's not implemented` `` — rare, accepted.)
+  if (/throw\s+new\s+Error\s*\(\s*[`'"][^`'"]*\b(not\s+(yet\s+)?implemented|unimplemented|todo|fixme)\b/i.test(source)) {
+    hits.push("throw new Error('not implemented') placeholder");
+  }
+  // Pending-test placeholders — a `.todo`/`.fixme` block never runs its body.
+  if (/\b(test|it)\.(todo|fixme)\s*\(/.test(source)) {
+    hits.push("test.todo/test.fixme placeholder");
+  }
   return hits;
+}
+
+// ---- Assertion floor (gate).
+//
+// A migrated test whose combined emitted tree asserts NOTHING passes silently —
+// the runner reports green, `webFirstAssertionRate` returns 1.0 (vacuously: no
+// expects, no non-web-first), and the migration reads as high quality while
+// verifying nothing. This is the one failure the static scorer otherwise can't
+// see. We gate on an absolute floor over the EMITTED tree (spec + helpers).
+//
+// Deliberately emitted-side only: we do NOT compare against the source's
+// assertion count. The pipeline is DESIGNED to consolidate brittle source probes
+// (`expect(await x.isVisible()).toBe(true)`) into fewer web-first assertions, so
+// a source-vs-emitted ratio would fight the tool's own goal and false-positive on
+// faithful migrations. "Asserts at least once" is the principled, false-positive-
+// free bound; a retained-ratio signal, if ever wanted, belongs in a WARN line.
+const ASSERTION_FLOOR = 1;
+
+interface AssertionFloorResult {
+  emitted: number;
+  floor: number;
+  passed: boolean;
+}
+
+/** Count assertions in the emitted tree — every `expect(` after comments are
+ * stripped (so a `// replaces expect(...)` doc-comment never inflates the count). */
+export function countAssertions(emittedSrc: string): number {
+  const source = emittedSrc
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  return (source.match(/\bexpect\s*\(/g) ?? []).length;
+}
+
+/** A migration must emit at least ASSERTION_FLOOR assertions or it is a silent
+ * no-op. Pure + exported for unit testing the gate decision. */
+export function checkAssertionFloor(emitted: number): AssertionFloorResult {
+  return { emitted, floor: ASSERTION_FLOOR, passed: emitted >= ASSERTION_FLOOR };
 }
 
 // ---- Plan confidence aggregate. Read the plan markdown, count HIGH/MED/LOW.
@@ -338,6 +415,7 @@ interface Report {
   confidence: PlanConfidence;
   inputLoc: number;
   outputLoc: number;
+  assertionFloor: AssertionFloorResult;
 }
 
 // Output quality signals (introduced 2026-06-04):
@@ -385,6 +463,7 @@ function renderReport(r: Report): string {
 - **Aggregate confidence:** ${totalConfidence}
 - Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% canonical (${r.selector.canonical} canonical / ${r.selector.fragile} fragile)
 - Web-first assertion rate: ${(r.webFirstRate * 100).toFixed(0)}%
+- **Assertion floor:** ${r.assertionFloor.emitted} emitted (floor ${r.assertionFloor.floor}) — ${r.assertionFloor.passed ? "✅ pass" : "❌ FAIL — emitted tree asserts nothing, REJECT"}
 - Plan confidence: ${r.confidence.high} high / ${r.confidence.med} med / ${r.confidence.low} low → avg ${r.confidence.aggregate.toFixed(2)}
 
 ### Confidence breakdown
@@ -416,27 +495,152 @@ ${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\
 
 // ---- Emitted-tree collection.
 //
-// The qa-master architecture moves every locator, count, and conditional OUT of
-// the spec and into POM/block/fixture/api files under outputs/helper/. A scorer
-// that reads only the spec therefore sees an empty file and reports "100%
-// canonical / no forbidden patterns" even when a POM ships `.locator('.css')` or
-// a flake-prone optional click — over-scoring confidence past the 0.7 verify
-// gate. So the OUTPUT-quality signals must read the spec PLUS the helper files
-// this migration actually imports. We follow imports (transitively) and resolve
-// each trailing path segment to a file under outputs/helper/ — precise, so we
-// score THIS migration's helpers, not every accumulated migration's.
+// The qa-master architecture moves every locator, count, assertion, and
+// conditional OUT of the spec and into POM/block/fixture/api files under
+// outputs/helper/. A scorer that reads only the spec sees an empty file and
+// reports "100% canonical / no forbidden patterns / 0 assertions" even when a
+// POM ships `.locator('.css')`, a flake-prone optional click, or all the real
+// assertions — over-scoring confidence past the 0.7 verify gate. So the
+// OUTPUT-quality signals must read the spec PLUS the helper files this migration
+// actually uses.
+//
+// The hard part is that a spec does NOT import its page objects directly — it
+// receives them by FIXTURE INJECTION: `async ({ loginPage, dashboardPage }) =>`.
+// base.fixture.ts maps each fixture name to a `PageClass*` and imports that
+// class from `@page-object/pages/<page>.page`. So we (1) read the fixtures the
+// spec destructures, (2) resolve them through base.fixture to their real files,
+// (3) follow those files' helper imports transitively (a page pulls a block +
+// test-data), and (4) union in any file literally named `<spec-stem>.<layer>.ts`
+// as a belt-and-suspenders fallback. We deliberately do NOT follow base.fixture's
+// own imports wholesale — it is the barrel that imports EVERY page, which would
+// score every accumulated migration's POM, not just this one's.
+
+// Path aliases (from outputs/tsconfig.json) → subdir under outputs/helper/.
+const HELPER_ALIAS_SUBDIRS: Record<string, string> = {
+  "@fixtures/": "fixtures/",
+  "@page-object/": "page-object/",
+  "@api/": "api/",
+  "@actions/": "actions/",
+  "@browser/": "browser/",
+  "@utilities/": "utilities/",
+  "@test-data/": "test-data/",
+  "@type-defs/": "types/",
+};
+// Playwright's own fixtures are not emitted helper files — skip them.
+const PW_BUILTIN_FIXTURES = new Set([
+  "page", "context", "request", "browser", "browserName", "contextOptions", "playwright", "baseURL",
+]);
+
+/** Resolve a `@alias/...` import specifier to an absolute helper .ts path, or
+ * null when it is not a helper alias (e.g. `@playwright/test`, a relative path). */
+function resolveAliasImport(spec: string, helperRoot: string): string | null {
+  if (spec === "@logger") return join(helperRoot, "utilities", "logger.ts");
+  for (const [prefix, sub] of Object.entries(HELPER_ALIAS_SUBDIRS)) {
+    if (spec.startsWith(prefix)) return join(helperRoot, sub + spec.slice(prefix.length) + ".ts");
+  }
+  return null;
+}
+
+/** Every `from "..."` / `import "..."` specifier in a source file. */
+function extractImportSpecifiers(src: string): string[] {
+  const specs: string[] = [];
+  for (const re of [/\bfrom\s+["']([^"']+)["']/g, /\bimport\s+["']([^"']+)["']/g]) {
+    for (let m = re.exec(src); m !== null; m = re.exec(src)) {
+      if (m[1] !== undefined) specs.push(m[1]);
+    }
+  }
+  return specs;
+}
+
+/** Fixture names the spec destructures from its test callbacks (minus Playwright
+ * built-ins) — the page objects this migration actually exercises. */
+function extractUsedFixtures(specSrc: string): Set<string> {
+  const used = new Set<string>();
+  const re = /async\s*\(\s*\{([^}]*)\}/g;
+  for (let m = re.exec(specSrc); m !== null; m = re.exec(specSrc)) {
+    for (const raw of (m[1] ?? "").split(",")) {
+      const name = (raw.split(":")[0] ?? "").replace(/\./g, "").trim();
+      if (name !== "" && /^[A-Za-z_]\w*$/.test(name) && !PW_BUILTIN_FIXTURES.has(name)) used.add(name);
+    }
+  }
+  return used;
+}
+
+/** Map each fixture name declared in base.fixture to the helper file backing it,
+ * by joining `<fixture>: async (...) => new <Class>(...)` to the import of
+ * `<Class>`. */
+function mapFixturesToFiles(fxSrc: string, helperRoot: string): Map<string, string> {
+  const classToFile = new Map<string, string>();
+  const importRe = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
+  for (let m = importRe.exec(fxSrc); m !== null; m = importRe.exec(fxSrc)) {
+    const file = resolveAliasImport(m[2] ?? "", helperRoot);
+    if (file === null) continue;
+    for (const raw of (m[1] ?? "").split(",")) {
+      const token = raw.trim().replace(/^type\s+/, "");
+      if (token === "") continue;
+      const local = token.includes(" as ") ? (token.split(" as ")[1] ?? token).trim() : token;
+      classToFile.set(local, file);
+    }
+  }
+  const fixtureToFile = new Map<string, string>();
+  const fxRe = /(\w+)\s*:\s*async\b[\s\S]*?\bnew\s+(\w+)\s*\(/g;
+  for (let m = fxRe.exec(fxSrc); m !== null; m = fxRe.exec(fxSrc)) {
+    const file = m[2] === undefined ? undefined : classToFile.get(m[2]);
+    if (m[1] !== undefined && file !== undefined) fixtureToFile.set(m[1], file);
+  }
+  return fixtureToFile;
+}
+
+/** Read each worklist file, push its source, and enqueue its helper imports —
+ * the transitive close over `@alias` imports, never crossing back into the
+ * base.fixture barrel. Mutates `parts` and `seen`. */
+function followHelperImports(
+  worklist: string[], helperRoot: string, baseFixturePath: string, parts: string[], seen: Set<string>,
+): void {
+  while (worklist.length > 0) {
+    const file = worklist.pop();
+    if (file === undefined || seen.has(file)) continue;
+    seen.add(file);
+    if (!existsSync(file)) continue;
+    const src = readFileSync(file, "utf8");
+    parts.push(src);
+    for (const spec of extractImportSpecifiers(src)) {
+      const f = resolveAliasImport(spec, helperRoot);
+      if (f !== null && f !== baseFixturePath && !seen.has(f)) worklist.push(f);
+    }
+  }
+}
+
 export function collectEmittedSources(specPath: string, helperRootOverride?: string): string {
   const specSrc = readFileSync(specPath, "utf8");
   const helperRoot = helperRootOverride
     ?? join(resolve(new URL("..", import.meta.url).pathname), "outputs", "helper");
   if (!existsSync(helperRoot)) return specSrc;
-  // Scope to THIS migration's own helpers — files named `<spec-stem>.<layer>.ts`
-  // (search-filters.page.ts, search-filters.block.ts, …). qa-master names the
-  // POM/block after the feature, so stem-matching scores the migration's own
-  // contribution without pulling in every accumulated migration's POM through
-  // the shared base.fixture barrel.
-  const specStem = basename(specPath).replace(/\.spec\.ts$/i, "");
+
   const parts = [specSrc];
+  const seen = new Set<string>();
+  const worklist: string[] = [];
+  const baseFixturePath = join(helperRoot, "fixtures", "base.fixture.ts");
+
+  // (1) Fixture-injected page objects, resolved through base.fixture.
+  if (existsSync(baseFixturePath)) {
+    const fixtureToFile = mapFixturesToFiles(readFileSync(baseFixturePath, "utf8"), helperRoot);
+    for (const fx of extractUsedFixtures(specSrc)) {
+      const f = fixtureToFile.get(fx);
+      if (f !== undefined) worklist.push(f);
+    }
+  }
+  // (2) The spec's own direct helper imports (test-data, utilities, types …),
+  // excluding the base.fixture barrel itself.
+  for (const spec of extractImportSpecifiers(specSrc)) {
+    const f = resolveAliasImport(spec, helperRoot);
+    if (f !== null && f !== baseFixturePath) worklist.push(f);
+  }
+  // (3) Transitively follow those files' helper imports.
+  followHelperImports(worklist, helperRoot, baseFixturePath, parts, seen);
+
+  // (4) Union fallback: any file literally named `<spec-stem>.<layer>.ts`.
+  const specStem = basename(specPath).replace(/\.spec\.ts$/i, "");
   const stack = [helperRoot];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -445,11 +649,13 @@ export function collectEmittedSources(specPath: string, helperRootOverride?: str
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name !== "_legacy-v0.1.x") stack.push(full);
-      } else if (entry.name.endsWith(".ts") && entry.name.startsWith(`${specStem}.`)) {
+      } else if (entry.name.endsWith(".ts") && entry.name.startsWith(`${specStem}.`) && !seen.has(full)) {
+        seen.add(full);
         parts.push(readFileSync(full, "utf8"));
       }
     }
   }
+
   return parts.join("\n");
 }
 
@@ -489,6 +695,7 @@ function main(): void {
   const confidence = planConfidence(planMd);
   const inputLoc = inputSrc.split("\n").length;
   const outputLoc = outputSrc.split("\n").length;
+  const assertionFloor = checkAssertionFloor(countAssertions(emittedSrc));
 
   const report: Report = {
     input: args.input,
@@ -503,10 +710,22 @@ function main(): void {
     confidence,
     inputLoc,
     outputLoc,
+    assertionFloor,
   };
 
   mkdirSync(dirname(args["report-out"]), { recursive: true });
   writeFileSync(args["report-out"], renderReport(report));
+
+  // Hard gate: a migration that asserts nothing is a silent no-op — reject it.
+  // The report is written FIRST (above) so a reviewer sees the failing scorecard.
+  if (!assertionFloor.passed) {
+    process.stderr.write(
+      `::error::evaluate: emitted tree has ${assertionFloor.emitted} assertion(s); `
+      + `floor is ${assertionFloor.floor}. A test that asserts nothing passes `
+      + `silently — REJECT.\n`,
+    );
+    process.exit(1);
+  }
 
   // Persist metrics to SQLite for cross-run trend analysis (v1 ROADMAP
   // "Metrics dashboard"). Wrapped in try/catch — the metrics DB is a local

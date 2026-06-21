@@ -93,6 +93,19 @@ The pipeline is end-to-end PROVEN on random public GitHub tests. Status snapshot
 - **9 real infra bugs found + fixed today** (Stage 0 `\b@Test\b` + `\bdef test_\b` regex, AST-diff cross-language path, plan-code-coverage path, evaluate path, peer-dep ERESOLVE, peter-evans 400 auth, regression-semantic checkbox parser, verify parser `Verdict: **SHIP IT**` format)
 - **Walkthrough** uses real bonigarcia migration (PR #6 → PR #13) as canonical example
 
+**Update (2026-06-22) — scorer honesty + adopter tooling.** The confidence scorer
+was de-inflated: it now reads the whole emitted tree by resolving the spec's
+*fixture-injected* page objects (it previously scored a near-empty tree for any
+multi-page migration), plus a hard assertion-floor gate (a migration that asserts
+nothing is rejected, not silently shipped). Re-scoring the Step-1 corpus with the
+honest scorer gives a **measured 0.69 mean confidence / 60% first-attempt
+auto-ship (n=5)** — lower than the old inflated number; see
+[`docs/measured-quality-baseline.md`](docs/measured-quality-baseline.md). The RAG
+MAP@3 metric was also de-leaked (0.931 → honest 0.868, still PASS). New
+adopter-facing tooling: `npm run migrate --inputs` (batch), `--mock` cost preview,
+`npm run explain`, `npm run rag:eval`, and a real lean generation prompt
+(`--profile lean`).
+
 ## Why this exists
 
 Existing tools either (a) trap you in a proprietary DSL (testRigor, Mabl, Functionize), or (b) do syntax-only mechanical conversion (cy2pw — _archived by the Playwright team in Sept 2025_). No serious source-code-in → source-code-out migrator exists for Playwright. We emit standard `.spec.ts` files you own, with a complete audit trail.
@@ -188,11 +201,25 @@ inputs/<framework>/foo.spec.ts
   - **`CLAUDE_CODE_OAUTH_TOKEN`** — **required**. Generate locally via `claude setup-token` in a real terminal (requires Claude Pro/Max). The token leverages your existing subscription; no separate Anthropic API billing. Alternative: use `ANTHROPIC_API_KEY` from https://console.anthropic.com/ — to switch, replace `claude_code_oauth_token:` with `anthropic_api_key:` in the `with:` blocks of `.github/workflows/{plan,migrate,verify}.yml`.
   - **`MIGRATION_TARGET_URL`** — _optional_. If set, Stage 2 enables the dom-ground step against the live SUT. Default soft gate; promote to hard via the `DOM_GROUND_STRICT=true` repo variable.
 
+### The commands you actually run as an adopter
+
+If you cloned this to migrate your own tests, these are the five that matter — the rest of the table is for working on the pipeline itself.
+
+| Command | What it does |
+|---|---|
+| `npm run migrate -- --check` | **Start here.** Zero-token preflight doctor: Node version, Claude auth, `gh`, and whether your input has an approved plan. |
+| `npm run migrate -- --input <your-test> --mock` | Zero-token wiring check **+ a cost preview** (`~N input tokens, ~$Y at Sonnet rates`) before you spend anything. |
+| `npm run migrate -- --input <your-test>` | Run Stage 2 locally — generate + the full validator wall, no fork/CI needed. Add `--profile lean` for spec + page object only (no fixture barrel; ADR 0002). |
+| `npm run migrate -- --inputs '<glob>'` | **Batch** over many inputs (sequential); add `--mock` for a free batch cost preview. e.g. `'inputs/bad-playwright/*.spec.ts'`. |
+| `npm run explain -- --spec <output-spec>` | Zero-token plain-language explanation of a finished migration: verdict, confidence, KB anti-patterns fixed, files emitted, and any smell **regressions**. |
+| `npm run triage <pr#>` | Zero-token: freeze a failing migrator PR locally + print the failure signature (debug without re-spending tokens). |
+
 ### Local commands (npm scripts)
 
 | Command | What it does | When to run |
 |---|---|---|
 | `npm run quickstart` | 10-check onboarding (Node, deps, types, KB, examples, fragments, envelope, derive-roundtrip, calibration) with hints | First time setup; debugging "why does CI fail?" |
+| `npm run rag:eval` | Gate retrieval quality locally — exits non-zero on a MAP@3 HOLD (mirrors the CI `rag-map3-gate`) | After editing the KB or the RAG corpus |
 | `npm run smoke` | Same as CI: typecheck:all + 8 validators + 53-fixture calibration + eslint. Silent on success | Pre-push, every commit |
 | `npm run validate:all` | 8 validators + 53 calibration fixtures | When touching scripts/ or examples/ |
 | `npm run check:kb` | KB ID uniqueness + references resolve (125 IDs, 55 refs as of 2026-06-04) | When editing knowledge-base.md or expected-plan.md |

@@ -26,9 +26,11 @@ npm run migrate -- --input inputs/<framework>/your-test.spec.ts --profile lean
 ```
 
 The CLI threads `--profile lean` to the conformance gate, sets `PWM_PROFILE=lean`
-so the ESLint step relaxes the same rules, and injects a lean note into the
-generate prompt. The default (no `--profile`) is `qa-master`, byte-identical to
-before.
+so the ESLint step relaxes the same rules, and selects the lean generate prompt
+(`prompts/generate.lean.md` → `_assembled/generate.lean.md`) — a spec + page
+object contract that drops the qa-master triad/STOP block while keeping the
+shared quality fragments (no waits/nth/force, web-first, locator priority). The
+default (no `--profile`) is `qa-master`, byte-identical to before.
 
 ## How it's wired (single source)
 
@@ -45,8 +47,10 @@ before.
 
 ## Status
 
-Phase 1 + the cross-validator relaxations are implemented and guarded for the
-**local CLI**. Not yet wired into the CI pipeline (`migrate.yml` always runs
-`qa-master`) because CI lean would also need the generate prompt to change and a
-real lean migration to verify output quality — that is Phase 2 (supervised). See
+Phase 1 + the cross-validator relaxations + the lean generate prompt are
+implemented and guarded for the **local CLI** (`buildPrompt` selects
+`generate.lean.md`; `migrate-local.test.ts` pins the profile branching and the
+no-qa-master-leak invariant). Not yet wired into the CI pipeline (`migrate.yml`
+always runs `qa-master`) — CI lean still needs per-profile calibration fixtures
+and a real supervised lean migration to verify output quality (Phase 2). See
 `docs/adr/0002-output-profiles.md`.

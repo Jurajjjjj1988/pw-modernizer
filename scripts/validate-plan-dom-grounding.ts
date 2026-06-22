@@ -17,23 +17,33 @@
  *     translation table) MUST carry a `// dom-snapshot:role=<r>|name=<n>`
  *     annotation in its Notes cell. The role/name pair MUST appear in the
  *     captured accessibility snapshot.
- *   - When the snapshot is absent, the validator exits 0 — the analyze.md
- *     prompt documents that DOM grounding is optional / opt-in.
+ *   - When the snapshot is ABSENT, we run the OFFLINE ABSTENTION GATE (lever
+ *     1): a HIGH-confidence pin whose accessible name is not derivable from
+ *     the source (input test + the plan's Original-column selectors) is a
+ *     confident hallucination and fails. `low`/`medium` pins and structural
+ *     locators (CSS / testid / role-without-name) pass — they are the honest
+ *     ways to abstain when there is no SUT to ground against.
  *
  * Exit codes (mirrors `dom-ground.ts` convention):
- *   0 — no snapshot OR every pin annotated AND grounded
- *   1 — at least one pin missing an annotation OR annotated with a
- *       role/name not present in the snapshot (hallucination candidate)
- *   2 — usage error (missing required args, plan file unreadable, snapshot
- *       file unreadable when --snapshot was explicitly provided)
+ *   0 — snapshot present and every pin grounded, OR no snapshot and the
+ *       offline abstention gate passed
+ *   1 — snapshot present: a pin is unannotated or cites a role/name absent
+ *       from the snapshot; OR no snapshot: a high-confidence pin names a
+ *       locator not derivable from the source (hallucination candidate)
+ *   2 — usage error (missing required args, plan unreadable, snapshot
+ *       unreadable when --snapshot was explicit, source unreadable when
+ *       --source was explicit)
  *
  * CLI:
  *   npx tsx scripts/validate-plan-dom-grounding.ts \
  *     --plan outputs/plans/<basename>.md \
- *     [--snapshot outputs/dom-snapshots/<basename>.yaml]
+ *     [--snapshot outputs/dom-snapshots/<basename>.yaml] \
+ *     [--source inputs/<framework>/<basename>]
  *
  *   When --snapshot is omitted, the validator derives the path from the
- *   plan basename — same convention `dom-snapshot.ts` writes to.
+ *   plan basename — same convention `dom-snapshot.ts` writes to. When
+ *   --source is omitted the offline gate still runs, using only the plan's
+ *   Original column as corpus (degraded but non-zero coverage).
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -46,6 +56,9 @@ interface CliArgs {
   plan: string;
   snapshot: string;
   snapshotExplicit: boolean;
+  /** Original input test file — corpus for the offline abstention gate. */
+  source: string;
+  sourceExplicit: boolean;
 }
 
 interface SnapshotNode {
@@ -66,6 +79,22 @@ interface LocatorPin {
   notes: string;
   /** 1-based line number of the table row in the plan markdown. */
   line: number;
+  /**
+   * The Original-column locator (the source selector this pin translates
+   * FROM), when present. It is source-derived vocabulary, so it joins the
+   * offline abstention corpus. `null` for hallucination-defense pins (no
+   * Original column).
+   */
+  original: string | null;
+  /**
+   * Parsed Confidence-cell value. `null` when the row has no confidence-
+   * shaped cell (treated as an unqualified — i.e. high — assertion by the
+   * offline gate). Hallucination-defense pins are excluded from the gate, so
+   * their confidence is left `null` and never consulted.
+   */
+  confidence: "high" | "medium" | "low" | null;
+  /** True for rows in the `## Hallucination-defense pins` section. */
+  isDefensePin: boolean;
 }
 
 interface GroundingAnnotation {
@@ -84,12 +113,13 @@ function parseCliArgs(): CliArgs {
     options: {
       plan: { type: "string" },
       snapshot: { type: "string" },
+      source: { type: "string" },
     },
     strict: true,
   });
   if (!values.plan) {
     process.stderr.write(
-      "Usage: validate-plan-dom-grounding --plan <plan.md> [--snapshot <snapshot.yaml>]\n",
+      "Usage: validate-plan-dom-grounding --plan <plan.md> [--snapshot <snapshot.yaml>] [--source <input-test>]\n",
     );
     process.exit(2);
   }
@@ -98,7 +128,14 @@ function parseCliArgs(): CliArgs {
   const snapshotPath = snapshotExplicit
     ? (values.snapshot as string)
     : deriveSnapshotPath(planPath);
-  return { plan: planPath, snapshot: snapshotPath, snapshotExplicit };
+  const sourceExplicit = typeof values.source === "string" && values.source.length > 0;
+  return {
+    plan: planPath,
+    snapshot: snapshotPath,
+    snapshotExplicit,
+    source: sourceExplicit ? (values.source as string) : "",
+    sourceExplicit,
+  };
 }
 
 /**
@@ -210,6 +247,9 @@ function extractLocatorPins(plan: string): LocatorPin[] {
           expression: pinLine[1].trim(),
           notes: line,
           line: i + 1,
+          original: null,
+          confidence: null,
+          isDefensePin: true,
         });
       }
     }
@@ -242,6 +282,7 @@ function pinFromTableRow(cells: string[], rawRow: string, lineNo: number): Locat
   }
   // The "New" cell is the SECOND locator-shaped cell — first is Original.
   const newCell = locatorCells[1];
+  const originalCell = locatorCells[0];
   if (!newCell) return null;
   // Annotation search surface is the raw row (preserves the `|` inside
   // `role=...|name=...`); see LocatorPin.notes JSDoc.
@@ -249,7 +290,35 @@ function pinFromTableRow(cells: string[], rawRow: string, lineNo: number): Locat
     expression: newCell.locator,
     notes: rawRow,
     line: lineNo,
+    original: originalCell?.locator ?? null,
+    confidence: confidenceFromCells(cells),
+    isDefensePin: false,
   };
+}
+
+/**
+ * Find the Confidence-cell verdict in a locator-table row. The canonical
+ * column is a bare `high` / `med` / `low` (analyze.md §4); we tolerate a
+ * leading status emoji/symbol. Returns `null` when no cell is *primarily* a
+ * confidence marker — the offline gate treats that as an unqualified (high)
+ * assertion. We deliberately do NOT scan free-text Notes for these words, so
+ * a Notes sentence like "high risk" cannot be misread as the verdict.
+ */
+function confidenceFromCells(cells: string[]): "high" | "medium" | "low" | null {
+  // A confidence cell is the bare verdict, optionally prefixed by a status
+  // symbol/emoji (consumed by the leading `[^a-z]*?`). The length guard keeps
+  // a long Notes sentence that merely starts with "Low-level…" from being
+  // misread — real confidence cells are short.
+  const markerRe = /^[^a-z]*?(high|medium|med|low)\b/i;
+  for (const cell of cells) {
+    const stripped = cell.trim();
+    if (stripped.length === 0 || stripped.length > 16) continue;
+    const m = markerRe.exec(stripped);
+    if (!m?.[1]) continue;
+    const v = m[1].toLowerCase();
+    return v === "med" ? "medium" : (v as "high" | "low");
+  }
+  return null;
 }
 
 /**
@@ -300,6 +369,99 @@ function annotationMatchesSnapshot(annotation: GroundingAnnotation, snapshot: Sn
   );
 }
 
+/**
+ * The accessible NAME a locator pins, or null for a structural locator that
+ * pins no name (the honest offline fallback: `getByTestId`, CSS `page.locator`,
+ * or a role with no `name:`). We read the name from `getByRole(..., {name})`
+ * and from the sole argument of `getByLabel/Text/Placeholder/AltText/Title`.
+ * Both string literals and `/regex/flags` bodies are supported.
+ */
+function extractAccessibleName(locator: string): string | null {
+  // The name argument is either a quoted string or a /regex/. Plan locator
+  // strings don't carry escaped quotes, so the simple bodies below suffice.
+  const ARG = /(?:'([^']*)'|"([^"]*)"|\/([^/]*)\/[a-z]*)/;
+  const fromGroups = (m: RegExpExecArray | null, base: number): string | null => {
+    if (!m) return null;
+    return (m[base] ?? m[base + 1] ?? m[base + 2] ?? "").trim() || null;
+  };
+  const roleName = new RegExp(
+    String.raw`getByRole\(\s*['"][^'"]+['"]\s*,\s*\{[^}]*?\bname\s*:\s*` + ARG.source,
+  ).exec(locator);
+  const fromRole = fromGroups(roleName, 1);
+  if (fromRole) return fromRole;
+  const byName = new RegExp(
+    String.raw`getBy(?:Label|Text|Placeholder|AltText|Title)\(\s*` + ARG.source,
+  ).exec(locator);
+  return fromGroups(byName, 1);
+}
+
+const NAME_STOPWORDS = new Set([
+  "the", "and", "for", "with", "your", "please", "click", "this", "that", "from",
+  "into", "out", "back", "here", "now", "all", "any", "use", "are", "you",
+]);
+
+/** Lowercase + collapse every non-alphanumeric run to a single space. */
+function normalizeText(s: string): string {
+  return s.toLowerCase().replaceAll(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Same, but with separators removed entirely (`user-name` → `username`). */
+function squashText(s: string): string {
+  return s.toLowerCase().replaceAll(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Is the accessible `name` derivable from the migration source? The corpus is
+ * the original input test plus every Original-column selector in the plan —
+ * both are source-grounded vocabulary. A name is derivable when every one of
+ * its DISTINCTIVE tokens (alphanumeric, length ≥ 3, non-stopword) appears in
+ * the corpus, either spaced or squashed (so `Username` matches `user-name`).
+ *
+ * Names with no distinctive token (e.g. "OK", "Go") get the benefit of the
+ * doubt — too short to call a hallucination — and count as derivable.
+ */
+function nameDerivableFromSource(name: string, corpusNormalized: string, corpusSquashed: string): boolean {
+  const tokens = normalizeText(name)
+    .split(" ")
+    .filter((t) => t.length >= 3 && !NAME_STOPWORDS.has(t));
+  if (tokens.length === 0) return true;
+  return tokens.every((t) => corpusNormalized.includes(t) || corpusSquashed.includes(t));
+}
+
+interface OfflineFinding {
+  pin: LocatorPin;
+  name: string;
+}
+
+/**
+ * Offline abstention gate (lever 1). With no DOM snapshot to ground against,
+ * a HIGH-confidence pin whose accessible name is not derivable from the source
+ * is a confident hallucination — the model asserted a name it has no evidence
+ * for. The honest moves the gate forces: lower the confidence and add a
+ * hallucination-defense pin, OR fall back to the source selector as CSS
+ * (`page.locator('…')`, which pins no name and is skipped here).
+ *
+ * Only `high` (and unqualified) pins fail; `low`/`medium` pins already flag
+ * their own uncertainty (and trip the eval/verify gate downstream), so the gate
+ * leaves them alone. Defense-section pins are the escape hatch and are skipped.
+ */
+function validateOfflineAbstention(plan: string, sourceText: string): OfflineFinding[] {
+  const pins = extractLocatorPins(plan);
+  const originalCorpus = pins.map((p) => p.original ?? "").join("\n");
+  const corpusNormalized = normalizeText(`${sourceText}\n${originalCorpus}`);
+  const corpusSquashed = squashText(`${sourceText}\n${originalCorpus}`);
+  const findings: OfflineFinding[] = [];
+  for (const pin of pins) {
+    if (pin.isDefensePin) continue; // honest abstention already — the escape hatch
+    if (pin.confidence === "low" || pin.confidence === "medium") continue;
+    const name = extractAccessibleName(pin.expression);
+    if (!name) continue; // structural locator — the honest CSS/testid fallback
+    if (nameDerivableFromSource(name, corpusNormalized, corpusSquashed)) continue;
+    findings.push({ pin, name });
+  }
+  return findings;
+}
+
 function validate(plan: string, snapshot: SnapshotNode[]): ValidationFinding[] {
   const pins = extractLocatorPins(plan);
   const findings: ValidationFinding[] = [];
@@ -340,10 +502,56 @@ function relForLog(path: string): string {
   return path;
 }
 
+/**
+ * No-snapshot path. Without a SUT we can't ground, but we can still refuse a
+ * HIGH-confidence pin whose accessible name is absent from the source — that
+ * is a confident hallucination (lever 1). When `--source` is omitted we run a
+ * degraded gate using only the plan's own Original-column selectors as corpus;
+ * either way an explicit miss exits 1.
+ */
+function runOfflineAbstention(args: CliArgs, planText: string): never {
+  let sourceText = "";
+  if (args.sourceExplicit) {
+    if (!existsSync(args.source)) {
+      process.stderr.write(
+        `::error::validate-plan-dom-grounding: source not found: ${args.source}\n`,
+      );
+      process.exit(2);
+    }
+    sourceText = readFileSync(args.source, "utf-8");
+  }
+  const findings = validateOfflineAbstention(planText, sourceText);
+  const corpus = args.sourceExplicit ? relForLog(args.source) : "plan Original column only";
+  if (findings.length === 0) {
+    process.stdout.write(
+      `validate-plan-dom-grounding: no snapshot — offline abstention gate passed (${relForLog(args.plan)}, corpus: ${corpus}).\n`,
+    );
+    process.exit(0);
+  }
+  for (const f of findings) {
+    process.stderr.write(
+      `::error::Plan ${relForLog(args.plan)} (line ${f.pin.line}) pins '${f.pin.expression}' at HIGH confidence, ` +
+        `but its accessible name "${f.name}" is not derivable from the source and there is no DOM snapshot to ground it — ` +
+        `confident hallucination. Lower the confidence and add a hallucination-defense pin, or fall back to the source ` +
+        `selector as CSS (page.locator('…'), which pins no name).\n`,
+    );
+  }
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (!existsSync(args.plan)) {
     process.stderr.write(`::error::validate-plan-dom-grounding: plan not found: ${args.plan}\n`);
+    process.exit(2);
+  }
+  let planText: string;
+  try {
+    planText = readFileSync(args.plan, "utf-8");
+  } catch (e) {
+    process.stderr.write(
+      `::error::validate-plan-dom-grounding: cannot read plan: ${describeError(e)}\n`,
+    );
     process.exit(2);
   }
   if (!existsSync(args.snapshot)) {
@@ -353,21 +561,9 @@ async function main(): Promise<void> {
       );
       process.exit(2);
     }
-    process.stdout.write(
-      `validate-plan-dom-grounding: no snapshot at ${relForLog(args.snapshot)} — skipping grounding check (offline migration mode).\n`,
-    );
-    process.exit(0);
+    runOfflineAbstention(args, planText);
   }
-  let planText: string;
   let snapshotText: string;
-  try {
-    planText = readFileSync(args.plan, "utf-8");
-  } catch (e) {
-    process.stderr.write(
-      `::error::validate-plan-dom-grounding: cannot read plan: ${describeError(e)}\n`,
-    );
-    process.exit(2);
-  }
   try {
     snapshotText = readFileSync(args.snapshot, "utf-8");
   } catch (e) {

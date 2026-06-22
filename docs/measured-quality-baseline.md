@@ -53,6 +53,71 @@ acceptable rate is a **Stage-2 output-quality** problem (better generation), not
 scorer problem — the scorer is now telling the truth, and the truth is lower than
 the old number implied.
 
+## Run 2 (2026-06-22) — fresh real batch + human-equivalent review
+
+We then ran a **real** Stage-2 batch (`npm run migrate --inputs 'inputs/bad-playwright/*.spec.ts'`,
+production path, tokens spent) and judged the 6 outputs two ways: the static
+scorer, and a **multi-agent adversarial review** (per migration: a senior-SDET
+verdict + an adversary that tries to refute a too-generous SHIP — 12 agents).
+
+| Spec | Scorer | Scorer action | **Human-equivalent verdict** |
+|---|---|---|---|
+| force-clicks | 0.76 | auto-ship | **FIX FIRST** |
+| flaky-waits | 0.75 | auto-ship | **FIX FIRST** |
+| missing-await | 0.73 | auto-ship | **FIX FIRST** |
+| silent-conditionals | 0.71 | auto-ship | **FIX FIRST** |
+| nth-selectors | 0.66 | → verify | **SHIP IT** |
+| search-filters | 0.61 | → verify | **SHIP IT** |
+
+- Scorer: **0.703 mean, 4/6 (67%) auto-ship, 6/6 pass the full validator wall** (no silent no-ops).
+- Human-equivalent: **2/6 (33%) SHIP IT**, 4/6 FIX FIRST, 0 REJECT.
+- Scorer ↔ static-confidence agreement with the n=5 re-score (0.694) is tight — the scorer is **stable**.
+
+### The headline: scorer confidence is ANTI-correlated with real quality on this sample
+
+**The two migrations the agents accept (nth-selectors, search-filters) are the two
+the scorer distrusted (< 0.7 → verify). All four the scorer auto-shipped have real
+FIX-FIRST defects.** The static scorer rewards surface locator quality ("all
+getByRole, no smells") and cannot see the defects that actually matter. Root-cause
+taxonomy from the review:
+
+1. **Hallucinated locators** — `getByRole`/`getByTestId` promoted with **zero DOM
+   evidence** (no DOM-probe ran; no `MIGRATION_TARGET_URL`). A hallucinated
+   `getByRole('alert')` / `getByRole('button',{name:/close|dismiss/i})` scores as
+   "canonical/high quality" but is more fragile than the honest CSS fallback it
+   replaced. (force-clicks, flaky-waits, missing-await)
+2. **Cross-migration POM contamination** — shared POMs (`login.page.ts`,
+   `dashboard.page.ts`) carry assertions/methods from the FIRST migration that
+   authored them, silently injected into specs that never asked for them (e.g.
+   flaky-waits' happy path inherits an un-sourced `expect(inputEmail).toBeHidden()`;
+   silent-conditionals' `beforeEach` inherits a `welcome-heading` gate that masks
+   its notifications test when the A/B variant is off). (flaky-waits, force-clicks,
+   silent-conditionals)
+3. **Optional element treated as mandatory** — the newsletter modal is dismissed
+   unconditionally (would throw before sign-in) instead of `.catch(() => {})` per
+   migration-rules §3. (force-clicks)
+4. **False WHY-comments** — `// CSS class locator kept as fallback` above code that
+   ships an unverified `getByTestId` with no fallback present. (missing-await)
+
+### What this changes about the roadmap to higher quality
+
+The real first-attempt **human-acceptable rate is ~33% without DOM grounding** — and
+the dominant failure mode is **ungrounded locators**, not bad structure (structure
+is 6/6 wall-clean). So the highest-leverage quality levers, in order:
+
+1. **Turn DOM grounding ON for real runs** (`MIGRATION_TARGET_URL` + `DOM_GROUND_STRICT`).
+   Most FIX-FIRST defects here are "locator is a guess" — DOM grounding converts the
+   guess into a verified locator or an honest LOW-confidence fallback.
+2. **Teach the scorer to distrust ungrounded locators** — a `getByRole` with no
+   DOM-probe confirmation should not score as canonical. Today the scorer is blind to
+   grounding, which is why it anti-correlates here.
+3. **Fix cross-migration POM contamination** — a shared POM must not inject
+   assertions into a spec that did not request them.
+
+This is the honest answer to "raise measured quality to 96%": it is gated on **DOM
+grounding + scorer-grounding-awareness + POM isolation**, each a real engineering
+item — not reachable by re-scoring or prompt-tweaking alone.
+
 ## How to reproduce / scale this
 
 ```bash

@@ -933,13 +933,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Pass output as DIRECTORY — resolveSourceFile picks the .spec.ts inside.
-          # Stem-match (commit 041c342) only works for stem-preserving renames;
-          # Sonnet may pick a different stem (e.g., EmployeesTest.java →
-          # employees.spec.ts) so directory mode is the robust choice.
+          # Resolve the spec emitted FOR THIS input by basename and pass the FILE.
+          # Passing the directory let resolveSourceFile pick the first .spec.ts in
+          # readdir order (same wrong-spec defect as the evaluate step); the
+          # resolver handles cross-language renames (EmployeesTest.java →
+          # employees.spec.ts) and falls back to the directory only if it finds none.
+          OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts \
+            --input-basename "${{ steps.guard.outputs.input_basename }}" || true)
           npx tsx scripts/ast-diff-trivial-check.ts \
             --input "${{ steps.guard.outputs.input_path }}" \
-            --output "outputs/tests"
+            --output "${OUT_SPEC:-outputs/tests}"
 
       - name: Plan-vs-code coverage check (LPW contract closure — unified envelope --code mode)
         if: steps.budget_guard.outputs.over_budget != 'true'
@@ -1050,10 +1053,11 @@ jobs:
             echo "No report at $REPORT yet (evaluate.ts will write it later) — skip."
             exit 0
           fi
-          # Find the emitted spec — first .spec.ts under outputs/tests/ that is
-          # NOT under the _legacy-v0.1.x archive subdirectory.
-          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' \
-            -not -path '*/_legacy-v0.1.x/*' | head -1)
+          # Resolve the spec emitted FOR THIS input by basename (shared resolver;
+          # NOT `find … | head -1`, which picked the lexically-first prior
+          # migration). `|| true` so the empty-OUT_SPEC skip below still handles
+          # the no-spec case under `set -e`.
+          OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "$BASE" || true)
           if [ -z "$OUT_SPEC" ]; then
             echo "::warning::No emitted spec found under outputs/tests — skip pre-flight."
             exit 0
@@ -1209,16 +1213,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Sonnet may rename input basename on cross-language (Java→TS).
-          # Locate the actual generated spec inside outputs/tests/. Exclude
-          # the v0.1.x archive — without this, alphabetical 'head -1' could
-          # pick up `_legacy-v0.1.x/X.spec.ts` and feed evaluate.ts the wrong
-          # spec, which then writes a stale Output path to the report. Same
-          # filter the Bullet-12 auto-correct pre-flight applies upstream.
-          # Observed 2026-06-17 cypress checkout-flow PR #173 verify START
-          # OVER (CR block-severity: Output path referenced legacy file).
-          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' \
-            -not -path '*/_legacy-v0.1.x/*' | head -1)
+          # Resolve the spec generated FOR THIS input by basename. Sonnet may
+          # rename across languages (EmployeesTest.java → employees.spec.ts), so
+          # the resolver matches the kebab/rename forms and falls back to the
+          # lexically-first spec only when nothing matches. This replaces
+          # `find … | head -1`, which on a flat outputs/tests/ ALWAYS returned the
+          # lexically-first prior migration — feeding evaluate.ts the wrong spec,
+          # so confidence + the report Source→Output header described another
+          # file. (Observed 2026-06-17 cypress checkout-flow PR #173 verify START
+          # OVER: Output path referenced a legacy file.)
+          OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts \
+            --input-basename "${{ steps.guard.outputs.input_basename }}")
           USAGE_FILE="outputs/.usage/${{ steps.guard.outputs.input_basename }}-migration.json"
           USAGE_ARG=""
           [ -f "$USAGE_FILE" ] && USAGE_ARG="--usage $USAGE_FILE"

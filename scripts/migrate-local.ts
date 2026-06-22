@@ -31,7 +31,7 @@
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -160,6 +160,34 @@ function prepareContext(): void {
   process.stdout.write("ok\n");
 }
 
+/** Capture the target page's accessibility tree (DOM grounding) when
+ * MIGRATION_TARGET_URL is set. Runs the existing scripts/dom-snapshot.ts (a
+ * Playwright launch — ZERO model tokens) and returns the snapshot path, or null
+ * when no URL is set (offline migration, unchanged behaviour). */
+function captureDomSnapshot(p: Paths): string | null {
+  const out = join(REPO_ROOT, "outputs/dom-snapshots", `${p.base}.yaml`);
+  // Reuse a pre-captured snapshot (e.g. a multi-page `--flow` capture for an
+  // authenticated journey) instead of clobbering it with a single-page grab.
+  if (existsSync(out)) {
+    process.stdout.write(`  [step] DOM grounding — using existing snapshot ${relative(REPO_ROOT, out)}\n`);
+    return out;
+  }
+  const url = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
+  if (url.length === 0) return null;
+  mkdirSync(dirname(out), { recursive: true });
+  process.stdout.write(`  [step] DOM grounding — capture a11y tree of ${url} ... `);
+  const r = spawnSync("npx", ["tsx", "scripts/dom-snapshot.ts", "--url", url, "--output", out], {
+    cwd: REPO_ROOT, encoding: "utf8",
+  });
+  if (r.status !== 0 || !existsSync(out)) {
+    process.stdout.write("FAILED (continuing ungrounded)\n");
+    process.stderr.write(`  dom-snapshot failed:\n${r.stderr ?? r.stdout ?? ""}\n`);
+    return null;
+  }
+  process.stdout.write("ok\n");
+  return out;
+}
+
 /** Derive the plan envelope (Stage 1 -> Stage 2 contract), only when absent — mirrors migrate.yml's `if [ ! -f "$ENV" ]` safety net so a committed Stage-1 envelope is trusted, not clobbered. Returns false on failure (the batch loop continues to the next input; the single-input path turns it into a non-zero exit). */
 function deriveEnvelope(p: Paths): boolean {
   process.stdout.write("  [step] derive plan envelope ... ");
@@ -204,10 +232,44 @@ export function assembledPromptPath(profile: Args["profile"]): string {
   return ASSEMBLED_GENERATE;
 }
 
+/** Build the CLOSED-VOCABULARY DOM-grounding block from a captured a11y snapshot.
+ * This is the fix for hallucinated locators: Stage 2 may only emit accessible
+ * names that EXIST in this snapshot — exactly the Playwright-MCP / Stagehand
+ * pattern (the model picks from a real, closed set instead of guessing). */
+function domGroundingBlock(snapshotPath: string | null): string {
+  if (snapshotPath === null || !existsSync(snapshotPath)) return "";
+  let snapshot = "";
+  try {
+    snapshot = readFileSync(snapshotPath, "utf8");
+  } catch {
+    return "";
+  }
+  if (snapshot.trim().length === 0) return "";
+  return [
+    "",
+    "## DOM grounding — CLOSED VOCABULARY (MANDATORY, overrides any guess)",
+    "The REAL accessibility tree of the target page is below. It is the ONLY source",
+    "of truth for accessible names. RULES:",
+    "- Every getByRole / getByLabel / getByText / getByPlaceholder you emit MUST cite",
+    "  a node that appears VERBATIM in this snapshot (same role, same name).",
+    "- If the element you need is NOT in the snapshot, DO NOT invent a role/name —",
+    "  emit the honest source locator (`locator('<css-from-source>')`) plus a",
+    "  `// confidence: low — not in DOM snapshot` comment. Never promote a guess.",
+    "- An accessible name not present below (e.g. a `getByRole('alert')` or",
+    "  `getByRole('button', { name: /close/i })` with no matching node) is a BUG.",
+    "",
+    "```yaml",
+    snapshot.trim(),
+    "```",
+  ].join("\n");
+}
+
 /** The Stage-2 wrapper prompt — points Claude at the assembled spec + context,
  * mirroring migrate.yml. Profile-aware: lean drops the qa-master triad/STOP
- * block + style anchor and states the relaxed contract; qa-master is unchanged. */
-export function buildPrompt(p: Paths, profile: Args["profile"]): string {
+ * block + style anchor and states the relaxed contract; qa-master is unchanged.
+ * When a DOM snapshot was captured (MIGRATION_TARGET_URL set), it is injected as
+ * a closed vocabulary so Stage 2 cannot hallucinate locators. */
+export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: string | null = null): string {
   const assembledRel = profile === "lean"
     ? "prompts/_assembled/generate.lean.md"
     : "prompts/_assembled/generate.md";
@@ -245,6 +307,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"]): string {
     "",
     "## Context to load (in this order)",
     ...context,
+    domGroundingBlock(snapshotPath),
     "",
     `Write a migration report to ${p.report} per the report schema.`,
   ].join("\n");
@@ -532,7 +595,11 @@ function runOne(args: Args): { base: string; code: number } {
     // A global setup error (no auth for ANY input) — hard-stop the whole run.
     fail("no Claude auth. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (see --help). Or --mock to check wiring.");
   }
-  runClaude(auth, buildPrompt(p, args.profile));
+  // DOM grounding: when MIGRATION_TARGET_URL is set, capture the target page's
+  // accessibility tree and feed it to Stage 2 as a closed vocabulary so it cannot
+  // hallucinate locators. Zero model tokens (a Playwright launch); ~free.
+  const snapshotPath = captureDomSnapshot(p);
+  runClaude(auth, buildPrompt(p, args.profile, snapshotPath));
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
   const results = runWall(validatorWall(p, args.profile));

@@ -41,6 +41,7 @@ interface CliArgs {
   url: string;
   output: string;
   maxTokens: number;
+  flow: string;
 }
 
 function parseCliArgs(): CliArgs {
@@ -49,18 +50,75 @@ function parseCliArgs(): CliArgs {
       url: { type: "string" },
       output: { type: "string" },
       "max-tokens": { type: "string", default: "20000" },
+      // Multi-page capture for authenticated flows: a ';'-separated mini-DSL of
+      // `goto <url>` | `fill <css> <value>` | `click <css>` | `snap <label>`.
+      // Snapshots are taken at each `snap` and concatenated with page headers, so
+      // post-login pages (inventory, cart) get grounded too — not just the entry URL.
+      flow: { type: "string", default: "" },
     },
     strict: true,
   });
-  if (!values.url || !values.output) {
-    process.stderr.write("Usage: dom-snapshot --url <url> --output <yaml> [--max-tokens N]\n");
+  const flow = values.flow ?? "";
+  if ((!values.url && flow.length === 0) || !values.output) {
+    process.stderr.write("Usage: dom-snapshot (--url <url> | --flow '<steps>') --output <yaml> [--max-tokens N]\n");
     process.exit(2);
   }
   return {
-    url: values.url,
+    url: values.url ?? "",
     output: values.output,
     maxTokens: Number.parseInt(values["max-tokens"] ?? "20000", 10),
+    flow,
   };
+}
+
+type FlowStep =
+  | { kind: "goto"; url: string }
+  | { kind: "fill"; selector: string; value: string }
+  | { kind: "click"; selector: string }
+  | { kind: "snap"; label: string };
+
+/** Parse the `--flow` mini-DSL (one step per `;`). */
+function parseFlow(spec: string): FlowStep[] {
+  const steps: FlowStep[] = [];
+  for (const raw of spec.split(";")) {
+    const t = raw.trim();
+    if (t.length === 0) continue;
+    const parts = t.split(/\s+/);
+    const kind = parts[0];
+    const rest = parts.slice(1);
+    if (kind === "goto") steps.push({ kind, url: rest.join(" ") });
+    else if (kind === "snap") steps.push({ kind, label: rest.join(" ") || "page" });
+    else if (kind === "click") steps.push({ kind, selector: rest.join(" ") });
+    else if (kind === "fill") steps.push({ kind, selector: rest[0] ?? "", value: rest.slice(1).join(" ") });
+    else throw new Error(`unknown flow step: '${t}'`);
+  }
+  return steps;
+}
+
+/** Run an authenticated flow in one page, snapshotting at each `snap` marker. */
+async function captureFlow(steps: FlowStep[]): Promise<string> {
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const parts: string[] = [];
+    for (const s of steps) {
+      if (s.kind === "goto") {
+        await page.goto(s.url, { waitUntil: "domcontentloaded", timeout: 15000 });
+      } else if (s.kind === "fill") {
+        await page.locator(s.selector).fill(s.value);
+      } else if (s.kind === "click") {
+        await page.locator(s.selector).click();
+        await page.waitForLoadState("domcontentloaded");
+      } else {
+        const snap = await page.locator("body").ariaSnapshot();
+        parts.push(`# === page: ${s.label} (${page.url()}) ===\n${snap}`);
+      }
+    }
+    return parts.join("\n\n");
+  } finally {
+    if (browser) await browser.close();
+  }
 }
 
 function describeError(e: unknown): string {
@@ -90,11 +148,12 @@ async function captureSnapshot(url: string): Promise<string> {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
+  const usingFlow = args.flow.length > 0;
   let yaml: string;
   try {
-    yaml = await captureSnapshot(args.url);
+    yaml = usingFlow ? await captureFlow(parseFlow(args.flow)) : await captureSnapshot(args.url);
   } catch (e: unknown) {
-    process.stderr.write(`::error::dom-snapshot: failed to reach ${args.url} — ${describeError(e)}\n`);
+    process.stderr.write(`::error::dom-snapshot: capture failed (${usingFlow ? "flow" : args.url}) — ${describeError(e)}\n`);
     process.exit(1);
   }
   if (!yaml || yaml.trim().length === 0) {
@@ -104,7 +163,7 @@ async function main(): Promise<void> {
   mkdirSync(dirname(args.output), { recursive: true });
   const header = [
     `# Accessibility snapshot — Phase 6 DOM grounding`,
-    `# URL: ${args.url}`,
+    usingFlow ? `# Flow (multi-page): ${args.flow}` : `# URL: ${args.url}`,
     `# Captured: ${new Date().toISOString()}`,
     `# Estimated tokens: ~${tokens}`,
     `# Format: YAML-ish flattened a11y tree; lists past 10 items collapse.`,

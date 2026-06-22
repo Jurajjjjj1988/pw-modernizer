@@ -25,6 +25,7 @@ import {
   countSmells,
   domProbeConfirmed,
   findForbidden,
+  planConfidence,
   selectorMix,
   selectorQualityScore,
   type Report,
@@ -121,6 +122,37 @@ test("collectEmittedSources: scores the migration's POM (stem-matched), not just
     assert.ok(!combined.includes(".unrelated"), "must NOT include an unrelated migration's POM");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("plan confidence: reads the structured column/envelope, NOT 'high' in prose", () => {
+  // The Notes cell screams "high-value" but the Confidence CELL is low. The old
+  // prose scanner counted the prose 'high'; the column-aware parse must read low.
+  const planMd = [
+    "## Locator translation table",
+    "",
+    "| Original | New | Confidence | Notes |",
+    "|---|---|---|---|",
+    "| `page.locator('#email')` | `page.getByLabel(/email/i)` | low | Mechanical, high-value, unchanged |",
+    "| `page.locator('#pw')` | `page.getByLabel(/password/i)` | low | same high-impact assumption |",
+  ].join("\n");
+  const fromProse = planConfidence(planMd);
+  assert.deepEqual({ high: fromProse.high, low: fromProse.low }, { high: 0, low: 2 },
+    "two LOW rows, despite 'high' twice in prose");
+  assert.ok(Math.abs(fromProse.aggregate - 0.2) < 1e-9, "aggregate reflects low, not inflated high");
+
+  // With an envelope present, its schema-validated confidences win.
+  const dir = mkdtempSync(join(tmpdir(), "pwm-planconf-"));
+  try {
+    const env = join(dir, "p.envelope.json");
+    writeFileSync(env, JSON.stringify({ locatorTable: [
+      { confidence: "high" }, { confidence: "high" }, { confidence: "med" },
+    ] }));
+    const fromEnv = planConfidence("(plan markdown ignored when envelope present)", env);
+    assert.deepEqual({ high: fromEnv.high, med: fromEnv.med, low: fromEnv.low }, { high: 2, med: 1, low: 0 });
+    assert.ok(Math.abs(fromEnv.aggregate - (2 + 0.6) / 3) < 1e-9);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

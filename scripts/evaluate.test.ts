@@ -25,6 +25,8 @@ import {
   countSmells,
   domProbeConfirmed,
   findForbidden,
+  selectorMix,
+  selectorQualityScore,
   type Report,
   UNVERIFIED_LOCATOR_CONFIDENCE_CAP,
 } from "./evaluate.js";
@@ -39,7 +41,7 @@ function highQualityReport(domGrounded: boolean): Report {
   return {
     input: "x", output: "y",
     source: { ...emptySmell, hardWaits: 4 }, outputSmells: emptySmell,
-    selector: { canonical: 10, fragile: 0 }, selectorQuality: 1, webFirstRate: 1,
+    selector: { canonicalVerified: 10, canonicalUnverified: 0, fragile: 0 }, selectorQuality: 1, webFirstRate: 1,
     forbidden: [], trivial: false,
     confidence: { high: 5, med: 0, low: 0, aggregate: 1 },
     inputLoc: 20, outputLoc: 40,
@@ -120,6 +122,31 @@ test("collectEmittedSources: scores the migration's POM (stem-matched), not just
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("selector quality: a hedged (hallucinated) canonical scores BELOW a clean one; 0 locators is neutral not perfect", () => {
+  // Same canonical-locator COUNT; the hedged POM marks its guesses with
+  // uncertainty comments. A hallucinated getByTestId must NOT score identical
+  // to a verified one (the dominant 33%-acceptable root cause).
+  const clean = selectorMix([
+    "readonly email = this.page.getByLabel('Email');",
+    "readonly submit = this.page.getByRole('button', { name: 'Sign in' });",
+  ].join("\n"));
+  assert.deepEqual(clean, { canonicalVerified: 2, canonicalUnverified: 0, fragile: 0 });
+  assert.equal(selectorQualityScore(clean), 1);
+
+  const hedged = selectorMix([
+    "// Q3 unresolved: greeting element type unknown. Reviewer fallback: keep CSS.",
+    "readonly greeting = this.page.getByRole('heading', { name: /welcome back/i });",
+    "// assumed — ask FE to add a data-testid",
+    "readonly cartCount = this.page.getByTestId('cart-count');",
+  ].join("\n"));
+  assert.deepEqual(hedged, { canonicalVerified: 0, canonicalUnverified: 2, fragile: 0 });
+  assert.equal(selectorQualityScore(hedged), 0.5, "hedged guesses credit at half, not full");
+
+  // A fragile CSS locator still scores 0; zero locators is neutral (0.5), not a free 1.0.
+  assert.equal(selectorQualityScore(selectorMix("this.page.locator('.product-card')")), 0);
+  assert.equal(selectorQualityScore({ canonicalVerified: 0, canonicalUnverified: 0, fragile: 0 }), 0.5);
 });
 
 test("collectEmittedFiles: returns the spec PLUS the migration's POM PATH (so --probe-tree probes the tree)", () => {

@@ -63,11 +63,13 @@
  *   the rest of the pipeline.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Project, SyntaxKind, type CallExpression, type Node } from "ts-morph";
 import { chromium, type Browser, type Page } from "playwright";
+
+import { collectEmittedFiles } from "./evaluate.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 
@@ -102,6 +104,10 @@ interface CliArgs {
   report: string;
   mode: "live" | "mock";
   highStrictOnly: boolean;
+  /** Probe the whole emitted tree (spec + reachable POMs/helpers), not just the
+   * spec. qa-master hides every locator in the POMs, so a spec-only probe sees
+   * zero locators and grounding can never confirm. */
+  probeTree: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -115,6 +121,8 @@ function parseCliArgs(): CliArgs {
       // contract is "default ENABLED, opt-out via =false". A bare flag would
       // make it impossible to express the disable case on the CLI.
       "high-strict-only": { type: "string", default: "true" },
+      // Opt-in: probe the spec PLUS its reachable POMs/helpers (the emitted tree).
+      "probe-tree": { type: "boolean", default: false },
     },
     strict: true,
   });
@@ -134,7 +142,10 @@ function parseCliArgs(): CliArgs {
     process.exit(2);
   }
   const highStrictOnly = rawHigh === "true";
-  return { url: values.url, probe: values.probe, report: values.report, mode, highStrictOnly };
+  return {
+    url: values.url, probe: values.probe, report: values.report, mode, highStrictOnly,
+    probeTree: values["probe-tree"] === true,
+  };
 }
 
 const LOCATOR_METHODS = new Set([
@@ -351,10 +362,16 @@ function formatHighFailureList(failures: readonly ProbedLocator[]): string {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
-  const locators = extractLocators(args.probe);
+  // qa-master hides every locator in POMs/blocks reached by fixture injection,
+  // so probing the spec alone finds zero locators and grounding can never
+  // confirm. With --probe-tree we probe the SAME emitted-tree files the scorer
+  // credits (spec + reachable POMs/helpers).
+  const probePaths = args.probeTree ? collectEmittedFiles(args.probe) : [args.probe];
+  const locators = probePaths.flatMap((p) => (existsSync(p) ? extractLocators(p) : []));
   if (locators.length === 0) {
     process.stderr.write(
-      `::warning::dom-ground: 0 locators found in ${args.probe}. Probably not a spec file.\n`,
+      `::warning::dom-ground: 0 locators found across ${probePaths.length} file(s) ` +
+        `(${args.probeTree ? "emitted tree" : args.probe}). With qa-master, probe the tree via --probe-tree.\n`,
     );
   }
   const probed = await probeLocators(locators, args.url, args.mode);

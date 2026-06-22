@@ -26,9 +26,11 @@ results.json -> | rag-context-render -----> prompts/_fragments/rag-context.md
 
 | Command | When |
 | --- | --- |
-| `npm run rag:index` | After ingesting new plans into `outputs/plans/` or `examples/*/expected-plan.md` |
+| `npm run rag:index` | After ingesting new plans into `outputs/plans/` or `examples/*/expected-plan.md` (31 docs as of 2026-06-22: outputs 15, examples 16) |
 | `npm run rag:retrieve -- --input <path>` | Dry-run retrieval against a specific input file |
 | `npm run rag:render -- --results <path>` | Format BM25 results as markdown |
+| `npm run rag:map3` | Held-out MAP@3 over the golden corpus (signal-only report) |
+| `npm run rag:eval` | The same MAP@3 as a **gate** — exits non-zero on HOLD (mirrors the CI `rag-map3-gate`). Run after editing the KB or corpus. |
 
 ## CI integration (next PR)
 
@@ -98,6 +100,24 @@ Per ADR-0001 §6:
 
 The measurement harness (semantic-regression-check N=5 shadow vs N=5 on)
 lands in the follow-up wiring PR.
+
+### Honest MAP@3 status (2026-06-22)
+
+The held-out **MAP@3 is 0.868** over the 31-doc corpus — a PASS (≥ 0.6), and now
+an *honest* number. It was previously reported as 0.931, but that figure was
+inflated by a **train/test leak**: the per-query token vector was built from the
+held-out doc's GOLD plan (`framework` + `kbIds`), while `isRelevant` scores on
+shared KB-IDs — so the query was leaking the ground-truth labels. The query now
+mirrors production (framework + tokens *earned* by running the fingerprint
+catalogue over the raw input body; never `doc.kbIds`). The drop from 0.931 → 0.868
+is the leak being removed, not a regression — retrieval is genuinely good.
+
+**What is still UNMEASURED:** the production shadow→on **uplift** (does injecting
+the retrieved plans actually lower Stage-1 variance / raise selector quality?).
+That is the one remaining RAG step and it requires real token-spending runs
+(`STAGE1_RAG=shadow` baseline vs `STAGE1_RAG=on`, N≥5 each). Retrieval *quality*
+is proven and gated; retrieval *value in production* is not yet measured. Keep
+`STAGE1_RAG=off` as the default until that A/B is run with a human present.
 
 ## What's NOT in this PR
 

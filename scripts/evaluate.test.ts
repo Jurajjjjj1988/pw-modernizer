@@ -19,10 +19,33 @@ import { test } from "node:test";
 import {
   checkAssertionFloor,
   collectEmittedSources,
+  computeAggregateConfidence,
   countAssertions,
   countSmells,
+  domProbeConfirmed,
   findForbidden,
+  type Report,
+  UNVERIFIED_LOCATOR_CONFIDENCE_CAP,
 } from "./evaluate.js";
+
+/** A high-quality report (all signals near-perfect) parameterised by grounding. */
+function highQualityReport(domGrounded: boolean): Report {
+  const emptySmell = {
+    hardWaits: 0, magicNumbers: 0, forcedClicks: 0, nthSelectors: 0, cssClassSelectors: 0,
+    pagePauses: 0, testOnly: 0, testSkip: 0, anyType: 0, consoleLog: 0,
+    nonWebFirstAsserts: 0, conditionalInTest: 0, assertionRoulette: 0,
+  };
+  return {
+    input: "x", output: "y",
+    source: { ...emptySmell, hardWaits: 4 }, outputSmells: emptySmell,
+    selector: { canonical: 10, fragile: 0 }, selectorQuality: 1, webFirstRate: 1,
+    forbidden: [], trivial: false,
+    confidence: { high: 5, med: 0, low: 0, aggregate: 1 },
+    inputLoc: 20, outputLoc: 40,
+    assertionFloor: { emitted: 5, floor: 1, passed: true },
+    domGrounded,
+  };
+}
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const EVALUATE = join(REPO_ROOT, "scripts", "evaluate.ts");
@@ -232,4 +255,34 @@ test("countSmells: documented v0 limitation — expects after a test.step bounda
     "});",
   ].join("\n");
   assert.equal(countSmells(src).assertionRoulette, 0, "v0 regex under-counts across the test.step boundary (documented)");
+});
+
+// ---- Grounding cap: unverified canonical locators must not auto-ship.
+
+test("computeAggregateConfidence: an ungrounded high-quality migration is capped below the verify gate", () => {
+  const capped = computeAggregateConfidence(highQualityReport(false));
+  assert.ok(capped <= UNVERIFIED_LOCATOR_CONFIDENCE_CAP, `expected <= ${UNVERIFIED_LOCATOR_CONFIDENCE_CAP}, got ${capped}`);
+  assert.ok(capped < 0.7, "ungrounded must route to verify (< 0.7), not auto-ship");
+});
+
+test("computeAggregateConfidence: the SAME migration with a passing DOM probe is NOT capped", () => {
+  const grounded = computeAggregateConfidence(highQualityReport(true));
+  assert.ok(grounded > UNVERIFIED_LOCATOR_CONFIDENCE_CAP, "grounded keeps full score and may auto-ship");
+  // The cap is the ONLY difference between the two — proves it is grounding-driven.
+  assert.ok(grounded - computeAggregateConfidence(highQualityReport(false)) > 0.2);
+});
+
+test("domProbeConfirmed: true only when a probe resolved real locators with zero not-found", () => {
+  const root = mkdtempSync(join(tmpdir(), "pwm-probe-"));
+  try {
+    const reportOut = join(root, "demo.spec.ts.md");
+    const probe = join(root, "demo.spec.ts-dom-probe.json");
+    assert.equal(domProbeConfirmed(reportOut), false, "no probe file → not grounded");
+    writeFileSync(probe, JSON.stringify({ totalLocators: 6, resolvedUnique: 6, notFound: 0 }));
+    assert.equal(domProbeConfirmed(reportOut), true, "all resolved, none missing → grounded");
+    writeFileSync(probe, JSON.stringify({ totalLocators: 6, resolvedUnique: 4, notFound: 2 }));
+    assert.equal(domProbeConfirmed(reportOut), false, "a not-found (hallucinated) locator → NOT grounded");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -402,7 +402,7 @@ function longestCommonSubstring(a: string, b: string): string {
 }
 
 // ---- Report writer.
-interface Report {
+export interface Report {
   input: string;
   output: string;
   source: SmellCount;
@@ -416,6 +416,7 @@ interface Report {
   inputLoc: number;
   outputLoc: number;
   assertionFloor: AssertionFloorResult;
+  domGrounded: boolean;
 }
 
 // Output quality signals (introduced 2026-06-04):
@@ -427,20 +428,37 @@ interface Report {
 // Stage 2 work couldn't lift confidence above the plan's ceiling. New
 // formula reduces plan weight to 0.4 and adds smell-removal + forbidden-
 // absence so a clean migration of an ambitious plan reads above 0.7.
-function computeAggregateConfidence(r: Report): number {
+//
+// Grounding cap (2026-06-22, docs/measured-quality-baseline.md Run 2): the
+// selector-quality signal rewards canonical locators (getByRole/getByTestId)
+// regardless of whether they were ever confirmed against the real DOM. A
+// measured run showed this makes confidence ANTI-correlate with real quality —
+// a HALLUCINATED `getByRole('alert')` scores as canonical but is more fragile
+// than the honest CSS fallback it replaced, and the four highest-scored
+// migrations all had ungrounded-locator defects a reviewer rejected. So when NO
+// DOM-probe report confirms this migration's locators, the canonical credit is
+// "claimed, not verified": cap the aggregate just below the verify-fire
+// threshold (0.7, owned by migrate.yml / migrate-local) so an ungrounded
+// migration is ROUTED TO VERIFY rather than auto-shipped on unverified guesses.
+// A migration with a passing DOM probe keeps its full score and may auto-ship.
+export const UNVERIFIED_LOCATOR_CONFIDENCE_CAP = 0.69;
+
+export function computeAggregateConfidence(r: Report): number {
   const sourceSmellTotal = Object.values(r.source).reduce((a, b) => a + b, 0);
   const outputSmellTotal = Object.values(r.outputSmells).reduce((a, b) => a + b, 0);
   const smellRemovalRate = sourceSmellTotal === 0
     ? 1
     : Math.max(0, (sourceSmellTotal - outputSmellTotal) / sourceSmellTotal);
   const forbiddenAbsence = r.forbidden.length === 0 ? 1 : 0;
-  return (
+  const raw =
     r.confidence.aggregate * 0.4
     + r.selectorQuality * 0.25
     + r.webFirstRate * 0.1
     + smellRemovalRate * 0.15
-    + forbiddenAbsence * 0.1
-  );
+    + forbiddenAbsence * 0.1;
+  // Unverified canonical locators must not auto-ship — route to verify instead.
+  if (!r.domGrounded) return Math.min(raw, UNVERIFIED_LOCATOR_CONFIDENCE_CAP);
+  return raw;
 }
 
 function renderReport(r: Report): string {
@@ -464,6 +482,7 @@ function renderReport(r: Report): string {
 - Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% canonical (${r.selector.canonical} canonical / ${r.selector.fragile} fragile)
 - Web-first assertion rate: ${(r.webFirstRate * 100).toFixed(0)}%
 - **Assertion floor:** ${r.assertionFloor.emitted} emitted (floor ${r.assertionFloor.floor}) — ${r.assertionFloor.passed ? "✅ pass" : "❌ FAIL — emitted tree asserts nothing, REJECT"}
+- **DOM grounding:** ${r.domGrounded ? "✅ locators DOM-confirmed" : "⚠️ UNVERIFIED — no passing DOM probe; canonical locators are unconfirmed guesses, so confidence is capped at 0.69 → routed to verify (set MIGRATION_TARGET_URL to ground them)"}
 - Plan confidence: ${r.confidence.high} high / ${r.confidence.med} med / ${r.confidence.low} low → avg ${r.confidence.aggregate.toFixed(2)}
 
 ### Confidence breakdown
@@ -659,6 +678,25 @@ export function collectEmittedSources(specPath: string, helperRootOverride?: str
   return parts.join("\n");
 }
 
+/** Is this migration's locator set CONFIRMED against the real DOM? True only when
+ * a DOM-probe report exists next to the metrics report, resolved real locators,
+ * and found NO `not-found` (hallucinated) locator. A probe with not-found > 0 —
+ * a locator the DOM doesn't have — does NOT count as grounded. */
+export function domProbeConfirmed(reportOutPath: string): boolean {
+  const probePath = reportOutPath.replace(/\.md$/i, "-dom-probe.json");
+  if (!existsSync(probePath)) return false;
+  try {
+    const r = JSON.parse(readFileSync(probePath, "utf8")) as Record<string, unknown>;
+    const num = (k: string): number => {
+      const v = r[k];
+      return typeof v === "number" ? v : 0;
+    };
+    return num("totalLocators") > 0 && num("resolvedUnique") > 0 && num("notFound") === 0;
+  } catch {
+    return false;
+  }
+}
+
 // ---- Main.
 function main(): void {
   const args = parseCliArgs();
@@ -696,6 +734,7 @@ function main(): void {
   const inputLoc = inputSrc.split("\n").length;
   const outputLoc = outputSrc.split("\n").length;
   const assertionFloor = checkAssertionFloor(countAssertions(emittedSrc));
+  const domGrounded = domProbeConfirmed(args["report-out"]);
 
   const report: Report = {
     input: args.input,
@@ -711,6 +750,7 @@ function main(): void {
     inputLoc,
     outputLoc,
     assertionFloor,
+    domGrounded,
   };
 
   mkdirSync(dirname(args["report-out"]), { recursive: true });

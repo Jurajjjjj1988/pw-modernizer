@@ -149,3 +149,26 @@ test("assembled generate.lean.md: keeps quality fragments, drops qa-master layer
   assert.ok(!lean.includes("Always produce"), "no qa-master 'Always produce' layer directive");
   assert.ok(!lean.includes("Imports policy — STRICT"), "no qa-master strict two-scope import policy");
 });
+
+// ---- DOM grounding: closed-vocabulary snapshot injection into the Stage-2 prompt.
+
+test("buildPrompt: injects the closed-vocabulary DOM snapshot when a snapshot path is given", () => {
+  const root = mkdtempSync(join(tmpdir(), "pwm-grnd-"));
+  try {
+    const snap = join(root, "snap.yaml");
+    writeFileSync(snap, '- textbox "Username"\n- button "Login"\n');
+    const p = derivePaths({ ...baseArgs, input: "inputs/cypress/x.cy.js" });
+    const prompt = buildPrompt(p, "qa-master", snap);
+    assert.match(prompt, /CLOSED VOCABULARY/, "grounding block header present");
+    assert.match(prompt, /MUST cite\s+\n?\s*a node that appears VERBATIM/i, "closed-vocab rule present");
+    assert.match(prompt, /button "Login"/, "real snapshot content injected");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("buildPrompt: no DOM grounding block when snapshot is null (ungrounded, unchanged)", () => {
+  const p = derivePaths({ ...baseArgs, input: "inputs/cypress/x.cy.js" });
+  const prompt = buildPrompt(p, "qa-master", null);
+  assert.ok(!prompt.includes("CLOSED VOCABULARY"), "ungrounded prompt must not carry a grounding block");
+});

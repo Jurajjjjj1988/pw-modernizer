@@ -75,6 +75,12 @@
  *  W14.  `from "./..."` cross-helper sibling imports — extends the existing
  *        parent-dir block (Check 5) to ALSO cover same-dir relative imports.
  *        KB qa-master/architecture/relative-imports-sibling.
+ *  W15.  A shared page's `waitForPageLoad()` gating on page CONTENT (a heading
+ *        text, toBeVisible on a feature locator) instead of a STRUCTURAL
+ *        invariant (toHaveURL, or a navigation/main/banner landmark). A content
+ *        gate couples every migration reusing the page to one scenario's data —
+ *        the cross-migration POM contamination from the measured Run 2
+ *        (docs/quality-research-findings.md). KB qa-master/page-object/load-gate-structural.
  *
  * CLI:
  *   npx tsx scripts/validate-qa-master-conformance.ts [--root outputs] [--strict]
@@ -459,6 +465,48 @@ function listPageMethods(text: string): { start: number; end: number }[] {
       j++;
     }
     if (j > i + 1) out.push({ start: i, end: j - 1 });
+  }
+  return out;
+}
+
+/** W15 — a shared POM's `waitForPageLoad()` must gate on a STRUCTURAL invariant
+ * (the URL via `toHaveURL`, or a navigation/main/banner/contentinfo/region
+ * landmark), NOT on scenario-specific page CONTENT.
+ *
+ * Why: qa-master shares one page object across migrations. A content gate (e.g.
+ * `expect(this.headingWelcome).toBeVisible()`) couples EVERY migration that
+ * reuses the page to one migration's data — so when that content is absent (an
+ * A/B variant, a renamed test user), every reusing spec fails in `beforeEach`,
+ * masking its own test. This was the measured "POM contamination" defect class
+ * (docs/measured-quality-baseline.md Run 2 / docs/quality-research-findings.md).
+ * Warn-severity (block under --strict). */
+function checkLoadGateStructural(rootAbs: string, file: string): Violation[] {
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (const { start, end } of listPageMethods(text)) {
+    if (!/\bwaitForPageLoad\s*\(/.test(lines[start] ?? "")) continue;
+    const body = lines.slice(start, end + 1).join("\n");
+    if (!/\bexpect\s*\(/.test(body)) continue; // a load gate with no assertion is not our concern
+    // Flag ONLY a gate on scenario-coupled TEXT CONTENT — not a stable control's
+    // visibility, a URL, or a landmark. Two signals:
+    //   (1) a content-text matcher (toHaveText / toContainText), or
+    //   (2) the asserted field is a heading/text locator (getByText / getByRole('heading')).
+    // `inputEmail.toBeVisible()` (a form control that always exists on the page) is
+    // a legitimate, migration-independent gate and must NOT be flagged.
+    const contentMatcher = /\.(toHaveText|toContainText)\s*\(/.test(body);
+    const assertedFields = [...body.matchAll(/expect\s*\(\s*this\.(\w+)/g)]
+      .map((m) => m[1]).filter((f): f is string => f !== undefined);
+    const contentLocator = assertedFields.some((f) =>
+      new RegExp(`\\b${f}\\b[^\\n]*(getByText\\s*\\(|getByRole\\(\\s*['"\`]heading['"\`])`).test(text),
+    );
+    if (!contentMatcher && !contentLocator) continue;
+    out.push({
+      file: relative(rootAbs, file),
+      line: start + 1,
+      message: "waitForPageLoad() gates on scenario CONTENT (a heading/text), not a structural invariant — assert toHaveURL(...), a navigation/main/banner landmark, or a stable control's visibility instead. A content gate couples every migration reusing this shared page to one scenario's data (POM contamination; see docs/quality-research-findings.md).",
+      severity: "warn",
+    });
   }
   return out;
 }
@@ -1092,6 +1140,10 @@ function main(): number {
     violations.push(...checkLocatorDescribe(rootAbs, file));
     violations.push(...checkExpectLabel(rootAbs, file));
     violations.push(...checkNamingPrefix(rootAbs, file));
+  }
+  // W15 — a shared page's waitForPageLoad() must gate on a structural invariant.
+  for (const file of pageFiles) {
+    violations.push(...checkLoadGateStructural(rootAbs, file));
   }
 
   // Check 5 — relative imports across all helper + spec files.

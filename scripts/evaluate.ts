@@ -198,33 +198,58 @@ export function countSmells(rawSource: string): SmellCount {
   return c;
 }
 
-// ---- Selector quality (canonical / fragile ratio).
+// ---- Selector quality (verified-canonical / unverified-canonical / fragile).
+// A canonical locator (getByRole/Label/TestId/…) is only as trustworthy as its
+// PROVENANCE: one the model invented (no source/DOM evidence) is a hallucination
+// that ships green. Stage 2 hedges such guesses with comment markers
+// ("Qn unresolved", "assumed", "Reviewer fallback", "ask FE to add data-testid",
+// "if DOM …"). We treat a canonical locator sitting next to such a marker as
+// UNVERIFIED and credit it at half, so a hallucinated getByTestId no longer
+// scores identical to a confirmed one.
 interface SelectorMix {
-  canonical: number; // getByRole, getByLabel, getByTestId, getByPlaceholder, getByText, getByAltText, getByTitle
+  canonicalVerified: number; // canonical locator with no uncertainty hedge nearby
+  canonicalUnverified: number; // canonical locator hedged by an uncertainty marker
   fragile: number; // nth, locator('css'), xpath, eq()
 }
 
-function selectorMix(source: string): SelectorMix {
-  const canonical =
-    (source.match(/getByRole\s*\(/g) ?? []).length +
-    (source.match(/getByLabel\s*\(/g) ?? []).length +
-    (source.match(/getByTestId\s*\(/g) ?? []).length +
-    (source.match(/getByPlaceholder\s*\(/g) ?? []).length +
-    (source.match(/getByText\s*\(/g) ?? []).length +
-    (source.match(/getByAltText\s*\(/g) ?? []).length +
-    (source.match(/getByTitle\s*\(/g) ?? []).length;
+const CANONICAL_RE = /getBy(?:Role|Label|TestId|Placeholder|Text|AltText|Title)\s*\(/g;
+// Stage-2 hedge vocabulary — a canonical locator near any of these is a guess.
+const UNCERTAINTY_MARKERS: RegExp[] = [
+  /\bunresolved\b/i, /not\s+confirmed/i, /\bunconfirmed\b/i, /\bassume[ds]?\b/i,
+  /\bfall(?:s|ing)?\s*back\b/i, /\bfallback\b/i, /\bask\s+(?:the\s+)?(?:fe|front)/i,
+  /add\s+(?:a\s+)?`?data-testid/i, /\bif\s+(?:the\s+)?dom\b/i, /\bmay\s+be\b/i,
+  /\bmight\s+be\b/i, /\bguess(?:ed|ing)?\b/i, /\blow[- ]conf/i, /\bTODO\b/, /\bFIXME\b/,
+];
+const isHedged = (window: string): boolean => UNCERTAINTY_MARKERS.some((re) => re.test(window));
+
+export function selectorMix(source: string): SelectorMix {
+  const lines = source.split("\n");
+  let canonicalVerified = 0;
+  let canonicalUnverified = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const n = (line.match(CANONICAL_RE) ?? []).length;
+    if (n === 0) continue;
+    // Hedge comments precede or trail the locator field — scan a small window.
+    const window = `${lines[i - 2] ?? ""}\n${lines[i - 1] ?? ""}\n${line}`;
+    if (isHedged(window)) canonicalUnverified += n;
+    else canonicalVerified += n;
+  }
   const fragile =
     (source.match(/\.nth\s*\(/g) ?? []).length +
     (source.match(/\.eq\s*\(\s*\d/g) ?? []).length +
     (source.match(/\.locator\s*\(\s*['"`][.#:[]/g) ?? []).length +
     (source.match(/xpath\s*=\s*['"`]/g) ?? []).length;
-  return { canonical, fragile };
+  return { canonicalVerified, canonicalUnverified, fragile };
 }
 
-function selectorQualityScore(mix: SelectorMix): number {
-  const total = mix.canonical + mix.fragile;
-  if (total === 0) return 1;
-  return mix.canonical / total;
+export function selectorQualityScore(mix: SelectorMix): number {
+  const total = mix.canonicalVerified + mix.canonicalUnverified + mix.fragile;
+  // No selector signal at all is NOT a free perfect score — it is absence of
+  // evidence. Return a neutral 0.5 instead of the old 1.0.
+  if (total === 0) return 0.5;
+  // Verified canonical = full credit; unverified (hedged guess) = half; fragile = 0.
+  return (mix.canonicalVerified + 0.5 * mix.canonicalUnverified) / total;
 }
 
 // ---- Web-first assertion rate.
@@ -479,7 +504,7 @@ function renderReport(r: Report): string {
 
 ## Quality scores
 - **Aggregate confidence:** ${totalConfidence}
-- Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% canonical (${r.selector.canonical} canonical / ${r.selector.fragile} fragile)
+- Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% (${r.selector.canonicalVerified} verified canonical / ${r.selector.canonicalUnverified} UNVERIFIED canonical / ${r.selector.fragile} fragile)
 - Web-first assertion rate: ${(r.webFirstRate * 100).toFixed(0)}%
 - **Assertion floor:** ${r.assertionFloor.emitted} emitted (floor ${r.assertionFloor.floor}) — ${r.assertionFloor.passed ? "✅ pass" : "❌ FAIL — emitted tree asserts nothing, REJECT"}
 - **DOM grounding:** ${r.domGrounded ? "✅ locators DOM-confirmed" : "⚠️ UNVERIFIED — no passing DOM probe; canonical locators are unconfirmed guesses, so confidence is capped at 0.69 → routed to verify (set MIGRATION_TARGET_URL to ground them)"}

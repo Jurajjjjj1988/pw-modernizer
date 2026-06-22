@@ -108,9 +108,11 @@ is 6/6 wall-clean). So the highest-leverage quality levers, in order:
 1. **Turn DOM grounding ON for real runs** (`MIGRATION_TARGET_URL` + `DOM_GROUND_STRICT`).
    Most FIX-FIRST defects here are "locator is a guess" — DOM grounding converts the
    guess into a verified locator or an honest LOW-confidence fallback.
-2. **Teach the scorer to distrust ungrounded locators** — a `getByRole` with no
-   DOM-probe confirmation should not score as canonical. Today the scorer is blind to
-   grounding, which is why it anti-correlates here.
+2. **Teach the scorer to distrust ungrounded locators** — ✅ DONE (#228). When no
+   passing DOM-probe confirms a migration, confidence is now capped at 0.69 (below the
+   verify gate), so nothing auto-ships on unverified canonical locators. On this corpus
+   the 3 wrongly-auto-shipped migrations now correctly route to verify; the anti-
+   correlation is eliminated. Full auto-ship returns only once locators are DOM-grounded.
 3. **Fix cross-migration POM contamination** — a shared POM must not inject
    assertions into a spec that did not request them.
 

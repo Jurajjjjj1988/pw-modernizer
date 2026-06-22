@@ -36,6 +36,11 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { computeCostUsd } from "./metrics.js";
+import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
+
+// Re-exported from the shared resolver so existing importers of this symbol
+// (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
+export { expectedSpecBasenames } from "./output-spec.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
@@ -368,7 +373,7 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
   // takes argv, so no glob — and no --config so PW auto-discovers
   // outputs/tests/playwright.config.ts exactly as migrate.yml does). Skipped
   // cleanly when there are no specs.
-  const specs = listOutputSpecs();
+  const specs = listOutputSpecs(OUT_DIR);
   const parseGate: WallStep[] = specs.length > 0
     ? [{ name: "playwright test --list (parse)", cmd: "npx", args: ["playwright", "test", "--list", ...specs] }]
     : [];
@@ -376,7 +381,7 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     { name: "tsc (outputs/tests)", cmd: "npx", args: ["tsc", "--noEmit", "-p", "outputs/tests/tsconfig.json"] },
     { name: "eslint --fix", cmd: "npx", args: ["eslint", "--fix", "outputs/tests/**/*.ts"] },
     ...parseGate,
-    { name: "ast-diff-not-trivial", cmd: "npx", args: ["tsx", "scripts/ast-diff-trivial-check.ts", "--input", p.input, "--output", "outputs/tests"] },
+    { name: "ast-diff-not-trivial", cmd: "npx", args: ["tsx", "scripts/ast-diff-trivial-check.ts", "--input", p.input, "--output", findGeneratedSpec(OUT_DIR, p.base) ?? "outputs/tests"] },
     { name: "plan-envelope coverage", cmd: "npx", args: ["tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope, "--code", "outputs/tests"] },
     { name: "plan-code coverage", cmd: "npx", args: ["tsx", "scripts/plan-code-coverage.ts", "--envelope", p.envelope, "--output", "outputs/tests"] },
     { name: "helper-usage", cmd: "npx", args: ["tsx", "scripts/validate-helper-usage.ts"] },
@@ -400,37 +405,8 @@ function runWall(steps: WallStep[]): WallResult[] {
   return results;
 }
 
-/** All *.spec.ts under outputs/tests (excluding the v0.1.x archive), lexically sorted for deterministic selection (matches `find` traversal order). */
-function listOutputSpecs(): string[] {
-  if (!existsSync(OUT_DIR)) return [];
-  const out: string[] = [];
-  const stack = [OUT_DIR];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    if (dir === undefined) break;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== "_legacy-v0.1.x") stack.push(full);
-      } else if (entry.name.endsWith(".spec.ts")) {
-        out.push(full);
-      }
-    }
-  }
-  return out.sort((a, b) => a.localeCompare(b));
-}
-
-/** Kebab spec basenames Stage 2 may emit for an input (kebab + optional trailing `-test` drop + leading `test-` drop) — mirrors the conformance/report-metrics derivation. */
-export function expectedSpecBasenames(inputBasename: string): string[] {
-  const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
-  const kebab = stem.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replaceAll("_", "-").toLowerCase();
-  const out = new Set<string>([`${kebab}.spec.ts`]);
-  const dropTrailing = kebab.replace(/-tests?$/, "");
-  if (dropTrailing !== kebab) out.add(`${dropTrailing}.spec.ts`);
-  const dropLeading = kebab.replace(/^test-/, "");
-  if (dropLeading !== kebab) out.add(`${dropLeading}.spec.ts`);
-  return [...out];
-}
+// listOutputSpecs / expectedSpecBasenames / findGeneratedSpec now live in
+// ./output-spec.ts (shared with the CI resolver). Imported at the top.
 
 // ---- Cost preview (2E) -----------------------------------------------------
 
@@ -570,14 +546,6 @@ export function expandInputs(glob: string, repoRoot: string = REPO_ROOT): string
   return [...new Set(matches)].sort((a, b) => a.localeCompare(b));
 }
 
-/** Locate THIS run's generated spec — prefer the spec whose basename matches the input, else the lexically-first (≡ migrate.yml `find … | head -1`). Scoping to the run's basename stops accumulated prior specs from being evaluated by mistake. */
-function findGeneratedSpec(base: string): string | null {
-  const specs = listOutputSpecs();
-  if (specs.length === 0) return null;
-  const expected = new Set(expectedSpecBasenames(base));
-  return specs.find((s) => expected.has(basename(s))) ?? specs[0] ?? null;
-}
-
 /** Run evaluate.ts → aggregate confidence (0..1) + write the metrics report (mirrors migrate.yml). */
 function runEvaluate(p: Paths, spec: string): string | null {
   const args = [
@@ -674,7 +642,7 @@ function main(): number {
 function reportOutcome(p: Paths, results: WallResult[]): number {
   const failed = results.filter((r) => !r.ok);
   // Confidence (informational — same evaluate.ts CI uses to decide if verify fires).
-  const spec = findGeneratedSpec(p.base);
+  const spec = findGeneratedSpec(OUT_DIR, p.base);
   const confidence = spec ? runEvaluate(p, spec) : null;
 
   process.stdout.write("\n  Summary:\n");

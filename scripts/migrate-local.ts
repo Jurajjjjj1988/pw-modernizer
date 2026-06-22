@@ -188,6 +188,35 @@ function captureDomSnapshot(p: Paths): string | null {
   return out;
 }
 
+/**
+ * Offline abstention gate (lever 1) — runs ONLY when there is no DOM snapshot.
+ * Without a SUT we can't ground, but we can still refuse a plan that pins a
+ * HIGH-confidence locator whose accessible name isn't derivable from the source:
+ * that is a confident hallucination. Runs PRE-generation so a hallucinated plan
+ * is rejected before any Stage-2 tokens are spent. Deterministic, zero tokens.
+ * Returns true when the plan is clean (or the gate can't apply).
+ */
+function offlineAbstentionGate(p: Paths): boolean {
+  process.stdout.write("  [gate] plan DOM grounding (offline abstention) ... ");
+  const r = spawnSync(
+    "npx",
+    ["tsx", "scripts/validate-plan-dom-grounding.ts", "--plan", p.plan, "--source", p.input],
+    { cwd: REPO_ROOT, encoding: "utf8" },
+  );
+  if (r.status === 0) {
+    process.stdout.write("ok\n");
+    return true;
+  }
+  process.stdout.write("FAILED\n");
+  process.stderr.write(`${r.stderr ?? r.stdout ?? ""}\n`);
+  process.stderr.write(
+    "  A high-confidence pin names a locator not derivable from your source, and there is no\n" +
+      "  DOM snapshot to ground it. Set MIGRATION_TARGET_URL to capture a snapshot, OR fix the\n" +
+      "  plan: lower the pin's confidence + add a hallucination-defense pin, or use a CSS fallback.\n",
+  );
+  return false;
+}
+
 /** Derive the plan envelope (Stage 1 -> Stage 2 contract), only when absent — mirrors migrate.yml's `if [ ! -f "$ENV" ]` safety net so a committed Stage-1 envelope is trusted, not clobbered. Returns false on failure (the batch loop continues to the next input; the single-input path turns it into a non-zero exit). */
 function deriveEnvelope(p: Paths): boolean {
   process.stdout.write("  [step] derive plan envelope ... ");
@@ -599,6 +628,11 @@ function runOne(args: Args): { base: string; code: number } {
   // accessibility tree and feed it to Stage 2 as a closed vocabulary so it cannot
   // hallucinate locators. Zero model tokens (a Playwright launch); ~free.
   const snapshotPath = captureDomSnapshot(p);
+  // No SUT to ground against → run the offline abstention gate on the plan before
+  // spending Stage-2 tokens. When a snapshot exists, snapshot grounding governs instead.
+  if (snapshotPath === null && !offlineAbstentionGate(p)) {
+    return { base: p.base, code: 1 };
+  }
   runClaude(auth, buildPrompt(p, args.profile, snapshotPath));
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");

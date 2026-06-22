@@ -271,6 +271,51 @@ jobs:
       # post-expansion copy from prompts/_assembled/. See
       # scripts/assemble-prompts.ts and prompts/_fragments/ for the design.
 
+      - name: Pre-generate DOM grounding (capture snapshot, else offline abstention gate)
+        # Makes grounding the DEFAULT, not dark. When MIGRATION_TARGET_URL is set we
+        # capture the live a11y tree BEFORE Stage 2 so the generate prompt can inject
+        # it as a closed vocabulary (the next step reads $SNAPSHOT). With no SUT we run
+        # the offline abstention gate (lever 1) on the plan — a high-confidence pin
+        # whose accessible name isn't derivable from the source is a confident
+        # hallucination — and fail FAST, before the heavy Stage-2 token spend.
+        env:
+          MIGRATION_TARGET_URL: ${{ secrets.MIGRATION_TARGET_URL }}
+          INPUT_PATH: ${{ steps.guard.outputs.input_path }}
+          # Default HARD. Repo var PLAN_ABSTENTION_STRICT=false softens to a warning.
+          SOFTEN: ${{ vars.PLAN_ABSTENTION_STRICT == 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ steps.guard.outputs.input_basename }}"
+          PLAN="outputs/plans/${BASE}.md"
+          SNAPSHOT="outputs/dom-snapshots/${BASE}.yaml"
+          # 1) SUT configured + no snapshot yet → capture the accessibility tree now.
+          if [ ! -f "$SNAPSHOT" ] && [ -n "${MIGRATION_TARGET_URL:-}" ]; then
+            npx playwright install --with-deps chromium >/dev/null 2>&1 || npx playwright install chromium || true
+            mkdir -p outputs/dom-snapshots
+            echo "::group::dom-snapshot capture of $MIGRATION_TARGET_URL"
+            npx tsx scripts/dom-snapshot.ts --url "$MIGRATION_TARGET_URL" --output "$SNAPSHOT" || \
+              echo "::warning::dom-snapshot capture failed — falling back to offline mode"
+            echo "::endgroup::"
+          fi
+          # 2) Snapshot present → Stage 2 will read it as a closed vocabulary. Done.
+          if [ -f "$SNAPSHOT" ]; then
+            echo "DOM grounding: snapshot ready at $SNAPSHOT — Stage 2 reads it as a closed vocabulary."
+            exit 0
+          fi
+          # 3) Offline → abstention gate (HARD by default; human-reviewed plan PR routes a flag back for a trivial fix).
+          SRC_ARG=""
+          if [ -f "$INPUT_PATH" ]; then SRC_ARG="--source $INPUT_PATH"; fi
+          if npx tsx scripts/validate-plan-dom-grounding.ts --plan "$PLAN" $SRC_ARG; then
+            exit 0
+          fi
+          if [ "$SOFTEN" = "true" ]; then
+            echo "::warning::Offline abstention gate flagged a confident hallucination — softened by PLAN_ABSTENTION_STRICT=false."
+            exit 0
+          fi
+          echo "::error::Offline abstention gate: a high-confidence pin names a locator not derivable from the source, and there is no DOM snapshot to ground it. Fix the plan (lower confidence + add a hallucination-defense pin, or use a CSS fallback), set MIGRATION_TARGET_URL to capture a snapshot, or set repo var PLAN_ABSTENTION_STRICT=false to soften."
+          exit 1
+
       - name: Run Claude (generate stage)
         # Stage 2 is the heaviest LLM call (Read plan + KB + rules + qa-master
         # reference + inventory; write spec + Pages + Blocks + fixtures + API
@@ -296,6 +341,29 @@ jobs:
             *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
           esac
           INVENTORY_BLOCK=$(cat "$INVENTORY_PATH")
+          # DOM grounding: when the pre-generate step captured a live a11y snapshot,
+          # inject it as a CLOSED VOCABULARY so Stage 2 cannot hallucinate locators.
+          # Empty (no-op) when offline — behaviour unchanged for snapshot-less runs.
+          SNAPSHOT="outputs/dom-snapshots/${INPUT_BASENAME}.yaml"
+          if [ -f "$SNAPSHOT" ]; then
+            DOM_GROUNDING_BLOCK=$(cat <<DGB
+          ## DOM grounding — CLOSED VOCABULARY (read before pinning any locator)
+
+          A live accessibility snapshot of the target was captured at: $SNAPSHOT
+          It is the GROUND TRUTH for which roles, accessible names, and labels exist.
+          Read it before you choose a locator, and obey:
+            - Every getByRole / getByLabel / getByText / getByPlaceholder you emit MUST
+              match a node present in the snapshot (same role + accessible name, verbatim casing).
+            - If the role/name you were about to use is NOT in the snapshot, DO NOT invent it.
+              Fall back to the source selector as CSS via page.locator('...') with a WHY-comment,
+              or pick the closest snapshot-backed node.
+            - Treat the snapshot as a closed set: prefer its exact accessible names over any
+              name you guessed from the source test.
+          DGB
+          )
+          else
+            DOM_GROUNDING_BLOCK=""
+          fi
           PROMPT=$(cat <<EOF
           You are running Stage 2 of the PWmodernizer pipeline.
 
@@ -420,6 +488,8 @@ jobs:
           do not introduce \`SignInPage\` or \`AccountsPageV2\`). If the plan
           explicitly mandates a new POM that overlaps an existing one,
           extend the existing file rather than forking.
+
+          $DOM_GROUNDING_BLOCK
 
           ## Deliverables — v0.2.0 qa-master architecture (write ONLY these paths)
 

@@ -854,32 +854,48 @@ jobs:
           fi
           echo "Plan validated."
 
-      - name: Validate plan DOM grounding
+      - name: Validate plan DOM grounding + offline abstention gate
         if: steps.dedup.outputs.skip == 'false'
-        continue-on-error: true
         shell: bash
+        env:
+          # Default HARD. Set repo variable PLAN_ABSTENTION_STRICT=false to soften
+          # the offline gate to a warning (parallels the DOM_GROUND_STRICT lever).
+          SOFTEN: ${{ vars.PLAN_ABSTENTION_STRICT == 'false' }}
         run: |
           set -euo pipefail
-          # Phase 6 DOM grounding (per docs/playwright-mcp-integration.md §3.1):
-          # when an accessibility snapshot exists for this input at
-          # outputs/dom-snapshots/<basename>.yaml, every locator pin in the
-          # plan markdown must be annotated with `// dom-snapshot:role=...|name=...`
-          # AND the cited role/name must be present in the snapshot. When no
-          # snapshot exists (current default for offline migrations), the
-          # validator exits 0 silently. Soft mode — `continue-on-error: true`
-          # surfaces hallucination candidates as warnings without blocking the
-          # plan PR until Phase 6 calibration is complete. Promote to hard mode
-          # after sufficient SUT calibration coverage (parallels DOM_GROUND_STRICT
-          # promotion path for the Stage 2 validator).
+          # Two regimes, by whether a Phase-6 a11y snapshot exists for this input:
+          #
+          #  • SNAPSHOT PRESENT — enforce the annotation contract (every pin
+          #    carries `// dom-snapshot:role=...|name=...` backed by the snapshot).
+          #    SOFT: this contract is not yet broadly produced, so we only warn —
+          #    promote after SUT calibration coverage (parallels DOM_GROUND_STRICT).
+          #
+          #  • NO SNAPSHOT (offline migration, the default) — run the OFFLINE
+          #    ABSTENTION GATE (lever 1): a high-confidence pin whose accessible
+          #    name is not derivable from the source is a confident hallucination.
+          #    HARD by default (0 false positives across the example corpus); the
+          #    plan PR is human-reviewed, so a red gate routes a hallucinated plan
+          #    back for a trivial fix (lower confidence + defense pin, or CSS).
           BASE="${{ steps.idempotency.outputs.input_basename }}"
           PLAN="outputs/plans/${BASE}.md"
           SNAPSHOT="outputs/dom-snapshots/${BASE}.yaml"
-          if [ ! -f "$SNAPSHOT" ]; then
-            echo "validate-plan-dom-grounding: no snapshot at $SNAPSHOT — skipping (offline migration mode)."
+          INPUT_PATH="${{ matrix.input_path }}"
+          SRC_ARG=""
+          if [ -f "$INPUT_PATH" ]; then SRC_ARG="--source $INPUT_PATH"; fi
+          if [ -f "$SNAPSHOT" ]; then
+            npx tsx scripts/validate-plan-dom-grounding.ts --plan "$PLAN" --snapshot "$SNAPSHOT" $SRC_ARG || \
+              echo "::warning::Plan snapshot grounding has unresolved pins — see ::error:: above. Soft mode: not failing the workflow."
             exit 0
           fi
-          npx tsx scripts/validate-plan-dom-grounding.ts --plan "$PLAN" --snapshot "$SNAPSHOT" || \
-            echo "::warning::Plan DOM grounding has unresolved pins — see ::error:: annotations above. Soft mode: not failing the workflow."
+          if npx tsx scripts/validate-plan-dom-grounding.ts --plan "$PLAN" $SRC_ARG; then
+            exit 0
+          fi
+          if [ "$SOFTEN" = "true" ]; then
+            echo "::warning::Offline abstention gate flagged a confident hallucination — softened by PLAN_ABSTENTION_STRICT=false."
+            exit 0
+          fi
+          echo "::error::Offline abstention gate: a high-confidence pin names a locator not derivable from the source, and there is no DOM snapshot to ground it. Fix the plan (lower the pin's confidence + add a hallucination-defense pin, or fall back to a CSS selector), set MIGRATION_TARGET_URL to capture a snapshot, or set repo var PLAN_ABSTENTION_STRICT=false to soften."
+          exit 1
 
       - name: Validate plan envelope JSON (LPW/Routine contract — Stage 1 dual-output mandate)
         if: steps.dedup.outputs.skip == 'false'

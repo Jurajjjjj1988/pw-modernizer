@@ -29,6 +29,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { MetricsDB, type UsageStats } from "./metrics.js";
+import { parseLocatorTable, normaliseConfidence } from "./derive-envelope.js";
 
 /**
  * Load a UsageStats JSON file emitted by extract-claude-usage.ts. Missing or
@@ -357,19 +358,59 @@ interface PlanConfidence {
   aggregate: number;
 }
 
-function planConfidence(planMd: string): PlanConfidence {
-  const tableLines = planMd
-    .split("\n")
-    .filter((l) => /^\|/.test(l) && /\b(high|med|low)\b/i.test(l));
+/** The markdown body of a `## <heading>` section, up to the next `## `. */
+function extractSection(md: string, heading: string): string {
+  const lines = md.split("\n");
+  const start = lines.findIndex((l) => new RegExp(String.raw`^##\s+${heading}\b`, "i").test(l));
+  if (start < 0) return "";
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i] ?? "")) { end = i; break; }
+  }
+  return lines.slice(start + 1, end).join("\n");
+}
+
+/** Confidences from the schema-validated envelope's locatorTable, or []. */
+function confidencesFromEnvelope(envelopePath: string | undefined): ("high" | "med" | "low")[] {
+  if (!envelopePath || !existsSync(envelopePath)) return [];
+  try {
+    const env: unknown = JSON.parse(readFileSync(envelopePath, "utf8"));
+    const rows = (env as { locatorTable?: { confidence?: string }[] }).locatorTable ?? [];
+    return rows.map((r) => normaliseConfidence(String(r.confidence ?? "med")));
+  } catch {
+    return [];
+  }
+}
+
+/** Column-aware fallback: parse the plan's locator-table section (identifies the
+ * confidence CELL, not any `high` in prose) the same way the envelope is derived. */
+function confidencesFromMarkdown(planMd: string): ("high" | "med" | "low")[] {
+  try {
+    return parseLocatorTable(extractSection(planMd, "Locator translation table")).map((r) => r.confidence);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Plan confidence — the heaviest scorer input (0.40). Sourced from the
+ * STRUCTURED confidence enum: the schema-validated envelope's
+ * `locatorTable[].confidence` when present, else a column-aware parse of the
+ * plan's locator table. NOT a prose scan: the old `/\bhigh\b/` first-match
+ * counted the word "high" anywhere in a row (KB rationale, notes), and scored
+ * plans using a non-high/med/low severity vocabulary as if they had no data —
+ * a 40%-weight signal a Stage-1 model could inflate just by writing "high".
+ */
+export function planConfidence(planMd: string, envelopePath?: string): PlanConfidence {
+  let confs = confidencesFromEnvelope(envelopePath);
+  if (confs.length === 0) confs = confidencesFromMarkdown(planMd);
   let high = 0;
   let med = 0;
   let low = 0;
-  for (const line of tableLines) {
-    const lower = line.toLowerCase();
-    // "Confidence" column — find the cell value (rough heuristic).
-    if (/\bhigh\b/.test(lower)) high += 1;
-    else if (/\bmed(ium)?\b/.test(lower)) med += 1;
-    else if (/\blow\b/.test(lower)) low += 1;
+  for (const c of confs) {
+    if (c === "high") high += 1;
+    else if (c === "med") med += 1;
+    else low += 1;
   }
   const total = high + med + low;
   if (total === 0) {
@@ -777,7 +818,9 @@ function main(): void {
   const webFirstRate = webFirstAssertionRate(emittedSrc);
   const forbidden = findForbidden(emittedSrc);
   const trivial = isAstDiffTrivial(inputSrc, outputSrc);
-  const confidence = planConfidence(planMd);
+  // Prefer the schema-validated envelope's structured confidence (derived from
+  // the plan path, the convention derive-envelope.ts / migrate.yml use).
+  const confidence = planConfidence(planMd, args.plan.replace(/\.md$/i, ".envelope.json"));
   const inputLoc = inputSrc.split("\n").length;
   const outputLoc = outputSrc.split("\n").length;
   const assertionFloor = checkAssertionFloor(countAssertions(emittedSrc));

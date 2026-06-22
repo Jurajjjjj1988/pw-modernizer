@@ -18,7 +18,7 @@ PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (b
     - `api/`, `actions/`, `utilities/`, `test-data/`, `types/{external,internal}`
   - `reports/` — per-migration metrics (`<basename>.md` + optional verify lens reports + DOM-probe JSON)
 - `prompts/` — Stage 1 (`analyze.md`), Stage 2 (`generate.md`), verify (`verify-sdet.md` + `verify-code-review.md`), plus `_fragments/` + `_assembled/`
-- `config/` — `knowledge-base.md` (140+ KB IDs incl. `qa-master/` namespace), `migration-rules.md` §1–§4 rewritten for qa-master, `kb-id-migration.md`
+- `config/` — `knowledge-base.md` (130 KB IDs incl. `qa-master/` namespace), `migration-rules.md` §1–§4 rewritten for qa-master, `kb-id-migration.md`
 - `examples/reference/qa-master/` — production-grade style anchor Sonnet reads at Stage 2 (real-company Playwright TS, owner-permitted snapshot)
 - `scripts/` — validators (`validate-qa-master-conformance.ts`, `validate-report-metrics.ts`, `plan-envelope-validate.ts`, …), evaluators, replay, calibration, dashboards
 - `.github/workflows/` — 8 workflows: `plan.yml`, `migrate.yml`, `verify.yml`, `danger.yml`, `regression-test.yml`, `regression-semantic.yml`, `regenerate-dispatch.yml`, `lint-output.yml`

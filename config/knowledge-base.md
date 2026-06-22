@@ -2284,6 +2284,46 @@ import { test } from '@playwright/test';
 
 Rationale: `WebDriverManager` reaches out to a binary registry on every test run to download/verify the matching ChromeDriver. Network blip → flaky test that fails with a misleading "WebDriver init error" instead of "test assertion failed". Java counterpart of KB-1.4.20 (Python `webdriver-manager`); both collapse to `sel/fixture/binary-installer-in-test` under the new namespace scheme. Playwright fetches browsers up-front and pins them per `@playwright/test` version. Prevents `WebDriverInstallerNetworkFlake` bug class.
 
+#### 1.3.26 `new FluentWait<>(driver).withTimeout(...).pollingEvery(...).ignoring(...)` builder wait
+
+```java
+// ANTI-PATTERN
+Wait<WebDriver> wait = new FluentWait<>(driver)
+    .withTimeout(Duration.ofSeconds(30))
+    .pollingEvery(Duration.ofMillis(500))
+    .ignoring(NoSuchElementException.class);
+WebElement el = wait.until(d -> d.findElement(By.id("status")));
+```
+
+```ts
+// CANONICAL — Playwright auto-retries; no explicit wait builder.
+// Web-first assertions poll until the timeout, tolerating transient absence by design.
+await expect(page.getByTestId('status')).toBeVisible({ timeout: 30_000 });
+// For a value/text, the matcher itself does the polling:
+await expect(page.getByTestId('status')).toHaveText('Ready', { timeout: 30_000 });
+```
+
+Rationale: `FluentWait` reinvents what Playwright's actionability + retrying assertions do natively. The `withTimeout` / `pollingEvery` / `ignoring(NoSuchElementException)` triad maps to a single `{ timeout }` option on a web-first assertion — Playwright already polls and already tolerates "not yet attached" until the deadline. Porting the builder verbatim produces a custom polling helper the pipeline forbids (it degrades to a KB-1.1.1-class hard-wait loop). Java sibling of the explicit-wait family (KB-1.3.4 / KB-1.3.15); collapses to `sel/timing/fluent-wait-builder` under the namespace scheme. Prevents `ManualPollingLoop` bug class.
+
+#### 1.3.27 `element.getShadowRoot().findElement(...)` manual shadow-DOM piercing
+
+```java
+// ANTI-PATTERN
+WebElement host = driver.findElement(By.cssSelector("my-widget"));
+SearchContext shadow = host.getShadowRoot();
+WebElement inner = shadow.findElement(By.cssSelector("p.label"));
+```
+
+```ts
+// CANONICAL — Playwright locators auto-pierce OPEN shadow roots.
+// No getShadowRoot()/SearchContext dance; getByRole/getByText/locator see through.
+await expect(page.getByRole('paragraph')).toHaveText('…');
+// or, when a CSS hook is unavoidable:
+await expect(page.locator('my-widget p.label')).toBeVisible();
+```
+
+Rationale: Selenium 4 added `getShadowRoot()` because its CSS engine does NOT pierce shadow boundaries — every shadow level needs a manual `getShadowRoot()` + nested `findElement`. Playwright's selector engine pierces OPEN shadow roots transparently, so `getByRole` / `getByText` / `locator('css')` resolves the inner node with zero host-traversal code. (Closed shadow roots are inaccessible to BOTH tools — flag as a LOW-confidence locator if encountered.) Collapses to `sel/locator/manual-shadow-pierce` under the namespace scheme. Prevents `ShadowTraversalBrittleness` bug class.
+
 #### 1.4.22 `driver.set_page_load_timeout(N)` driver-level page-load timeout
 
 ```python

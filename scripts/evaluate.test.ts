@@ -18,6 +18,7 @@ import { test } from "node:test";
 
 import {
   checkAssertionFloor,
+  collectEmittedFiles,
   collectEmittedSources,
   computeAggregateConfidence,
   countAssertions,
@@ -116,6 +117,29 @@ test("collectEmittedSources: scores the migration's POM (stem-matched), not just
     const combined = collectEmittedSources(join(tests, "search-filters.spec.ts"), join(root, "helper"));
     assert.ok(combined.includes(".product-card"), "must include the migration's own POM");
     assert.ok(!combined.includes(".unrelated"), "must NOT include an unrelated migration's POM");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("collectEmittedFiles: returns the spec PLUS the migration's POM PATH (so --probe-tree probes the tree)", () => {
+  // The live DOM probe reads files; it must see the POMs where qa-master keeps
+  // locators, or the spec-only probe finds zero and grounding never confirms.
+  const root = mkdtempSync(join(tmpdir(), "pwm-emitf-"));
+  try {
+    const tests = join(root, "tests");
+    const pages = join(root, "helper", "page-object", "pages");
+    mkdirSync(tests, { recursive: true });
+    mkdirSync(pages, { recursive: true });
+    const spec = join(tests, "search-filters.spec.ts");
+    writeFileSync(spec, "import { test, expect } from '@fixtures/base.fixture';\ntest('x', async ({ p }) => { await expect(p.results).toBeVisible(); });\n");
+    writeFileSync(join(pages, "search-filters.page.ts"), "export class SF { readonly results = this.page.getByRole('list'); }\n");
+    writeFileSync(join(pages, "other.page.ts"), "export class O { readonly x = this.page.locator('.unrelated'); }\n");
+
+    const files = collectEmittedFiles(spec, join(root, "helper"));
+    assert.ok(files.includes(spec), "must include the spec itself");
+    assert.ok(files.some((f) => f.endsWith("search-filters.page.ts")), "must include the migration's own POM path");
+    assert.ok(!files.some((f) => f.endsWith("other.page.ts")), "must NOT include an unrelated migration's POM");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -610,33 +610,42 @@ function mapFixturesToFiles(fxSrc: string, helperRoot: string): Map<string, stri
   return fixtureToFile;
 }
 
-/** Read each worklist file, push its source, and enqueue its helper imports —
+/** Pop each worklist file, record its PATH, and enqueue its helper imports —
  * the transitive close over `@alias` imports, never crossing back into the
- * base.fixture barrel. Mutates `parts` and `seen`. */
-function followHelperImports(
-  worklist: string[], helperRoot: string, baseFixturePath: string, parts: string[], seen: Set<string>,
+ * base.fixture barrel. Mutates `files` and `seen`. */
+function followHelperImportFiles(
+  worklist: string[], helperRoot: string, baseFixturePath: string, files: string[], seen: Set<string>,
 ): void {
   while (worklist.length > 0) {
     const file = worklist.pop();
     if (file === undefined || seen.has(file)) continue;
     seen.add(file);
     if (!existsSync(file)) continue;
-    const src = readFileSync(file, "utf8");
-    parts.push(src);
-    for (const spec of extractImportSpecifiers(src)) {
+    files.push(file);
+    for (const spec of extractImportSpecifiers(readFileSync(file, "utf8"))) {
       const f = resolveAliasImport(spec, helperRoot);
       if (f !== null && f !== baseFixturePath && !seen.has(f)) worklist.push(f);
     }
   }
 }
 
-export function collectEmittedSources(specPath: string, helperRootOverride?: string): string {
-  const specSrc = readFileSync(specPath, "utf8");
+/**
+ * The FILE PATHS that make up a migration's emitted tree: the spec plus every
+ * POM / block / helper it reaches by fixture injection and `@alias` import
+ * (qa-master hides every locator in these files, not the spec). This is the
+ * same resolution `collectEmittedSources` uses to score the tree — exposed as
+ * paths so the live DOM probe (dom-ground.ts --probe-tree) can probe the SAME
+ * files the scorer credits. Without this the probe saw a spec with zero
+ * locators, so `domGrounded` was permanently false and the 0.69 unverified cap
+ * could never lift even with a live SUT.
+ */
+export function collectEmittedFiles(specPath: string, helperRootOverride?: string): string[] {
+  const files = [specPath];
   const helperRoot = helperRootOverride
     ?? join(resolve(new URL("..", import.meta.url).pathname), "outputs", "helper");
-  if (!existsSync(helperRoot)) return specSrc;
+  if (!existsSync(helperRoot)) return files;
 
-  const parts = [specSrc];
+  const specSrc = readFileSync(specPath, "utf8");
   const seen = new Set<string>();
   const worklist: string[] = [];
   const baseFixturePath = join(helperRoot, "fixtures", "base.fixture.ts");
@@ -656,10 +665,16 @@ export function collectEmittedSources(specPath: string, helperRootOverride?: str
     if (f !== null && f !== baseFixturePath) worklist.push(f);
   }
   // (3) Transitively follow those files' helper imports.
-  followHelperImports(worklist, helperRoot, baseFixturePath, parts, seen);
+  followHelperImportFiles(worklist, helperRoot, baseFixturePath, files, seen);
 
   // (4) Union fallback: any file literally named `<spec-stem>.<layer>.ts`.
-  const specStem = basename(specPath).replace(/\.spec\.ts$/i, "");
+  addStemFallbackFiles(helperRoot, basename(specPath).replace(/\.spec\.ts$/i, ""), files, seen);
+
+  return files;
+}
+
+/** Append any `<specStem>.<layer>.ts` under helperRoot not already collected. */
+function addStemFallbackFiles(helperRoot: string, specStem: string, files: string[], seen: Set<string>): void {
   const stack = [helperRoot];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -670,12 +685,19 @@ export function collectEmittedSources(specPath: string, helperRootOverride?: str
         if (entry.name !== "_legacy-v0.1.x") stack.push(full);
       } else if (entry.name.endsWith(".ts") && entry.name.startsWith(`${specStem}.`) && !seen.has(full)) {
         seen.add(full);
-        parts.push(readFileSync(full, "utf8"));
+        files.push(full);
       }
     }
   }
+}
 
-  return parts.join("\n");
+/** The concatenated SOURCE of a migration's emitted tree (spec + reachable
+ * POMs/helpers). Reads the same file set `collectEmittedFiles` resolves. */
+export function collectEmittedSources(specPath: string, helperRootOverride?: string): string {
+  return collectEmittedFiles(specPath, helperRootOverride)
+    .filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, "utf8"))
+    .join("\n");
 }
 
 /** Is this migration's locator set CONFIRMED against the real DOM? True only when

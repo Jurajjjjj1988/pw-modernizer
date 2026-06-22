@@ -1163,11 +1163,19 @@ jobs:
           BASE="${{ steps.guard.outputs.input_basename }}"
           REPORT="outputs/reports/${BASE}-dom-probe.json"
           DG_EXIT=0
-          for f in $(find "outputs/tests/${BASE}" -type f -name '*.spec.ts'); do
-            echo "::group::dom-ground probe for $f"
+          # Resolve the spec emitted FOR THIS input (basename-scoped; the old
+          # `find outputs/tests/$BASE` treated the input basename as a directory,
+          # so cross-language renames silently probed nothing). --probe-tree makes
+          # the probe follow fixtures into the POMs where qa-master keeps every
+          # locator — without it the spec has zero locators and grounding can
+          # never confirm, leaving the 0.69 cap a permanent floor even with a SUT.
+          OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "$BASE" || true)
+          for f in $OUT_SPEC; do
+            echo "::group::dom-ground probe (emitted tree) for $f"
             npx tsx scripts/dom-ground.ts \
               --url "${MIGRATION_TARGET_URL}" \
               --probe "$f" \
+              --probe-tree \
               --report "$REPORT" \
               --mode live || DG_EXIT=$?
             echo "::endgroup::"

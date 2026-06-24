@@ -83,12 +83,22 @@ The v0.2.0 calibration loop closed at **11 iterations** of prompt + validator + 
 
 ## Current state (2026-06-10)
 
-The pipeline is end-to-end PROVEN on random public GitHub tests. Status snapshot:
+> **Honest quality bar (read this first).** "All gates passed" means the output
+> compiles, parses, and conforms to the architecture — it does **not** mean the
+> output is human-acceptable. On a real n=6 batch only **~33% were
+> human-acceptable**, and the confidence scorer was found to be **anti-correlated**
+> with real quality (two scorer bugs + a structurally-dead DOM grounding path).
+> This is under active remediation — see
+> [`docs/AUDIT-96-FINDINGS.md`](docs/AUDIT-96-FINDINGS.md) and the Wave 1–3 fixes
+> (#235–#243). **Always human-review before merge.** The "PROVEN" claims below are
+> about Stage-1 *plan* quality and *static* gates, not first-attempt shippability.
+
+The pipeline runs end-to-end on random public GitHub tests. Static-gate snapshot:
 
 - **6/6 random public Selenium tests → solid Stage 1 plans** (PR #6 PromptJupiter, #10 SelHQ Python, #11 ExplicitWait, #12 AddCookies, #14 FluentWait, #19 ShadowDOM — all real bonigarcia/SeleniumHQ Apache-2.0 code, zero hallucinated KB-IDs across ~50 anti-pattern citations)
 - **5/5 Stage 2 cross-language code outputs** (PR #13/#15/#16/#17/#18 — Java + Python → Playwright TS, all `confidence:high`, plan:scenario pins emitted, hallucination-defense WHY-comments materialised)
 - **CANDOR verify validated N=3** (PR #16 = 2/2 SHIP IT, PR #15/#17 = SHIP IT + FIX FIRST = reviewer required — real divergence, not synthetic agreement)
-- **DOM grounding** — Phase 7c live calibration 6/6 GREEN against `saucedemo.com` + `conduit.bondaracademy.com` + `practicetestautomation.com`; `DOM_GROUND_STRICT=true` set as repo var
+- **DOM grounding** — live calibration ran 6/6 against `saucedemo.com` + `conduit.bondaracademy.com` + `practicetestautomation.com`. ⚠️ Caveat (audit, 2026-06-22): the probe was fed only the spec, which on qa-master contains zero locators, so grounding never actually engaged on real output (the 0.69 cap was a permanent floor). Fixed in #236 (`--probe-tree` probes the POMs); grounding still requires `MIGRATION_TARGET_URL` (a live SUT) to engage at all.
 - **15 validators / 100 calibration fixtures** GREEN (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 7 + verify-tally 6 + danger-policy 6 + cypress-conformance 8 + selenium-python-conformance 6 + selenium-java-conformance 6 + rag-bm25 8 + helper-usage 6 + todo-discipline 6 + report-metrics 6)
 - **9 real infra bugs found + fixed today** (Stage 0 `\b@Test\b` + `\bdef test_\b` regex, AST-diff cross-language path, plan-code-coverage path, evaluate path, peer-dep ERESOLVE, peter-evans 400 auth, regression-semantic checkbox parser, verify parser `Verdict: **SHIP IT**` format)
 - **Walkthrough** uses real bonigarcia migration (PR #6 → PR #13) as canonical example
@@ -105,6 +115,20 @@ MAP@3 metric was also de-leaked (0.931 → honest 0.868, still PASS). New
 adopter-facing tooling: `npm run migrate --inputs` (batch), `--mock` cost preview,
 `npm run explain`, `npm run rag:eval`, and a real lean generation prompt
 (`--profile lean`).
+
+**Update (2026-06-25) — quality audit + remediation (Waves 1–3).** A multi-agent
+audit ([`docs/AUDIT-96-FINDINGS.md`](docs/AUDIT-96-FINDINGS.md)) found the measured
+quality was untrustworthy: CI scored the wrong spec (`find … | head -1`), DOM
+grounding was structurally dead, the scorer rewarded hallucinated locators, and
+the 40%-weight plan-confidence input was a prose keyword scan. **Wave 1** fixed all
+four (#235–#238). **Wave 2** added an acceptance rubric + Wilson-interval
+calibration so any quality % is reported with a confidence interval, never a bare
+point ([`docs/acceptance-rubric.md`](docs/acceptance-rubric.md), labels pending
+human review). **Wave 3** added a source-equivalence gate (#241), made the
+W1/W2/W5/W15 defect classes block via `--block-defects` (#242), and a reachable-POM
+scorer scope (#243). The honest headline is therefore **not** a high first-attempt
+rate yet — it is a pipeline that now *measures itself honestly* and blocks more of
+what the 33% rate was made of.
 
 ## Why this exists
 

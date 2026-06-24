@@ -97,3 +97,39 @@ const CONTROL_GATE = [
 test("W15: a stable control gate (input field visibility) is NOT flagged — only scenario content is", () => {
   assert.ok(!/gates on scenario CONTENT/.test(runOverPage(CONTROL_GATE)), "a form-control visibility gate is migration-independent — must pass");
 });
+
+/** Like runOverPage but returns the exit code + accepts extra validator flags. */
+function runOverPageExit(pageSrc: string, extraArgs: string[] = []): { out: string; code: number } {
+  const root = mkdtempSync(join(tmpdir(), "pwm-defect-"));
+  try {
+    const pages = join(root, "helper", "page-object", "pages");
+    mkdirSync(pages, { recursive: true });
+    writeFileSync(join(pages, "dash.page.ts"), pageSrc);
+    const r = spawnSync("npx", ["tsx", VALIDATOR, "--root", root, ...extraArgs], { cwd: REPO_ROOT, encoding: "utf8" });
+    return { out: `${r.stdout ?? ""}${r.stderr ?? ""}`, code: r.status ?? -1 };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// W5 bare-CSS locator = a quality-defect, but NO block-severity violation.
+const DEFECT_ONLY = [
+  'import { expect, type Locator } from "@playwright/test";',
+  'import { BasePage } from "@page-object/basepage";',
+  "export class PageClassDash extends BasePage {",
+  "  readonly results: Locator = this.page.locator('.product-card').describe('[Dash] results');",
+  "  async waitForPageLoad(): Promise<void> {",
+  "    await expect(this.page, '[Dash] dashboard URL').toHaveURL(/\\/dash/);",
+  "  }",
+  "}",
+  "",
+].join("\n");
+
+test("quality-defect (W5 bare CSS): warn-only in default mode, BLOCKS under --block-defects", () => {
+  const def = runOverPageExit(DEFECT_ONLY);
+  assert.equal(def.code, 0, "default: a defect-class violation is warn → exit 0 (calibration-preserving)");
+  assert.match(def.out, /locator-priority/, "the W5 defect is still reported");
+  const blocked = runOverPageExit(DEFECT_ONLY, ["--block-defects"]);
+  assert.equal(blocked.code, 1, "--block-defects: the W5 quality-defect now blocks the pipeline");
+  assert.match(blocked.out, /quality-defect/);
+});

@@ -101,6 +101,8 @@ interface CliArgs {
   strict: boolean;
   inputBasename: string | null;
   profile: "qa-master" | "lean";
+  /** Block on the quality-defect class (W1/W2/W5/W15) without going full --strict. */
+  blockDefects: boolean;
 }
 
 /**
@@ -135,6 +137,14 @@ interface Violation {
   line: number;
   message: string;
   severity: "block" | "warn";
+  /**
+   * A quality DEFECT (vs a pure style warn): the defect classes implicated in
+   * the measured ~33%-acceptable rate — W1 click-without-assertion, W2
+   * try/catch-in-page, W5 bare CSS/XPath locator, W15 POM-contamination. Stays
+   * severity "warn" (so the summary/annotation level and the calibration goldens
+   * are unchanged), but `--block-defects` makes these exit 1 in the pipeline.
+   */
+  defectClass?: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -144,6 +154,7 @@ function parseCliArgs(): CliArgs {
       strict: { type: "boolean", default: false },
       "input-basename": { type: "string" },
       profile: { type: "string", default: "qa-master" },
+      "block-defects": { type: "boolean", default: false },
     },
   });
   return {
@@ -153,6 +164,7 @@ function parseCliArgs(): CliArgs {
       ? values["input-basename"]
       : null,
     profile: values.profile === "lean" ? "lean" : "qa-master",
+    blockDefects: values["block-defects"] === true,
   };
 }
 
@@ -506,6 +518,7 @@ function checkLoadGateStructural(rootAbs: string, file: string): Violation[] {
       line: start + 1,
       message: "waitForPageLoad() gates on scenario CONTENT (a heading/text), not a structural invariant — assert toHaveURL(...), a navigation/main/banner landmark, or a stable control's visibility instead. A content gate couples every migration reusing this shared page to one scenario's data (POM contamination; see docs/quality-research-findings.md).",
       severity: "warn",
+      defectClass: true,
     });
   }
   return out;
@@ -541,6 +554,7 @@ function checkClickWithoutAssertion(rootAbs: string, file: string): Violation[] 
         line: lastIdx + 1,
         message: `Page method ends on .click() with no following assertion — KB qa-master/page-object/click-without-assertion. Per page-object/CLAUDE.md: "Never end a method on click() — assert after."`,
         severity: "warn",
+        defectClass: true,
       });
     }
   }
@@ -563,6 +577,7 @@ function checkNoTryCatchInPage(rootAbs: string, file: string): Violation[] {
         line: i + 1,
         message: `try/catch in page/block — KB qa-master/page-object/no-try-catch. Let Playwright's web-first assertions auto-retry; swallowing errors hides flake.`,
         severity: "warn",
+        defectClass: true,
       });
     }
   }
@@ -648,6 +663,7 @@ function checkLocatorPriority(rootAbs: string, file: string): Violation[] {
       line: i + 1,
       message: `Bare CSS/XPath locator '${sel}' — KB qa-master/page-object/locator-priority. Prefer getByTestId → getByRole → getByLabel → getByText before falling back to .locator().`,
       severity: "warn",
+      defectClass: true,
     });
   }
   return out;
@@ -1257,14 +1273,24 @@ function main(): number {
   }
 
   let blockCount = 0;
+  let defectCount = 0;
   for (const v of violations) {
     annotate(v);
     if (v.severity === "block") blockCount++;
+    if (v.defectClass) defectCount++;
   }
+  // Summary line kept byte-for-byte (calibration goldens pin it): defects stay
+  // counted under "warn" here; only the extra line + exit code below act on them.
   process.stderr.write(
     `validate-qa-master-conformance: ${violations.length} violation(s) (${blockCount} block / ${violations.length - blockCount} warn)\n`,
   );
   if (args.strict) return violations.length > 0 ? 1 : 0;
+  if (args.blockDefects && defectCount > 0) {
+    process.stderr.write(
+      `validate-qa-master-conformance: ${defectCount} quality-defect(s) (W1/W2/W5/W15) — blocked by --block-defects.\n`,
+    );
+    return 1;
+  }
   return blockCount > 0 ? 1 : 0;
 }
 

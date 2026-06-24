@@ -978,10 +978,25 @@ jobs:
           npx tsx scripts/persist-plan-metrics.ts --envelope "$ENV" $USAGE_ARG $RAG_ARGS || \
             echo "::warning::persist-plan-metrics failed (non-fatal)"
 
+      # A PR opened with the default GITHUB_TOKEN does NOT trigger downstream
+      # pull_request workflows (danger.yml, lint-output.yml) — GitHub blocks the
+      # recursion. So the plan PR would sit without its gates. A GitHub App token
+      # is treated as a distinct actor and DOES trigger them. Opt-in: set repo
+      # variable PWM_APP_ID + secret PWM_APP_PRIVATE_KEY; otherwise we fall back
+      # to github.token (unchanged behaviour). See docs/troubleshooting.md.
+      - name: Generate bot app token (for PR that triggers downstream gates)
+        id: app_token
+        if: steps.dedup.outputs.skip == 'false' && vars.PWM_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PWM_APP_ID }}
+          private-key: ${{ secrets.PWM_APP_PRIVATE_KEY }}
+
       - name: Open plan PR
         if: steps.dedup.outputs.skip == 'false'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
         with:
+          token: ${{ steps.app_token.outputs.token || github.token }}
           branch: migrator/plan-${{ steps.idempotency.outputs.input_basename }}
           base: main
           commit-message: 'chore(plan): migration plan for ${{ matrix.input_path }}'

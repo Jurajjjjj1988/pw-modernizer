@@ -173,8 +173,8 @@ function buildFrameworkQuality(db: MetricsDB): FrameworkQualityRow[] {
 function buildReport(db: MetricsDB, last: number | null): ReportData {
   const summaryRow = db.query(
     `SELECT
-       (SELECT COUNT(*) FROM migrations) AS migrations,
-       (SELECT COUNT(*) FROM plans) AS plans,
+       (SELECT COUNT(DISTINCT input_basename) FROM migrations) AS migrations,
+       (SELECT COUNT(DISTINCT input_basename) FROM plans) AS plans,
        (SELECT COUNT(*) FROM verifications) AS verifications,
        (SELECT MIN(created_at) FROM migrations) AS earliest,
        (SELECT MAX(created_at) FROM migrations) AS latest`

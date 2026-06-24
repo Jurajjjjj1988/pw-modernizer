@@ -26,6 +26,8 @@ import {
   domProbeConfirmed,
   findForbidden,
   planConfidence,
+  sliceReachablePom,
+  extractCalledMethods,
   selectorMix,
   selectorQualityScore,
   type Report,
@@ -123,6 +125,28 @@ test("collectEmittedSources: scores the migration's POM (stem-matched), not just
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("reachable-POM slice: keeps THIS migration's called methods + fields, drops inherited dead methods", () => {
+  const pom = [
+    "export class DashboardPage extends BasePage {",
+    "  readonly greeting = this.page.getByRole('heading', { name: /welcome/i });",
+    "  readonly cartCount = this.page.getByTestId('cart-count');",
+    "  async expectGreeting(): Promise<void> {",
+    "    await expect(this.greeting).toBeVisible();",
+    "  }",
+    "  async inheritedFromAnotherMigration(): Promise<void> {",
+    "    await expect(this.cartCount).toHaveText('{ not really }');", // brace in string must not fool the slicer
+    "  }",
+    "}",
+  ].join("\n");
+  const called = extractCalledMethods("async ({ dashboardPage }) => { await dashboardPage.expectGreeting(); }", new Set(["dashboardPage"]));
+  assert.ok(called.has("expectGreeting"));
+  const sliced = sliceReachablePom(pom, called);
+  assert.match(sliced, /expectGreeting/, "the reached method stays");
+  assert.doesNotMatch(sliced, /inheritedFromAnotherMigration/, "the dead inherited method is dropped");
+  assert.match(sliced, /readonly greeting/, "locator fields stay (the migration's locator surface)");
+  assert.match(sliced, /readonly cartCount/, "fields stay even if only used by a dropped method");
 });
 
 test("plan confidence: reads the structured column/envelope, NOT 'high' in prose", () => {

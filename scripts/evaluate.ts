@@ -757,12 +757,91 @@ function addStemFallbackFiles(helperRoot: string, specStem: string, files: strin
   }
 }
 
-/** The concatenated SOURCE of a migration's emitted tree (spec + reachable
- * POMs/helpers). Reads the same file set `collectEmittedFiles` resolves. */
+/** Method names invoked on the spec's fixture-injected page objects (e.g.
+ * `loginPage.signIn(...)` → "signIn"). The migration's REACHABLE method surface. */
+export function extractCalledMethods(specSrc: string, fixtureVars: Set<string>): Set<string> {
+  const called = new Set<string>();
+  for (const fx of fixtureVars) {
+    const re = new RegExp(String.raw`\b${fx}\s*\.\s*(\w+)\s*\(`, "g");
+    for (let m = re.exec(specSrc); m !== null; m = re.exec(specSrc)) {
+      if (m[1] !== undefined) called.add(m[1]);
+    }
+  }
+  return called;
+}
+
+const LIFECYCLE_METHODS = new Set(["open", "waitForPageLoad", "constructor"]);
+
+/** Strip line/block comments + string & regex literal CONTENTS so brace counting
+ * is not fooled by a `{` inside a string. Preserves line count + brace structure. */
+function sanitizeForBraces(line: string): string {
+  return line
+    .replace(/\/\/.*$/, "")
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``")
+    .replace(/\/(?:[^/\\\n]|\\.)+\/[a-z]*/g, "/RE/");
+}
+
+/**
+ * Keep a POM class's locator FIELDS plus only the methods THIS migration reaches
+ * (called methods + lifecycle), dropping methods inherited from OTHER migrations
+ * that share the file. Without this, a shared POM that accumulates methods over
+ * time credits/penalises every migration for code it never runs, so scores drift
+ * toward 1.0 and stop discriminating (audit: scorer-scores-whole-shared-pom).
+ */
+/** Index of the line where the brace block opened at/after `start` closes. */
+function blockEndLine(lines: string[], start: number): number {
+  let depth = 0;
+  let started = false;
+  for (let j = start; j < lines.length; j++) {
+    for (const ch of sanitizeForBraces(lines[j] ?? "")) {
+      if (ch === "{") { depth += 1; started = true; }
+      else if (ch === "}") depth -= 1;
+    }
+    if (started && depth <= 0) return j;
+  }
+  return lines.length - 1;
+}
+
+const POM_METHOD_RE = /^\s{2,}(?:public |private |protected |static |async )*([A-Za-z_]\w*)\s*\([^)]*\)\s*(?::[^={]+)?\{/;
+
+export function sliceReachablePom(pomSrc: string, called: Set<string>): string {
+  const lines = pomSrc.split("\n");
+  const keep: boolean[] = new Array(lines.length).fill(true);
+  let i = 0;
+  while (i < lines.length) {
+    const name = POM_METHOD_RE.exec(lines[i] ?? "")?.[1];
+    if (name !== undefined && !called.has(name) && !LIFECYCLE_METHODS.has(name)) {
+      const end = blockEndLine(lines, i);
+      for (let j = i; j <= end; j++) keep[j] = false;
+      i = end + 1;
+    } else {
+      i += 1;
+    }
+  }
+  return lines.filter((_, idx) => keep[idx]).join("\n");
+}
+
+/**
+ * The concatenated SOURCE of a migration's emitted tree (spec + reachable
+ * POMs/helpers). Default ("whole") reads every file verbatim — the current,
+ * baseline-anchored behaviour. PWM_SCORE_SCOPE=reachable slices each fixture-
+ * reached POM/block down to THIS migration's method surface (opt-in; flipping
+ * the default is a deliberate re-baseline against the acceptance label corpus).
+ */
 export function collectEmittedSources(specPath: string, helperRootOverride?: string): string {
-  return collectEmittedFiles(specPath, helperRootOverride)
-    .filter((f) => existsSync(f))
-    .map((f) => readFileSync(f, "utf8"))
+  const files = collectEmittedFiles(specPath, helperRootOverride).filter((f) => existsSync(f));
+  if (process.env["PWM_SCORE_SCOPE"] !== "reachable") {
+    return files.map((f) => readFileSync(f, "utf8")).join("\n");
+  }
+  const specSrc = readFileSync(specPath, "utf8");
+  const called = extractCalledMethods(specSrc, extractUsedFixtures(specSrc));
+  return files
+    .map((f) => {
+      const src = readFileSync(f, "utf8");
+      return f !== specPath && /\.(page|block)\.ts$/.test(f) ? sliceReachablePom(src, called) : src;
+    })
     .join("\n");
 }
 

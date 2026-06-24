@@ -1034,9 +1034,14 @@ jobs:
           # specs from prior runs and the validator would reject those even
           # though they're not this run's responsibility.
           BASE="${{ steps.guard.outputs.input_basename }}"
+          # --block-defects: the W1/W2/W5/W15 quality-defect classes (the ones
+          # implicated in the measured ~33%-acceptable rate) now BLOCK in the
+          # pipeline, not just warn. Default validator behaviour + calibration
+          # are unchanged (they run without the flag).
           npx tsx scripts/validate-qa-master-conformance.ts \
             --root outputs \
-            --input-basename "$BASE"
+            --input-basename "$BASE" \
+            --block-defects
 
       - name: TODO/FIXME discipline (PR #151 verify-CR root cause)
         if: steps.budget_guard.outputs.over_budget != 'true'

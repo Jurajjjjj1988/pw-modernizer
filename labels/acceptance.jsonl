@@ -1,0 +1,5 @@
+{"input_basename":"force-clicks.spec.ts","framework":"bad-playwright","verdict":"UNLABELED","reasons":[],"rater":"","date":"","notes":"awaiting human review — see docs/acceptance-rubric.md"}
+{"input_basename":"missing-await.spec.ts","framework":"bad-playwright","verdict":"UNLABELED","reasons":[],"rater":"","date":"","notes":"awaiting human review"}
+{"input_basename":"nth-selectors.spec.ts","framework":"bad-playwright","verdict":"UNLABELED","reasons":[],"rater":"","date":"","notes":"awaiting human review"}
+{"input_basename":"search-filters.spec.ts","framework":"bad-playwright","verdict":"UNLABELED","reasons":[],"rater":"","date":"","notes":"awaiting human review"}
+{"input_basename":"silent-conditionals.spec.ts","framework":"bad-playwright","verdict":"UNLABELED","reasons":[],"rater":"","date":"","notes":"awaiting human review"}

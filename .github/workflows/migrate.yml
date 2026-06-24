@@ -972,6 +972,26 @@ jobs:
             --envelope "$ENV" \
             --output "outputs/tests"
 
+      - name: Assertion coverage (source-equivalence)
+        if: steps.budget_guard.outputs.over_budget != 'true'
+        shell: bash
+        env:
+          # Default WARN (surfaces dropped/weakened assertions + a coverage number).
+          # Set repo var ASSERTION_COVERAGE_STRICT=true to hard-block on a gap.
+          STRICT_FLAG: ${{ vars.ASSERTION_COVERAGE_STRICT == 'true' && '--strict' || '' }}
+        run: |
+          set -euo pipefail
+          # Source-equivalence: every envelope expectedAssertion carrying a literal
+          # anchor (text/regex) must be REFLECTED in the emitted tree. Catches the
+          # dropped/weakened/mis-targeted assertion a clean-but-wrong migration ships.
+          # Lenient (token-overlap) so a correct generalisation is not flagged.
+          BASE="${{ steps.guard.outputs.input_basename }}"
+          ENV="outputs/plans/${BASE}.envelope.json"
+          OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "$BASE" || true)
+          npx tsx scripts/assertion-coverage.ts \
+            --envelope "$ENV" \
+            --output "${OUT_SPEC:-outputs/tests}" $STRICT_FLAG
+
       - name: Helper-usage gate (PR #126 SDET finding → static check)
         if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash

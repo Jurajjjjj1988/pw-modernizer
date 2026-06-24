@@ -384,6 +384,7 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     { name: "ast-diff-not-trivial", cmd: "npx", args: ["tsx", "scripts/ast-diff-trivial-check.ts", "--input", p.input, "--output", findGeneratedSpec(OUT_DIR, p.base) ?? "outputs/tests"] },
     { name: "plan-envelope coverage", cmd: "npx", args: ["tsx", "scripts/plan-envelope-validate.ts", "--envelope", p.envelope, "--code", "outputs/tests"] },
     { name: "plan-code coverage", cmd: "npx", args: ["tsx", "scripts/plan-code-coverage.ts", "--envelope", p.envelope, "--output", "outputs/tests"] },
+    { name: "assertion coverage (source-equivalence)", cmd: "npx", args: ["tsx", "scripts/assertion-coverage.ts", "--envelope", p.envelope, "--output", findGeneratedSpec(OUT_DIR, p.base) ?? "outputs/tests", ...(process.env["ASSERTION_COVERAGE_STRICT"] === "true" ? ["--strict"] : [])] },
     { name: "helper-usage", cmd: "npx", args: ["tsx", "scripts/validate-helper-usage.ts"] },
     { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base, ...(profile === "lean" ? ["--profile", "lean"] : [])] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },

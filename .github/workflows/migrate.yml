@@ -753,6 +753,12 @@ jobs:
           ERR="outputs/.lint-errors.md"
           : > "$ERR"
           STATUS=0
+          # eslint + playwright --list are scoped to THIS leg's spec so a sibling
+          # migration's broken/unparseable spec can't fail (or mask) this one — the
+          # wall verdict must be a property of THIS migration, not the whole
+          # accumulated tree (run-order independence). tsc stays project-wide (the
+          # spec imports the shared @fixtures barrel, so it can't compile alone).
+          THIS_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "${{ steps.guard.outputs.input_basename }}" || true)
 
           echo "### tsc --noEmit" >> "$ERR"
           echo '```' >> "$ERR"
@@ -767,7 +773,7 @@ jobs:
           echo '```' >> "$ERR"
           # eslint --fix mutates files. After autofix, anything still flagged
           # is a real lint failure that needs Claude's attention.
-          ESLINT_OUT=$(npx eslint --fix 'outputs/tests/**/*.ts' 2>&1)
+          ESLINT_OUT=$(npx eslint --fix "${THIS_SPEC:-outputs/tests}" 2>&1)
           ESLINT_RC=$?
           echo "$ESLINT_OUT" >> "$ERR"
           echo '```' >> "$ERR"
@@ -779,7 +785,7 @@ jobs:
           # Playwright interprets the bare glob as a test-name regex (`Nothing
           # to repeat`). Enumerate spec files via `find` so we pass literal
           # paths.
-          mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts')
+          if [ -n "$THIS_SPEC" ]; then SPECS=("$THIS_SPEC"); else mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts'); fi
           if [ "${#SPECS[@]}" -eq 0 ]; then
             echo "(no .spec.ts files found under outputs/tests)" >> "$ERR"
             PW_RC=0
@@ -904,14 +910,16 @@ jobs:
         run: |
           set -euo pipefail
           FAIL=0
+          # Scope eslint + --list to THIS leg's spec (sibling-independent); tsc project-wide.
+          THIS_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "${{ steps.guard.outputs.input_basename }}" || true)
           echo "::group::tsc"
           npx tsc --noEmit -p outputs/tests/tsconfig.json || FAIL=1
           echo "::endgroup::"
           echo "::group::eslint"
-          npx eslint --fix 'outputs/tests/**/*.ts' || FAIL=1
+          npx eslint --fix "${THIS_SPEC:-outputs/tests}" || FAIL=1
           echo "::endgroup::"
           echo "::group::playwright parse"
-          mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts')
+          if [ -n "$THIS_SPEC" ]; then SPECS=("$THIS_SPEC"); else mapfile -t SPECS < <(find outputs/tests -type f -name '*.spec.ts'); fi
           if [ "${#SPECS[@]}" -gt 0 ]; then
             npx playwright test --list "${SPECS[@]}" || FAIL=1
           fi

@@ -55,6 +55,9 @@ Set repository secrets:
 | --- | --- |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token from `claude setup-token` |
 | `ANTHROPIC_API_KEY` | Required if you also want `USE_CACHED_SDK=1` |
+| `PWM_APP_PRIVATE_KEY` | **Strongly recommended.** GitHub App private key. Without it the bot's plan/code PRs are opened with the default token, and GitHub will NOT run `danger.yml` / `lint-output.yml` on them — the PR sits without its gates (the README's "all gates passed" is a lie for you). See `docs/troubleshooting.md` "PR sits UNSTABLE indefinitely". |
+
+And set repository **variable** `PWM_APP_ID` (the GitHub App's numeric id; it is not a secret). Create a minimal GitHub App (repo scope: contents + pull-requests: write), install it on the fork, and put its id in `PWM_APP_ID` + a generated private key in `PWM_APP_PRIVATE_KEY`. When both are absent the workflows fall back to the default token (PRs open, but downstream gates won't fire).
 
 ## Phase 2 — First migration (day 2-3)
 

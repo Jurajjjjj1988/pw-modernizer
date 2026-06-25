@@ -1303,11 +1303,25 @@ jobs:
             echo "label=confidence:high" >> "$GITHUB_OUTPUT"
           fi
 
+      # See plan.yml: a default-GITHUB_TOKEN PR does not trigger danger.yml /
+      # lint-output.yml, so the code PR would sit UNSTABLE without its gates. The
+      # GitHub App token (opt-in via repo var PWM_APP_ID + secret
+      # PWM_APP_PRIVATE_KEY) is a distinct actor that DOES trigger them; falls
+      # back to github.token when unset (unchanged behaviour).
+      - name: Generate bot app token (for PR that triggers downstream gates)
+        id: app_token
+        if: steps.budget_guard.outputs.over_budget != 'true' && vars.PWM_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PWM_APP_ID }}
+          private-key: ${{ secrets.PWM_APP_PRIVATE_KEY }}
+
       - name: Open code PR
         id: open_pr
         if: steps.budget_guard.outputs.over_budget != 'true'
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
         with:
+          token: ${{ steps.app_token.outputs.token || github.token }}
           branch: migrator/code-${{ steps.guard.outputs.input_basename }}
           base: main
           commit-message: 'feat(migration): generated code for ${{ steps.guard.outputs.input_path }}'

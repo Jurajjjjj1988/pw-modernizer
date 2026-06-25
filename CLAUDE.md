@@ -91,7 +91,7 @@ A pipeline failure is **deterministic** (parser, validator, ESLint, YAML, max-tu
 
 1. `npm run triage <pr#>` — freezes the LLM output locally + prints the failure signature (zero tokens).
 2. Fix the deterministic cause, prove it with `npm run smoke` / `npm run calibrate` against the frozen artifact (zero tokens).
-3. For LLM-variability causes: **do not prompt-tune** (negative ROI, see ROADMAP "NOT to do") — the validator-block / auto-correct is the fix. Accept the block.
+3. For LLM-variability causes, prefer the validator-block / auto-correct over prompt edits (a structural gate is more durable than a prompt nudge). Prompt-tuning is **not** banned — the earlier "negative ROI" claim cited a ROADMAP section that does not exist and had no empirical basis (audit: `readme-oversells`). Before a prompt change, measure it: run the candidate prompt against the acceptance label corpus (`npm run calibrate:acceptance`) so the ROI is observed, not assumed.
 4. Only one final confirmation run touches the cloud. Promote a stubborn case into `fixtures/<validator>/{good,bad}-NN/` so it never needs a cloud rerun again.
 
 ## When in doubt

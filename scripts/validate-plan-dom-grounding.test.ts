@@ -116,3 +116,28 @@ test("offline gate runs with NO --source using the plan's own Original column as
   const r = runOffline(plan); // no source file
   assert.equal(r.code, 0, "the Original column is source-grounded vocabulary — degraded gate still passes it");
 });
+
+test("offline gate ENGAGES on a Cypress plan (Original=cy.get) — flags a high-conf name absent from source", () => {
+  const plan = [
+    "## Locator translation table",
+    "",
+    "| Original | New | Confidence | Notes |",
+    "|---|---|---|---|",
+    "| `cy.get('.add-to-cart')` | `page.getByRole('button', { name: 'Totally Invented' })` | high | guess |",
+  ].join("\n");
+  const r = runOffline(plan, "cy.get('.add-to-cart').click();");
+  assert.equal(r.code, 1, "native Cypress Original must not drop the pin; the gate must engage and flag the guess");
+  assert.match(r.stderr, /confident hallucination/);
+});
+
+test("offline gate PASSES a Selenium plan whose high-conf name IS derivable from source", () => {
+  const plan = [
+    "## Locator translation table",
+    "",
+    "| Original | New | Confidence | Notes |",
+    "|---|---|---|---|",
+    "| `By.ID, 'login'` | `page.getByRole('button', { name: 'Sign in' })` | high | derived |",
+  ].join("\n");
+  const r = runOffline(plan, "driver.find_element(By.XPATH, \"//button[text()='Sign in']\")");
+  assert.equal(r.code, 0, "'Sign in' is in the Selenium source — derivable, not a hallucination");
+});

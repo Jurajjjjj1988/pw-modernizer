@@ -205,6 +205,7 @@ function extractLocatorPins(plan: string): LocatorPin[] {
   let inLocatorTable = false;
   let inHallucinationPins = false;
   let tableSeparatorSeen = false;
+  let header: HeaderIdx | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -214,25 +215,30 @@ function extractLocatorPins(plan: string): LocatorPin[] {
       inLocatorTable = name.startsWith("locator translation");
       inHallucinationPins = name.startsWith("hallucination-defense pins");
       tableSeparatorSeen = false;
+      header = null;
       continue;
     }
 
     if (inLocatorTable) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) continue;
+      const cells = trimmed.slice(1, -1).split("|").map((c) => c.trim());
       if (/^\|[\s|:-]+\|$/.test(trimmed)) {
         tableSeparatorSeen = true;
         continue;
       }
-      if (!tableSeparatorSeen) continue; // header row
-      const cells = trimmed
-        .slice(1, -1)
-        .split("|")
-        .map((c) => c.trim());
+      if (!tableSeparatorSeen) {
+        // The row before the separator is the header — read its column indices
+        // so we can find "New"/"Original"/"Confidence" by NAME, not by guessing
+        // which cell is a Playwright locator (which dropped Cypress/Selenium
+        // plans whose Original column is cy.get(...) / driver.find_element(...)).
+        header = computeHeaderIndices(cells);
+        continue;
+      }
       // Pass the RAW row text as the annotation search surface — the
       // annotation contains its own `|` (between role= and name=) which
       // would otherwise be eaten by the markdown column split above.
-      const pin = pinFromTableRow(cells, trimmed, i + 1);
+      const pin = pinFromTableRow(cells, trimmed, i + 1, header);
       if (pin) pins.push(pin);
     } else if (inHallucinationPins) {
       // Numbered pin lines like:
@@ -273,24 +279,54 @@ function locatorCellsOf(cells: string[]): LocatorCell[] {
   return out;
 }
 
-function pinFromTableRow(cells: string[], rawRow: string, lineNo: number): LocatorPin | null {
-  // Identify locator-shaped cells: backtick-wrapped page.getBy* or page.locator.
-  const locatorCells = locatorCellsOf(cells);
-  if (locatorCells.length < 2) {
-    // Need at least Original + New columns to form a pin.
-    return null;
+interface HeaderIdx {
+  original: number;
+  new: number;
+  confidence: number;
+}
+
+/** Map a locator-table header row to the column indices we need, by NAME. */
+function computeHeaderIndices(headerCells: string[]): HeaderIdx {
+  const find = (...names: string[]): number =>
+    headerCells.findIndex((c) => names.includes(c.trim().toLowerCase()));
+  return {
+    original: find("original", "source", "from", "old"),
+    new: find("new", "target", "to", "playwright", "replacement"),
+    confidence: find("confidence", "conf"),
+  };
+}
+
+/** The first backtick-wrapped span of a cell, else the trimmed cell — the
+ * Original-column literal in ANY framework's syntax (cy.get, driver.find_element…). */
+function extractCellLiteral(cell: string): string | null {
+  const m = /`([^`]+)`/.exec(cell);
+  const lit = (m?.[1] ?? cell).trim();
+  return lit.length > 0 ? lit : null;
+}
+
+function pinFromTableRow(cells: string[], rawRow: string, lineNo: number, header: HeaderIdx | null): LocatorPin | null {
+  // Header-aware: read the New (Playwright) locator + Original literal by COLUMN
+  // INDEX. The New cell is still required to be a Playwright locator (it is the
+  // target), but the Original may be native Cypress/Selenium syntax.
+  if (header && header.new >= 0) {
+    const newLoc = extractLocatorFromCell(cells[header.new] ?? "");
+    if (newLoc === null) return null;
+    const originalLit = header.original >= 0 ? extractCellLiteral(cells[header.original] ?? "") : null;
+    const confidence =
+      header.confidence >= 0 ? confidenceFromCells([cells[header.confidence] ?? ""]) : confidenceFromCells(cells);
+    return { expression: newLoc, notes: rawRow, line: lineNo, original: originalLit, confidence, isDefensePin: false };
   }
-  // The "New" cell is the SECOND locator-shaped cell — first is Original.
+  // Fallback (no recognisable header): the legacy locator-shaped heuristic —
+  // the New cell is the SECOND Playwright-locator-shaped cell.
+  const locatorCells = locatorCellsOf(cells);
+  if (locatorCells.length < 2) return null;
   const newCell = locatorCells[1];
-  const originalCell = locatorCells[0];
   if (!newCell) return null;
-  // Annotation search surface is the raw row (preserves the `|` inside
-  // `role=...|name=...`); see LocatorPin.notes JSDoc.
   return {
     expression: newCell.locator,
     notes: rawRow,
     line: lineNo,
-    original: originalCell?.locator ?? null,
+    original: locatorCells[0]?.locator ?? null,
     confidence: confidenceFromCells(cells),
     isDefensePin: false,
   };

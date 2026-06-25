@@ -48,7 +48,7 @@ const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean"; repair: boolean }
+export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean"; repair: boolean; isolate: boolean }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -65,6 +65,7 @@ function parseCliArgs(): Args {
       check: { type: "boolean", default: false },
       profile: { type: "string", default: "qa-master" },
       repair: { type: "boolean", default: false },
+      isolate: { type: "boolean", default: false },
     },
   });
   return {
@@ -76,6 +77,7 @@ function parseCliArgs(): Args {
     check: values.check === true,
     profile: values.profile === "lean" ? "lean" : "qa-master",
     repair: values.repair === true,
+    isolate: values.isolate === true,
   };
 }
 
@@ -201,6 +203,19 @@ function captureDomSnapshot(p: Paths): string | null {
   }
   process.stdout.write("ok\n");
   return out;
+}
+
+/** Reset outputs/helper + outputs/tests to the committed baseline (the qa-master
+ * scaffolding: basepage/baseblock/base.fixture/logger), removing every generated
+ * POM/block/spec/test-data. Git is the source of truth for the baseline. Used by
+ * --isolate so a migration cannot inherit a sibling migration's locators. */
+function resetSharedTree(): void {
+  process.stdout.write("  [step] --isolate: resetting outputs/helper + outputs/tests to the committed baseline ... ");
+  // Restore tracked baseline files (base.fixture gets extended per migration), then
+  // remove untracked generated files. -q keeps it quiet; scoped to the two dirs.
+  spawnSync("git", ["checkout", "HEAD", "--", "outputs/helper", "outputs/tests"], { cwd: REPO_ROOT });
+  spawnSync("git", ["clean", "-fdq", "outputs/helper", "outputs/tests"], { cwd: REPO_ROOT });
+  process.stdout.write("ok\n");
 }
 
 /**
@@ -617,6 +632,13 @@ function runOne(args: Args): { base: string; code: number } {
     // A global setup error (no auth for ANY input) — hard-stop the whole run.
     fail("no Claude auth. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (see --help). Or --mock to check wiring.");
   }
+  // --isolate: reset the shared outputs/helper + outputs/tests tree to the
+  // committed baseline (basepage/baseblock/base.fixture/logger) BEFORE generating,
+  // so this migration starts clean and cannot inherit another migration's POM
+  // locators (the cross-migration contamination seen live: a shared login.page.ts
+  // carrying saucedemo + the-internet + bad-PW locators at once). Per-migration
+  // isolation makes each run independent + reproducible.
+  if (args.isolate) resetSharedTree();
   // DOM grounding: when MIGRATION_TARGET_URL is set, capture the target page's
   // accessibility tree and feed it to Stage 2 as a closed vocabulary so it cannot
   // hallucinate locators. Zero model tokens (a Playwright launch); ~free.

@@ -22,7 +22,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -52,19 +52,34 @@ export function parsePlaywrightVerdict(out: string, status: number | null): { ra
   return { ran: true, passed };
 }
 
+/** Find the playwright.config.ts governing a spec (walk up from its dir). The
+ * generated config lives at outputs/tests/playwright.config.ts (testDir "."), so
+ * without --config Playwright (run from the repo root) finds NO config → no
+ * projects → `--project chromium` fails. This is required, not optional. */
+function findPlaywrightConfig(spec: string): string | null {
+  let dir = dirname(resolve(spec));
+  for (let i = 0; i < 6; i++) {
+    const cfg = join(dir, "playwright.config.ts");
+    if (existsSync(cfg)) return cfg;
+    const up = dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return null;
+}
+
 /** Run the spec against the SUT and parse the pass/fail verdict. */
 export function runSpecAgainstSut(spec: string, url: string, project = "chromium"): SutResult {
   const specRel = relative(REPO_ROOT, spec);
-  const r = spawnSync(
-    "npx",
-    ["playwright", "test", spec, "--project", project, "--reporter=line", "--retries=0"],
-    {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      env: { ...process.env, MIGRATION_TARGET_URL: url },
-      timeout: 180_000,
-    },
-  );
+  const config = findPlaywrightConfig(spec);
+  const args = ["playwright", "test", spec, "--project", project, "--reporter=line", "--retries=0"];
+  if (config) args.push("--config", config);
+  const r = spawnSync("npx", args, {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, MIGRATION_TARGET_URL: url },
+    timeout: 180_000,
+  });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   const v = parsePlaywrightVerdict(out, r.status);
   if (!v.ran) return { ran: false, passed: false, failureTail: out.split("\n").slice(-25).join("\n"), specRel };

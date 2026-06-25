@@ -571,7 +571,7 @@ function runOne(args: Args): { base: string; code: number } {
     return { base: basename(p.input), code: 1 };
   }
   if (!existsSync(p.plan)) {
-    process.stderr.write(`  ✗ ${p.base}: no approved plan at ${p.plan}\n    Run Stage 1 first (plan.yml, or \`npm run try-it\` for the demo).\n`);
+    process.stderr.write(`  ✗ ${p.base}: no approved plan at ${p.plan}\n    Run Stage 1 first: \`npm run plan -- --input ${args.input || "<your-test>"}\` (or plan.yml in CI; \`npm run try-it\` for the bundled demo).\n`);
     return { base: p.base, code: 1 };
   }
   for (const d of [OUT_DIR, dirname(p.report)]) mkdirSync(d, { recursive: true });

@@ -6,6 +6,21 @@
 > own branch → smoke green → backdated commit (email juraj.kapusansky@gmail.com,
 > NO Claude attribution) → PR → CI green → squash-merge → back to main.
 
+## STATUS: all four waves merged (2026-06-25)
+
+Every code-side item below is **DONE**. What remains is **human/Claude-gated DATA**, not code:
+1. **Label the acceptance corpus** — fill verdicts in `labels/acceptance.jsonl` per `docs/acceptance-rubric.md`, then `npm run calibrate:acceptance` (gives the real %+CI and the calibrated gate). ≥30 labels for a defensible headline.
+2. **Run the Cypress/Selenium corpora** through Stage 1→2 (`npm run plan` then `npm run migrate`, or CI), then label them → `npm run measure:frameworks` computes each framework's 70%-gate verdict.
+3. **RAG on/shadow A/B** on actual plan quality (the offline `npm run rag:ablation` already shows retrieval is load-bearing: +39pts over chance on the 31-plan index).
+4. **Optional default-flips after measuring:** `PWM_SCORE_SCOPE=reachable` (scorer), `ASSERTION_COVERAGE_STRICT=true`, `PLAN_ABSTENTION_STRICT` — flip once the label corpus confirms they don't regress acceptance.
+
+### Shipped (PR list)
+- Wave 1 (trust): #235 ci-scores-wrong-spec · #236 grounding-cap probe-tree · #237 hallucinated-locator provenance · #238 plan-confidence structured enum.
+- Wave 2 (measure): #240 acceptance rubric + Wilson CI + calibration + COUNT(DISTINCT) fix.
+- Wave 3 (raise): #241 source-equivalence gate · #242 W1/W2/W5/W15 `--block-defects` · #243 reachable-POM scorer scope.
+- Wave 4 (breadth/adoption): #244 GitHub-App bot-PR token · #245 honest README + prompt-tune-ban retracted · #246 offline gate header-aware (Cypress/Selenium) · #247 `npm run plan` local Stage-1 · #248 scoped validator wall · #249 RAG ablation · #250 per-framework promotion gate.
+- Earlier groundwork: #232 W15 POM-contamination · #233 offline abstention gate · #234 grounding-default in CI.
+
 ## Done so far
 
 **Grounding-default groundwork (earlier):** #232 W15 POM-contamination · #233 offline

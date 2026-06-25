@@ -63,7 +63,7 @@
     "typecheck:all": "npm run typecheck:scripts && npm run typecheck",
     "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
     "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:envelope:code && npm run check:derive && npm run check:coverage && npm run check:assertions && npm run check:helper-usage && npm run calibrate",
-    "smoke": "npm run typecheck:all && npm run validate:all && npm run lint && npm run test:triage && npm run test:triage-all && npm run test:lean && npm run test:load-gate && npm run test:plan-dom-grounding && npm run test:output-spec && npm run test:binom && npm run test:acceptance && npm run test:assertion-coverage && npm run test:evaluate && npm run test:explain && npm run test:migrate && npm run test:plan-local && npm run test:semantic && npm run test:report-metrics && npm run test:derive && npm run test:rag-ablation && npm run test:rag-map3",
+    "smoke": "npm run typecheck:all && npm run validate:all && npm run lint && npm run test:triage && npm run test:triage-all && npm run test:lean && npm run test:load-gate && npm run test:plan-dom-grounding && npm run test:output-spec && npm run test:binom && npm run test:acceptance && npm run test:assertion-coverage && npm run test:evaluate && npm run test:explain && npm run test:migrate && npm run test:plan-local && npm run test:semantic && npm run test:report-metrics && npm run test:derive && npm run test:measure-framework && npm run test:rag-ablation && npm run test:rag-map3",
     "quickstart": "tsx scripts/quickstart-check.ts",
     "try-it": "tsx scripts/try-it.ts",
     "dom:snapshot": "tsx scripts/dom-snapshot.ts",
@@ -81,7 +81,9 @@
     "rag:eval": "tsx scripts/rag-map3-evaluator.ts --gate --quiet",
     "pilot:dry-run": "tsx scripts/pilot-dry-run.ts",
     "rag:ablation": "tsx scripts/rag-ablation.ts",
-    "test:rag-ablation": "tsx --test scripts/rag-ablation.test.ts"
+    "test:rag-ablation": "tsx --test scripts/rag-ablation.test.ts",
+    "measure:frameworks": "tsx scripts/measure-framework.ts",
+    "test:measure-framework": "tsx --test scripts/measure-framework.test.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

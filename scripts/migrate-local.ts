@@ -389,6 +389,20 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base, "--block-defects", ...(profile === "lean" ? ["--profile", "lean"] : [])] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
+    // Live-SUT gates (prior-art levers BP2 + BP1), only when MIGRATION_TARGET_URL
+    // is set — the static gates above always run.
+    //  - BP2 DOM grounding: probe every emitted locator (spec + reachable POMs)
+    //    against the LIVE page; a HIGH-confidence locator that does not resolve
+    //    uniquely fails (it's a hallucination the real DOM doesn't have). Writes
+    //    the probe report evaluate.ts reads to lift the 0.69 unverified cap.
+    //  - BP1 execution: RUN the migrated spec against the SUT — green = the
+    //    strongest acceptance signal (it actually works), not just "it compiles".
+    ...((process.env["MIGRATION_TARGET_URL"] ?? "").trim().length > 0
+      ? [
+          { name: "DOM grounding vs live SUT (locators resolve)", cmd: "npx", args: ["tsx", "scripts/dom-ground.ts", "--url", (process.env["MIGRATION_TARGET_URL"] ?? "").trim(), "--probe", findGeneratedSpec(OUT_DIR, p.base) ?? OUT_DIR, "--probe-tree", "--report", join(REPO_ROOT, "outputs/reports", `${p.base}-dom-probe.json`), "--mode", "live"] },
+          { name: "execution vs live SUT", cmd: "npx", args: ["tsx", "scripts/run-against-sut.ts", "--input-basename", p.base, "--url", (process.env["MIGRATION_TARGET_URL"] ?? "").trim()] },
+        ]
+      : []),
   ];
 }
 

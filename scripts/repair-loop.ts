@@ -23,8 +23,8 @@
  *       or setup error.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -61,9 +61,62 @@ function freshSnapshot(url: string): string {
   return r.status === 0 && existsSync(out) ? readFileSync(out, "utf8") : "(snapshot capture failed)";
 }
 
-/** Build the repair prompt — the execution error is the load-bearing signal. */
-export function buildRepairPrompt(spec: string, files: string[], failureTail: string, snapshot: string, url: string): string {
+/**
+ * Pull the page-snapshot YAML block out of a Playwright `error-context.md`. On a
+ * failure Playwright writes the aria tree of the page AT THE MOMENT THE LOCATOR
+ * FAILED — the exact page (already navigated + authenticated) the broken locator
+ * ran against. That is a strictly better repair signal than re-snapshotting the
+ * base URL, which only ever shows the login/landing page (IMP8). Returns the
+ * fenced ```yaml block's body, or "" if the file carries no snapshot.
+ */
+export function extractPageSnapshot(md: string): string {
+  const m = /```ya?ml\s*\n([\s\S]*?)```/.exec(md);
+  return m ? (m[1] ?? "").trim() : "";
+}
+
+/**
+ * Find the newest `error-context.md` Playwright wrote for THIS spec and return
+ * its failure-time page snapshot. Playwright names each result dir
+ * `<specStem>-<title>-<project>`, so we match dirs by the spec's kebab stem and
+ * pick the most recently modified. Returns "" when none exists (caller falls
+ * back to a fresh base-URL snapshot).
+ */
+export function findFailureSnapshot(specStem: string, root = join(REPO_ROOT, "test-results")): string {
+  if (!existsSync(root)) return "";
+  let newest: { path: string; mtime: number } | null = null;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (!(entry.name === specStem || entry.name.startsWith(`${specStem}-`))) continue;
+    const ctx = join(root, entry.name, "error-context.md");
+    if (!existsSync(ctx)) continue;
+    const mtime = statSync(ctx).mtimeMs;
+    if (!newest || mtime > newest.mtime) newest = { path: ctx, mtime };
+  }
+  if (!newest) return "";
+  return extractPageSnapshot(readFileSync(newest.path, "utf8"));
+}
+
+/** Pick the repair grounding: Playwright's failure-time page snapshot if present
+ * (the exact page the broken locator ran against), else a fresh base-URL snap. */
+function selectRepairSnapshot(spec: string, url: string): { snapshot: string; atFailure: boolean } {
+  const failSnap = findFailureSnapshot(basename(spec).replace(/\.spec\.ts$/, ""));
+  if (failSnap.length > 0) {
+    process.stdout.write("    grounding repair with the FAILURE-TIME page snapshot (error-context.md)\n");
+    return { snapshot: failSnap, atFailure: true };
+  }
+  process.stdout.write("    grounding repair with a fresh base-URL snapshot\n");
+  return { snapshot: freshSnapshot(url), atFailure: false };
+}
+
+/** Build the repair prompt — the execution error is the load-bearing signal.
+ * When `atFailure` is true, `snapshot` is Playwright's aria tree captured at the
+ * exact moment the locator failed (the right page, already authenticated) — far
+ * more authoritative than a fresh base-URL snapshot, so we say so and show more. */
+export function buildRepairPrompt(spec: string, files: string[], failureTail: string, snapshot: string, url: string, atFailure = false): string {
   const fileList = files.map((f) => `- ${relative(REPO_ROOT, f)}`).join("\n");
+  const snapHeader = atFailure
+    ? "## The page's accessibility tree AT THE MOMENT OF FAILURE (the exact page the broken locator ran against — authoritative)"
+    : "## The live page's accessibility tree RIGHT NOW (the closed vocabulary — only these exist)";
   return [
     "You are repairing a migrated Playwright test that COMPILES and passes every static gate",
     `but FAILS when run against the real app (${url}). The execution error is the ground truth.`,
@@ -73,9 +126,9 @@ export function buildRepairPrompt(spec: string, files: string[], failureTail: st
     failureTail.trim().split("\n").slice(-40).join("\n"),
     "```",
     "",
-    "## The live page's accessibility tree RIGHT NOW (the closed vocabulary — only these exist)",
+    snapHeader,
     "```yaml",
-    snapshot.trim().split("\n").slice(0, 60).join("\n"),
+    snapshot.trim().split("\n").slice(0, atFailure ? 90 : 60).join("\n"),
     "```",
     "",
     "## Files you may edit (the spec + the page objects it reaches — edit ONLY these)",
@@ -133,7 +186,10 @@ function main(): number {
     const spec = findGeneratedSpec(OUT_DIR, base);
     if (!spec) { process.stderr.write(`  no spec for ${base}\n`); return 1; }
     const files = collectEmittedFiles(spec).filter(existsSync);
-    const prompt = buildRepairPrompt(spec, files, gate.failureTail, freshSnapshot(url), url);
+    // Prefer Playwright's failure-time page snapshot (the exact page the broken
+    // locator ran against) over a blind base-URL re-snapshot (IMP8).
+    const { snapshot, atFailure } = selectRepairSnapshot(spec, url);
+    const prompt = buildRepairPrompt(spec, files, gate.failureTail, snapshot, url, atFailure);
 
     if (values.mock) {
       const mockOut = join(REPO_ROOT, "outputs/reports", "_repair-prompt.txt");

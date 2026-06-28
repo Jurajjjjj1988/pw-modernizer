@@ -1,0 +1,5 @@
+# Exit 0. A valid envelope that ALSO carries a `$schema` meta-key (Stage-1 LLMs
+# conventionally add it) must validate, not be rejected by additionalProperties:false.
+plan-envelope-validate:
+1 scenario(s)
+clean (schema only)

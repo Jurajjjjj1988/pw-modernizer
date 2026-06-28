@@ -1,0 +1,119 @@
+{
+  "inputBasename": "saucedemo-login.cy.js",
+  "sourceFramework": "cypress",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "valid credentials land the user on the inventory page with six products",
+      "userAction": "Navigate to the login page, fill valid username and password, click the login button, and observe the inventory page loads with expected content.",
+      "expectedAssertions": [
+        "The 'Products' heading is visible on the inventory page",
+        "Exactly 6 inventory items are present",
+        "The shopping cart link is visible"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/saucedemo-login.page.ts",
+    "outputs/helper/page-object/pages/saucedemo-inventory.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "cy.get('#user-name')",
+      "target": "page.getByLabel(/username/i)",
+      "confidence": "med",
+      "notes": "CSS id #user-name implies labelled form field; label text inferred from id name — no DOM snapshot. Fallback: page.locator('#user-name'). See Q1 in plan."
+    },
+    {
+      "original": "cy.get('#password')",
+      "target": "page.getByLabel(/password/i)",
+      "confidence": "med",
+      "notes": "CSS id #password implies labelled password field; label inferred from id name — no DOM snapshot. Fallback: page.locator('#password'). See Q1 in plan."
+    },
+    {
+      "original": "cy.get('#login-button')",
+      "target": "page.getByRole('button', { name: /log in/i })",
+      "confidence": "med",
+      "notes": "CSS id #login-button strongly implies a submit button; accessible name unverified — no DOM snapshot. Fallback: page.locator('#login-button'). See Q2 in plan."
+    },
+    {
+      "original": "cy.get('.title')",
+      "target": "page.getByRole('heading', { name: /products/i })",
+      "confidence": "med",
+      "notes": "CSS class .title + assertion text 'Products' implies page heading; element tag unverified — no DOM snapshot. Fallback: page.locator('.title'). See Q3 in plan."
+    },
+    {
+      "original": "cy.get('.inventory_item')",
+      "target": "page.locator('.inventory_item')",
+      "confidence": "high",
+      "notes": "CSS class preserved — no accessible-name or role evidence available without DOM snapshot. Reviewer should request data-testid='inventory-item' from FE team. See Q4 in plan."
+    },
+    {
+      "original": "cy.get('.shopping_cart_link')",
+      "target": "page.getByRole('link', { name: /shopping cart/i })",
+      "confidence": "med",
+      "notes": "CSS class .shopping_cart_link implies a cart link; accessible name unverified — no DOM snapshot. Fallback: page.locator('.shopping_cart_link'). See Q5 in plan."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Username input",
+      "assumedLocator": "page.getByLabel(/username/i)",
+      "sourceLocator": "cy.get('#user-name')",
+      "whyComment": "Q1 unresolved — no visible label confirmed for #user-name",
+      "reviewerFallback": "Check for <label for='user-name'> in devtools; if placeholder text only, use getByPlaceholder(/username/i); if neither, fall back to page.locator('#user-name')"
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Password input",
+      "assumedLocator": "page.getByLabel(/password/i)",
+      "sourceLocator": "cy.get('#password')",
+      "whyComment": "Q1 unresolved — no visible label confirmed for #password",
+      "reviewerFallback": "Check for <label for='password'> in devtools; if placeholder text only, use getByPlaceholder(/password/i); if neither, fall back to page.locator('#password')"
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Login button",
+      "assumedLocator": "page.getByRole('button', { name: /log in/i })",
+      "sourceLocator": "cy.get('#login-button')",
+      "whyComment": "Q2 unresolved — button accessible name not confirmed",
+      "reviewerFallback": "Inspect element tag and inner text/value in devtools; update name regex to match exact accessible name or fall back to page.locator('#login-button')"
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Products heading",
+      "assumedLocator": "page.getByRole('heading', { name: /products/i })",
+      "sourceLocator": "cy.get('.title')",
+      "whyComment": "Q3 unresolved — .title element tag not confirmed as semantic heading",
+      "reviewerFallback": "If element is not a semantic heading (h1/h2/etc.), use page.getByText('Products', { exact: true }) or page.locator('.title'); ask FE to add semantic heading tag"
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Shopping cart link",
+      "assumedLocator": "page.getByRole('link', { name: /shopping cart/i })",
+      "sourceLocator": "cy.get('.shopping_cart_link')",
+      "whyComment": "Q5 unresolved — cart link accessible name not confirmed",
+      "reviewerFallback": "Inspect aria-label or link text in devtools; if no accessible name, ask FE to add aria-label='Shopping Cart' or fall back to page.locator('.shopping_cart_link')"
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.83,
+    "smellCountDelta": -10,
+    "locDelta": 105,
+    "antiPatternCoverage": "10/10"
+  }
+}

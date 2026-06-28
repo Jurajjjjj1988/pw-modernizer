@@ -47,7 +47,7 @@ const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean" }
+export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean"; repair: boolean }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -63,6 +63,7 @@ function parseCliArgs(): Args {
       help: { type: "boolean", short: "h", default: false },
       check: { type: "boolean", default: false },
       profile: { type: "string", default: "qa-master" },
+      repair: { type: "boolean", default: false },
     },
   });
   return {
@@ -73,6 +74,7 @@ function parseCliArgs(): Args {
     help: values.help === true,
     check: values.check === true,
     profile: values.profile === "lean" ? "lean" : "qa-master",
+    repair: values.repair === true,
   };
 }
 
@@ -620,7 +622,18 @@ function runOne(args: Args): { base: string; code: number } {
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
   const results = runWall(validatorWall(p, args.profile));
-  return { base: p.base, code: reportOutcome(p, results) };
+  let code = reportOutcome(p, results);
+  // --repair (execution-guided closed loop): if a gate failed and a live SUT is
+  // set, run the repair loop — run the migrated test against the SUT, feed the
+  // failure + a fresh snapshot back to Claude, re-run, until green (<=3 iter).
+  // This makes the proven generate->run->repair loop the default path.
+  const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
+  if (code !== 0 && args.repair && sut.length > 0) {
+    process.stdout.write("\n  --repair: a gate failed + a live SUT is set → running execution-guided repair loop ...\n");
+    const r = spawnSync("npx", ["tsx", "scripts/repair-loop.ts", "--input-basename", p.base, "--url", sut], { cwd: REPO_ROOT, stdio: "inherit" });
+    code = r.status ?? 1;
+  }
+  return { base: p.base, code };
 }
 
 /** Run the pipeline over every input matched by --inputs, sequentially (safest

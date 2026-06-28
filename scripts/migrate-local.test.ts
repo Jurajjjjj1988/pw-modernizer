@@ -26,7 +26,7 @@ import {
 } from "./migrate-local.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const baseArgs: Args = { input: "", inputs: "", plan: "", mock: false, help: false, check: false, profile: "qa-master" };
+const baseArgs: Args = { input: "", inputs: "", plan: "", mock: false, help: false, check: false, profile: "qa-master", repair: false };
 
 test("derivePaths: BASE/plan/envelope/report mirror migrate.yml (BASE = basename(input))", () => {
   const p = derivePaths({ ...baseArgs, input: "inputs/bad-playwright/foo.spec.ts" });

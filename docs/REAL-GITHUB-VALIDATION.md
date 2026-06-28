@@ -64,7 +64,7 @@ example was restored from git. 7 unit tests incl. the exact reproduction.
 |---|---|---|---|
 | 1 | ✅ yes — execution gate confirmed (`github-saucedemo-cart.spec.ts`) | 1 | data-driven cart + inline-login auth fix |
 | 2 | ✅ yes — execution gate confirmed (`internet-login.spec.ts`) after the IMP10 fix | 1 | first migrate run's "green" was the IMP10 false-green on force-clicks; the fix made the repair edit the correct file, green via IMP8's failure-time snapshot |
-| 3 | ⏳ queued (Selenium→PW) | — | — |
+| 3 | ✅ yes — execution gate confirmed (`github-login-page-tests.spec.ts`) | 0 (correct first-try) | **cross-framework** Selenium/Java → Playwright TS; grounding filled the selectors that lived in a separate `LoginPage.java`; the auth-self-contained gate passed |
 
 ## Honest status
 

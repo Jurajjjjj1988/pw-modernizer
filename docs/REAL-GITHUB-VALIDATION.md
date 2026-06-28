@@ -65,11 +65,22 @@ example was restored from git. 7 unit tests incl. the exact reproduction.
 | 1 | ✅ yes — execution gate confirmed (`github-saucedemo-cart.spec.ts`) | 1 | data-driven cart + inline-login auth fix |
 | 2 | ✅ yes — execution gate confirmed (`internet-login.spec.ts`) after the IMP10 fix | 1 | first migrate run's "green" was the IMP10 false-green on force-clicks; the fix made the repair edit the correct file, green via IMP8's failure-time snapshot |
 | 3 | ✅ yes — execution gate confirmed (`github-login-page-tests.spec.ts`) | 0 (correct first-try) | **cross-framework** Selenium/Java → Playwright TS; grounding filled the selectors that lived in a separate `LoginPage.java`; the auth-self-contained gate passed |
+| 4 | ✅ yes — execution gate confirmed (`github-internet-add-remove.spec.ts`) | 0 (correct first-try) | the-internet add/remove: Cypress `before()` SHARED state across 3 tests → the migration correctly made each PW test self-contained (re-establishes state), and handled the dynamically-added delete buttons (absent from the initial snapshot) with a `count()>0` control-flow loop |
+| 5 | ✅ yes — execution gate confirmed (`github-internet-checkbox.spec.ts`) | 0 (correct first-try) | the-internet checkboxes: toggle an unchecked box → assert checked |
+
+**5 / 5 real GitHub tests reach a genuine, gate-confirmed GREEN on the correctly-resolved spec.** Across 2 source frameworks (Cypress, Selenium/JUnit-Java) and 2 public SUTs (saucedemo.com, the-internet.herokuapp.com). 3 of 5 needed **zero** repair (the grounded generate + static wall produced a working migration first-try); 2 needed exactly one execution-guided repair iteration. No committed example was corrupted (IMP10 holding).
 
 ## Honest status
 
-The closed-loop *machinery* is materially stronger (IMP8/9/10 each closed a real
-hole the synthetic corpus hid). The headline metric — "reaches a genuine green on
-an arbitrary real login-based GitHub test" — is proven on #1 and being re-proven
-on #2 on the correct file. Multi-framework (#3) is next. These three fixes are
-exactly the kind of defect that only execution-against-a-real-app can catch.
+The closed-loop *machinery* is materially stronger: IMP8/9/10 + the auth gate each
+closed a real hole the synthetic corpus hid, and every one was found by running a
+real test against a real app — not by reading code. The headline metric —
+"reaches a genuine, gate-confirmed green on an arbitrary real GitHub test" — now
+holds **5/5** across 2 frameworks and 2 SUTs, with the file-resolution and
+false-green hazards closed. This is no longer "it compiles"; it's "it runs green
+on the live app, on the correct file, and didn't corrupt anything to get there".
+
+What this does NOT yet prove: breadth (5 tests, 2 SUTs — not hundreds), apps
+behind real auth/CAPTCHA, or long multi-page user journeys. Those are the next
+rungs. But the core loop is now validated on real-world inputs, which is the
+thing that was missing.

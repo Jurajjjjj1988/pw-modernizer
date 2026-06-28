@@ -1,0 +1,105 @@
+{
+  "inputBasename": "the-internet-login.cy.js",
+  "sourceFramework": "cypress",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "[LOGIN-1] - Check that valid credentials reach the secure area @positive @e2e",
+      "userAction": "Navigate to the login page, fill username and password from env vars, click the submit button, and verify the secure area is reached with a flash success message and visible logout control.",
+      "expectedAssertions": [
+        "Flash success message is visible and contains text matching /you logged into a secure area/i",
+        "Logout link is visible"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/login.page.ts",
+    "outputs/helper/page-object/pages/secure-area.page.ts"
+  ],
+  "requiredBlocks": [],
+  "requiredApi": [],
+  "requiredActions": [],
+  "requiredUtilities": [],
+  "requiredTestData": [
+    "outputs/helper/test-data/labels.ts",
+    "outputs/helper/test-data/urls.ts"
+  ],
+  "requiredTypes": [],
+  "locatorTable": [
+    {
+      "original": "cy.get('#username')",
+      "target": "page.getByLabel(/username/i)",
+      "confidence": "med",
+      "notes": "Label association inferred from standard HTML login form. Fallback: page.locator('#username') HIGH. Resolved by Q1."
+    },
+    {
+      "original": "cy.get('#password')",
+      "target": "page.getByLabel(/password/i)",
+      "confidence": "med",
+      "notes": "Same assumption as username. Fallback: page.locator('#password') HIGH. Resolved by Q1."
+    },
+    {
+      "original": "cy.get('button[type=\"submit\"]')",
+      "target": "page.getByRole('button', { name: /login/i })",
+      "confidence": "med",
+      "notes": "Button role confirmed from HTML tag. Accessible name /login/i guessed from form context; unconfirmed without DOM snapshot. Fallback: page.locator('button[type=\"submit\"]') HIGH. Resolved by Q2."
+    },
+    {
+      "original": "cy.get('.flash.success')",
+      "target": "page.locator('.flash.success')",
+      "confidence": "high",
+      "notes": "Direct CSS-class mapping per hallucination-defense rule (no role invented without ARIA evidence). Upgrade candidate: page.getByRole('alert') LOW — requires Q3 resolution."
+    },
+    {
+      "original": "cy.get('a.button.secondary')",
+      "target": "page.getByRole('link', { name: /logout/i })",
+      "confidence": "med",
+      "notes": "Link role confirmed from <a> HTML tag. Accessible name /logout/i inferred from source assertion .should('contain', 'Logout'). Fallback: page.locator('a.button.secondary') HIGH. Resolved by Q4."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Username text input",
+      "assumedLocator": "page.getByLabel(/username/i)",
+      "sourceLocator": "cy.get('#username')",
+      "whyComment": "Q1 unresolved: <label for='username'> association assumed — no DOM snapshot present.",
+      "reviewerFallback": "If no label association exists in the DOM, use page.locator('#username') and add WHY-comment 'Q1 unresolved: label not confirmed'."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Password text input",
+      "assumedLocator": "page.getByLabel(/password/i)",
+      "sourceLocator": "cy.get('#password')",
+      "whyComment": "Q1 unresolved: <label for='password'> association assumed — no DOM snapshot present.",
+      "reviewerFallback": "If no label association exists in the DOM, use page.locator('#password') and add WHY-comment 'Q1 unresolved: label not confirmed'."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Login form submit button",
+      "assumedLocator": "page.getByRole('button', { name: /login/i })",
+      "sourceLocator": "cy.get('button[type=\"submit\"]')",
+      "whyComment": "Q2 unresolved: button accessible name assumed to contain /login/i — actual button text not confirmed without DOM snapshot.",
+      "reviewerFallback": "If button text differs (e.g. 'Sign In', 'Submit'), update the name regex. If locator resolves zero elements, fall back to page.locator('button[type=\"submit\"]')."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Logout link",
+      "assumedLocator": "page.getByRole('link', { name: /logout/i })",
+      "sourceLocator": "cy.get('a.button.secondary')",
+      "whyComment": "Q4 unresolved: accessible name assumed to contain 'Logout' from source assertion text — no DOM snapshot to confirm aria-label overrides.",
+      "reviewerFallback": "If accessible name does not match /logout/i, adjust regex or use page.locator('a.button.secondary') with WHY-comment 'Q4 unresolved: accessible name not confirmed'."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.80,
+    "smellCountDelta": -9,
+    "locDelta": 102,
+    "antiPatternCoverage": "9/9"
+  }
+}

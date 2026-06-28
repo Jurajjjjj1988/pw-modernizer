@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot } from "./repair-loop.js";
+import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure } from "./repair-loop.js";
 
 test("repair prompt carries the execution error, the live snapshot, the file list, and the getByLabel hint", () => {
   const p = buildRepairPrompt(
@@ -76,4 +76,35 @@ test("findFailureSnapshot: returns '' when no result dir matches (caller falls b
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---- IMP9: source-in-prompt + auth-bootstrap (storageState the pipeline never makes).
+
+test("isAuthBootstrapFailure: detects the storageState/ENOENT auth-setup class, ignores plain locator misses", () => {
+  assert.ok(isAuthBootstrapFailure("Error reading storage state from playwright/.auth/saucedemo.json: ENOENT"));
+  assert.ok(isAuthBootstrapFailure("ENOENT: no such file or directory, open 'playwright/.auth/x.json'"));
+  assert.ok(isAuthBootstrapFailure("storageState: 'auth.json' could not be read"));
+  assert.ok(!isAuthBootstrapFailure("waiting for getByRole('heading', { name: /products/i })"));
+  assert.ok(!isAuthBootstrapFailure("expect(locator).toBeVisible() failed: element(s) not found"));
+});
+
+test("buildRepairPrompt: includes the SOURCE test block when a source is given", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "waiting for getByLabel(/u/i)", "- text: x", "https://app", false,
+    "describe('Add Cart', () => { beforeEach(() => { cy.visit('/'); cy.get('[data-test=\"username\"]').type('u'); }); });");
+  assert.match(p, /SOURCE test \(the INTENT reference/);
+  assert.match(p, /data-test="username"/, "the real source login steps are shown to the repair model");
+});
+
+test("buildRepairPrompt: an auth-bootstrap failure adds the self-contained-auth directive (inline login)", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "Error reading storage state from playwright/.auth/x.json: ENOENT",
+    "- text: x", "https://app", false, "cy.get('[data-test=\"username\"]')");
+  assert.match(p, /authentication is NOT self-contained/i);
+  assert.match(p, /perform the login INLINE in a/);
+  assert.match(p, /standard_user/, "gives an unattended-run credential fallback");
+});
+
+test("buildRepairPrompt: a plain locator failure does NOT add the auth directive", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "waiting for getByRole('heading', { name: /products/i })",
+    "- text: Products", "https://app", true);
+  assert.ok(!/authentication is NOT self-contained/i.test(p), "locator failures must not trigger the auth block");
 });

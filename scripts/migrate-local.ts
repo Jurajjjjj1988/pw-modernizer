@@ -660,7 +660,7 @@ function runOne(args: Args): { base: string; code: number } {
   const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
   if (code !== 0 && args.repair && sut.length > 0) {
     process.stdout.write("\n  --repair: a gate failed + a live SUT is set → running execution-guided repair loop ...\n");
-    const r = spawnSync("npx", ["tsx", "scripts/repair-loop.ts", "--input-basename", p.base, "--url", sut], { cwd: REPO_ROOT, stdio: "inherit" });
+    const r = spawnSync("npx", ["tsx", "scripts/repair-loop.ts", "--input-basename", p.base, "--url", sut, "--source", p.input], { cwd: REPO_ROOT, stdio: "inherit" });
     code = r.status ?? 1;
   }
   return { base: p.base, code };

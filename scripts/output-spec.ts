@@ -10,7 +10,7 @@
  * already resolved correctly by input basename; this module lifts that logic
  * into one place so CI and local share it (and can never diverge again).
  */
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
 /**
@@ -51,14 +51,38 @@ export function listOutputSpecs(outDir: string): string[] {
 }
 
 /**
- * The spec generated for `inputBasename`, scoped by basename. Falls back to the
- * lexically-first spec ONLY when no basename match exists (so a single-spec tree
- * still resolves, and an unexpected Stage-2 name degrades gracefully rather than
- * erroring). Returns null only when the tree has no specs at all.
+ * Every Stage-2 spec carries a provenance header: `// See outputs/plans/<input>.md`.
+ * That uniquely ties a spec to the migration that produced it, independent of the
+ * filename the LLM chose. Matching on it is what lets us resolve a spec the model
+ * free-named (e.g. `internet-login.spec.ts` for input `github-internet-login.cy.js`).
+ */
+function matchesProvenance(specPath: string, inputBasename: string): boolean {
+  try {
+    return readFileSync(specPath, "utf8").slice(0, 400).includes(`outputs/plans/${inputBasename}.md`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The spec generated for `inputBasename`. Resolution order:
+ *  1. exact kebab-basename match (the common case);
+ *  2. provenance-header match — the spec whose header cites THIS input's plan
+ *     (robust to the LLM free-naming the spec file);
+ *  3. a single-spec tree (unambiguous);
+ *  4. otherwise null — REFUSE to guess. Returning the lexically-first spec (the
+ *     old behaviour) made the repair loop pick + overwrite an unrelated committed
+ *     example (force-clicks.spec.ts) and report a misattributed green. Callers all
+ *     handle null safely; a wrong-file guess corrupts state silently.
  */
 export function findGeneratedSpec(outDir: string, inputBasename: string): string | null {
   const specs = listOutputSpecs(outDir);
   if (specs.length === 0) return null;
   const expected = new Set(expectedSpecBasenames(inputBasename));
-  return specs.find((s) => expected.has(basename(s))) ?? specs[0] ?? null;
+  const byName = specs.find((s) => expected.has(basename(s)));
+  if (byName) return byName;
+  const byProvenance = specs.filter((s) => matchesProvenance(s, inputBasename));
+  if (byProvenance.length >= 1) return byProvenance.sort((a, b) => a.length - b.length)[0] ?? null;
+  if (specs.length === 1) return specs[0] ?? null;
+  return null;
 }

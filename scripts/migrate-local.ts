@@ -37,6 +37,7 @@ import { parseArgs } from "node:util";
 
 import { computeCostUsd } from "./metrics.js";
 import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
+import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -182,10 +183,17 @@ function captureDomSnapshot(p: Paths): string | null {
   const url = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
   if (url.length === 0) return null;
   mkdirSync(dirname(out), { recursive: true });
-  process.stdout.write(`  [step] DOM grounding — capture a11y tree of ${url} ... `);
-  const r = spawnSync("npx", ["tsx", "scripts/dom-snapshot.ts", "--url", url, "--output", out], {
-    cwd: REPO_ROOT, encoding: "utf8",
-  });
+  // Snapshot the ACTUAL page(s) the test navigates to (IMP1): derive the
+  // nav URLs from the source so grounding sees the real form, not just the site
+  // root. Falls back to the bare base URL when no URL is derivable.
+  const navUrls = existsSync(p.input) ? deriveNavUrls(readFileSync(p.input, "utf8"), url) : [];
+  const flow = buildSnapshotFlow(navUrls);
+  const args = flow.length > 0
+    ? ["tsx", "scripts/dom-snapshot.ts", "--flow", flow, "--output", out]
+    : ["tsx", "scripts/dom-snapshot.ts", "--url", url, "--output", out];
+  const targetDesc = flow.length > 0 ? `${navUrls.length} navigated page(s)` : url;
+  process.stdout.write(`  [step] DOM grounding — capture a11y tree of ${targetDesc} ... `);
+  const r = spawnSync("npx", args, { cwd: REPO_ROOT, encoding: "utf8" });
   if (r.status !== 0 || !existsSync(out)) {
     process.stdout.write("FAILED (continuing ungrounded)\n");
     process.stderr.write(`  dom-snapshot failed:\n${r.stderr ?? r.stdout ?? ""}\n`);

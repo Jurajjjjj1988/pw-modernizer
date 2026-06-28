@@ -389,6 +389,13 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base, "--block-defects", ...(profile === "lean" ? ["--profile", "lean"] : [])] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
+    // Execution-based acceptance (the #1 prior-art lever): when a live SUT is
+    // configured, RUN the migrated spec against it — green = the strongest
+    // acceptance signal (it actually works), not just "it compiles". Only added
+    // when MIGRATION_TARGET_URL is set (the static gates above always run).
+    ...((process.env["MIGRATION_TARGET_URL"] ?? "").trim().length > 0
+      ? [{ name: "execution vs live SUT", cmd: "npx", args: ["tsx", "scripts/run-against-sut.ts", "--input-basename", p.base, "--url", (process.env["MIGRATION_TARGET_URL"] ?? "").trim()] }]
+      : []),
   ];
 }
 

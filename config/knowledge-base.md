@@ -3293,7 +3293,7 @@ npx playwright test outputs/ --grep @smoke --trace on --reporter=line
 ## pwm-blueprint target architecture (v0.2.0 default)
 
 PWmodernizer's default `TARGET_STYLE` is `pwm-blueprint` — Sonnet emits multi-file
-layered output matching `examples/reference/pwm-blueprint/` (CustomInk's
+layered output matching `examples/reference/pwm-blueprint/` (the reference's
 production Playwright suite). The KB IDs below catalogue the anti-patterns
 the pwm-blueprint conformance validator and verify CANDOR check for in
 generated output. Cross-references to ARCHITECTURE.md sections in the
@@ -3456,7 +3456,7 @@ the underlying element has a `data-testid`.
 **Fix**: selector priority for pwm-blueprint = **`getByTestId` first**, then
 `getByRole` → `getByLabel` → `getByText` → `getByPlaceholder` → CSS → XPath.
 This is the ONE point where pwm-blueprint diverges from the general Playwright
-recommendation (getByRole-first); the rationale is that the CustomInk
+recommendation (getByRole-first); the rationale is that the reference app's
 front-end ships maintained testids and they're the most stable contract
 in that codebase. ARCHITECTURE.md §5.
 

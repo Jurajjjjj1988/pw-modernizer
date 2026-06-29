@@ -17,6 +17,10 @@
     "expectedMetrics"
   ],
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON-Schema meta-reference. Stage-1 LLMs conventionally add this to associate the instance with its schema for editor tooling; with additionalProperties:false it would otherwise be rejected, blocking an otherwise-valid plan. Permitted but never required."
+    },
     "inputBasename": {
       "type": "string",
       "minLength": 1,

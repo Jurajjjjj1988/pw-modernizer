@@ -260,6 +260,16 @@ function main(): number {
     const code = handleFailure(base, url, source, values.mock === true, gate.failureTail);
     if (code !== null) return code;
   }
+  // The loop runs the gate at the START of each iteration, so the LAST iteration's
+  // repair edit is never verified (it would only be checked by a run that never
+  // happens). Without this final check the loop reports "still failing" even when
+  // that last edit actually fixed it — a false negative the independent gate then
+  // contradicts (IMP12). Verify the final repair before giving up.
+  const final = runExecutionGate(base, url);
+  if (final.green) {
+    process.stdout.write(`  ✅ GREEN — ${base} passes against ${url} (repaired on the final iteration, ${maxIter}/${maxIter}).\n`);
+    return 0;
+  }
   process.stdout.write(`\n  ✗ still failing after ${maxIter} repair iteration(s) — needs human review.\n`);
   return 1;
 }

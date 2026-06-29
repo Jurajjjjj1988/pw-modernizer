@@ -1,0 +1,42 @@
+{
+  "$schema": "../../scripts/plan-envelope.schema.json",
+  "inputBasename": "github_test_login.py",
+  "sourceFramework": "selenium-python",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials @positive",
+      "userAction": "Fill login form with valid credentials and click Login.",
+      "expectedAssertions": [
+        "inventory list is visible after login"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.find_element(By.ID, 'user-name')",
+      "target": "page.getByPlaceholder('Username')",
+      "confidence": "high",
+      "notes": "SauceDemo username field carries a placeholder, not a label."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Username input",
+      "assumedLocator": "page.getByPlaceholder('Username')",
+      "sourceLocator": "driver.find_element(By.ID, 'user-name')",
+      "whyComment": "Q-username-binding: placeholder over id, confirmed by grounding.",
+      "reviewerFallback": "Switch to getByRole textbox if the placeholder changes."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.9,
+    "smellCountDelta": -2,
+    "locDelta": -3,
+    "antiPatternCoverage": "2/2"
+  }
+}

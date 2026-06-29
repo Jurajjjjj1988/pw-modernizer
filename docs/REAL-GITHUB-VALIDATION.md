@@ -67,8 +67,15 @@ example was restored from git. 7 unit tests incl. the exact reproduction.
 | 3 | ✅ yes — execution gate confirmed (`github-login-page-tests.spec.ts`) | 0 (correct first-try) | **cross-framework** Selenium/Java → Playwright TS; grounding filled the selectors that lived in a separate `LoginPage.java`; the auth-self-contained gate passed |
 | 4 | ✅ yes — execution gate confirmed (`github-internet-add-remove.spec.ts`) | 0 (correct first-try) | the-internet add/remove: Cypress `before()` SHARED state across 3 tests → the migration correctly made each PW test self-contained (re-establishes state), and handled the dynamically-added delete buttons (absent from the initial snapshot) with a `count()>0` control-flow loop |
 | 5 | ✅ yes — execution gate confirmed (`github-internet-checkbox.spec.ts`) | 0 (correct first-try) | the-internet checkboxes: toggle an unchecked box → assert checked |
+| 6 | ✅ yes — execution gate confirmed (`github-demoblaze-cart.spec.ts`) | 1 | **new SUT** demoblaze.com: VERY brittle source selectors (`:nth-child(1) > .card > .card-block > .card-title`) → grounding replaced them with stable ones; the migration anticipated demoblaze's add-to-cart **JS dialog** and generated a `page.on('dialog')` handler |
+| 7 | ✅ yes — execution gate confirmed (`github-test-login.spec.ts`) | final iteration | **3rd source framework** Selenium/pytest (Python) → Playwright TS; creds came from a JSON fixture (handled like the inline-auth case); surfaced IMP11 (the plan envelope's `$schema` meta-key) and IMP12 (the repair loop's last-iteration verification) — see below |
 
-**5 / 5 real GitHub tests reach a genuine, gate-confirmed GREEN on the correctly-resolved spec.** Across 2 source frameworks (Cypress, Selenium/JUnit-Java) and 2 public SUTs (saucedemo.com, the-internet.herokuapp.com). 3 of 5 needed **zero** repair (the grounded generate + static wall produced a working migration first-try); 2 needed exactly one execution-guided repair iteration. No committed example was corrupted (IMP10 holding).
+**7 / 7 real GitHub tests reach a genuine, gate-confirmed GREEN on the correctly-resolved spec.** Across **3** source frameworks (Cypress, Selenium/JUnit-Java, Selenium/pytest-Python) and **3** public SUTs (saucedemo.com, the-internet.herokuapp.com, demoblaze.com). 3 of 7 needed **zero** repair (the grounded generate + static wall produced a working migration first-try); the rest needed execution-guided repair. No committed example was corrupted (IMP10 holding). The loop demonstrably handles: brittle-selector replacement, JS dialogs, inline auth, data-driven tests, JSON-fixture data, and Cypress-shared-state → Playwright-isolation rewrites.
+
+### Two more defects surfaced by the Selenium-Python test (#7)
+
+- **IMP11 — the plan envelope rejected its own `$schema` meta-key.** Stage-1 sometimes adds a `$schema` reference to the envelope JSON (a standard editor-tooling convention); with `additionalProperties:false` the schema rejected it, blocking an otherwise-valid plan before Stage 2 even ran. Now `$schema` is a permitted (never required) top-level key; pinned by a `good-04` calibration fixture (plan-envelope-validate now 7/7).
+- **IMP12 — the repair loop reported a false negative on the last iteration.** It runs the execution gate at the START of each iteration, so the final iteration's repair edit was never verified — the loop printed "still failing" even when that edit fixed it (the independent gate then contradicted it). Now it runs one final verification after the loop before giving up.
 
 ## Honest status
 
@@ -76,11 +83,11 @@ The closed-loop *machinery* is materially stronger: IMP8/9/10 + the auth gate ea
 closed a real hole the synthetic corpus hid, and every one was found by running a
 real test against a real app — not by reading code. The headline metric —
 "reaches a genuine, gate-confirmed green on an arbitrary real GitHub test" — now
-holds **5/5** across 2 frameworks and 2 SUTs, with the file-resolution and
+holds **7/7** across 3 frameworks and 3 SUTs, with the file-resolution and
 false-green hazards closed. This is no longer "it compiles"; it's "it runs green
 on the live app, on the correct file, and didn't corrupt anything to get there".
 
-What this does NOT yet prove: breadth (5 tests, 2 SUTs — not hundreds), apps
-behind real auth/CAPTCHA, or long multi-page user journeys. Those are the next
-rungs. But the core loop is now validated on real-world inputs, which is the
-thing that was missing.
+What this does NOT yet prove: breadth (7 tests, 3 SUTs — not hundreds), apps
+behind real auth/CAPTCHA, or long multi-page checkout journeys. Those are the next
+rungs. But the core loop is now validated on real-world inputs across all three
+source frameworks, which is the thing that was missing.

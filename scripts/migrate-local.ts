@@ -433,6 +433,11 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     // (the unambiguous half of the batch-mode race a multi-agent hunt found).
     // Deterministic, zero-token; does NOT flag legitimate single-owner reuse.
     { name: "POM provenance (single-migration authorship)", cmd: "npx", args: ["tsx", "scripts/validate-pom-provenance.ts", "--root", "outputs"] },
+    // Network completeness (B2): a Cypress source that stubs/asserts a network call
+    // (cy.intercept().as() + cy.wait('@x')) whose stub the migration DROPPED passes
+    // against the REAL backend for the wrong reason (false green). Source-vs-output
+    // presence diff; Cypress-only, self-gates to a trivial pass otherwise.
+    { name: "network completeness (no dropped cy.intercept stubs)", cmd: "npx", args: ["tsx", "scripts/validate-network-completeness.ts", "--root", "outputs", "--input-basename", p.base, "--source", p.input] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
     // Live-SUT gates (prior-art levers BP2 + BP1), only when MIGRATION_TARGET_URL

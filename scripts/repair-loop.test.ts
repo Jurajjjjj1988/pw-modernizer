@@ -109,6 +109,18 @@ test("buildRepairPrompt: a plain locator failure does NOT add the auth directive
   assert.ok(!/authentication is NOT self-contained/i.test(p), "locator failures must not trigger the auth block");
 });
 
+test("buildRepairPrompt: a source with a dialog token gets the dialog fix hint (B2 detector wiring)", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "Timeout 5000ms exceeded", "- button x", "https://app", true,
+    "cy.on('window:confirm', () => true); cy.get('.del').click();");
+  assert.match(p, /page\.on\('dialog'/, "the dialog detector hint must be appended");
+});
+
+test("buildRepairPrompt: a plain login source adds NO framework-semantic hints", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "waiting for getByLabel(/u/i)", "- textbox", "https://app", true,
+    "cy.get('#username').type('x'); cy.get('#login').click();");
+  assert.ok(!/page\.on\('dialog'|frameLocator|waitForEvent\('popup'\)|page\.route/.test(p), "no false-positive hints on a plain test");
+});
+
 // ---- IMP5: lint-repair (green AND lint-clean).
 
 test("buildAssertionRestorePrompt: lists the weakenings + forbids weaker matchers / dropped asserts (B1)", () => {

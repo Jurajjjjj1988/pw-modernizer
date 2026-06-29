@@ -31,6 +31,7 @@ import { parseArgs } from "node:util";
 import { collectEmittedFiles } from "./evaluate.js";
 import { findGeneratedSpec } from "./output-spec.js";
 import { extractPwAssertions, compareStrength, type PwAssertion, type StrengthViolation } from "./lib/assertion-ast.js";
+import { detectFailureClasses } from "./lib/failure-detectors.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
@@ -175,6 +176,12 @@ export function buildRepairPrompt(
       "- Do NOT invent a storageState file path and do NOT leave a dangling auth fixture.",
       "",
     );
+  }
+  // Framework-semantic failure classes the locator-only loop can't self-heal —
+  // dialogs/iframes/popups/network. Each detector (source token / run-error /
+  // snapshot) appends a targeted Playwright fix hint (B2; classified-hint > raw-error).
+  for (const d of detectFailureClasses(source, tail, snapshot)) {
+    lines.push(d.hint, "");
   }
   lines.push(
     "## Files you may edit (the spec + the page objects it reaches — edit ONLY these)",

@@ -417,6 +417,10 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     // real app. Catch it deterministically (zero tokens) instead of at the live
     // execution gate. Found by validating the closed loop on a real GitHub test.
     { name: "auth self-contained", cmd: "npx", args: ["tsx", "scripts/validate-auth-self-contained.ts", "--root", "outputs", "--input-basename", p.base] },
+    // A shared page object co-authored by >1 migration is cross-app contamination
+    // (the unambiguous half of the batch-mode race a multi-agent hunt found).
+    // Deterministic, zero-token; does NOT flag legitimate single-owner reuse.
+    { name: "POM provenance (single-migration authorship)", cmd: "npx", args: ["tsx", "scripts/validate-pom-provenance.ts", "--root", "outputs"] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
     // Live-SUT gates (prior-art levers BP2 + BP1), only when MIGRATION_TARGET_URL

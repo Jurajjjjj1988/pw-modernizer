@@ -26,7 +26,9 @@ import {
   parseDirtyPaths,
   archiveIsolatedOutput,
   codemodDraftBlock,
+  shouldAcceptAfterRepair,
   type Args,
+  type WallResult,
 } from "./migrate-local.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -266,4 +268,42 @@ test("buildPrompt: a Cypress input carries the codemod draft block (integration)
   } finally {
     rmSync(draftPath, { force: true });
   }
+});
+
+// ---- repair-wall re-gate: a repair that reaches execution-green is accepted
+//      ONLY if the structural validator wall still passes EVERY hard gate. This
+//      is the false-accept the repair loop left open (it gates on execution +
+//      assertion-strength + lint, never the structural wall).
+
+const pass = (name: string): WallResult => ({ name, ok: true, detail: "" });
+const fail = (name: string, detail = "failed"): WallResult => ({ name, ok: false, detail });
+
+test("shouldAcceptAfterRepair: execution-green + all wall gates pass → accept", () => {
+  const wall = [pass("pwm-blueprint conformance"), pass("network completeness"), pass("assertion coverage")];
+  assert.equal(shouldAcceptAfterRepair(0, wall), true);
+});
+
+test("shouldAcceptAfterRepair: execution-green but a re-introduced force/.nth re-fails conformance → REJECT (the false-accept)", () => {
+  // The repair went green against the live app (repairCode 0) but re-broke the
+  // pwm-blueprint conformance gate (e.g. force:true / .nth() back in) — must reject.
+  const wall = [fail("pwm-blueprint conformance", ".nth() forbidden"), pass("network completeness")];
+  assert.equal(shouldAcceptAfterRepair(0, wall), false);
+});
+
+test("shouldAcceptAfterRepair: execution-green but a dropped cy.intercept stub re-fails network completeness → REJECT", () => {
+  const wall = [pass("pwm-blueprint conformance"), fail("network completeness (no dropped cy.intercept stubs)")];
+  assert.equal(shouldAcceptAfterRepair(0, wall), false);
+});
+
+test("shouldAcceptAfterRepair: a non-zero repairCode is never overridden, even with an all-pass wall", () => {
+  // The loop itself rejected (still red / weakened-assertion reject) — the wall
+  // result must not resurrect it. AND-ing only ever tightens, never loosens.
+  assert.equal(shouldAcceptAfterRepair(1, [pass("pwm-blueprint conformance")]), false);
+});
+
+test("shouldAcceptAfterRepair: empty wall + execution-green is vacuously accepted (every() over [])", () => {
+  // Defensive: a wall with no steps (no specs to gate) AND-s to true — the repair
+  // code alone governs. Documents the boundary so a future empty-wall path is intentional.
+  assert.equal(shouldAcceptAfterRepair(0, []), true);
+  assert.equal(shouldAcceptAfterRepair(1, []), false);
 });

@@ -28,8 +28,8 @@
  * Exit 0 = every source intercept is reflected (or the source has no intercept);
  * exit 1 = a stub/assertion was dropped (each is printed).
  */
-import { existsSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -47,6 +47,16 @@ export interface SourceIntercept {
   /** Does the test assert on the interception's RESPONSE
    *  (`cy.wait('@x').its('response...')` / `.then(` / `.should('have.property','response...')`)? */
   assertedOn: boolean;
+  /**
+   * Is this a STUB (the intercept supplies a response) rather than a SPY
+   * (passthrough — it only observes the real call)? True only when `cy.intercept`
+   * carries a 3rd-arg STUB: a response object literal, a `{ fixture: '…' }`, OR a
+   * `req.reply(...)` inside a routeHandler callback. A 2-arg `cy.intercept(method, url)`
+   * (or `cy.intercept(url)`) is a SPY — it must be reflected by a SYNC POINT
+   * (`page.waitForResponse`), not a fulfilled `page.route`. Conflating the two made
+   * the validator demand a fabricated `route.fulfill` for spy-only observations.
+   */
+  hasStub: boolean;
 }
 
 /** One dropped stub/assertion the migration must restore. */
@@ -96,13 +106,58 @@ export function extractSourceIntercepts(source: string): SourceIntercept[] {
     const alias = m[2];
     const url = firstUrlArg(args);
     if (url === null) continue;
-    out.push({ url, aliased: alias !== undefined, assertedOn: false });
+    out.push({ url, aliased: alias !== undefined, assertedOn: false, hasStub: interceptHasStub(source, m.index) });
     if (alias !== undefined) {
       const last = out[out.length - 1];
       if (last) last.assertedOn = waitAssertsOnResponse(source, alias);
     }
   }
   return out;
+}
+
+/**
+ * Is this `cy.intercept(...)` a STUB (it supplies the response) vs a SPY
+ * (passthrough — it only observes the real call)? The non-greedy arg capture
+ * truncates a stub body that itself contains `)` (e.g. `JSON.stringify(...)`) or a
+ * `req.reply(...)` callback, so we read a bounded WINDOW from the `cy.intercept(`
+ * start (sized to the PAREN-balanced call so a spy with no braces does not bleed
+ * forward) and look for the stub forms:
+ *   - a 3rd-arg RESPONSE OBJECT LITERAL: a `{ … }` after the URL/method args
+ *     carrying a stub key (statusCode/status/body/headers/statusMessage/
+ *     forceNetworkError/delay),
+ *   - a FIXTURE stub: `{ fixture: '…' }`,
+ *   - a routeHandler that calls `req.reply(...)`.
+ * A bare 2-arg `cy.intercept(method, url)` / `cy.intercept(url)` is a SPY.
+ */
+function interceptHasStub(source: string, startIdx: number): boolean {
+  // Read only THIS `cy.intercept(...)` call (paren-balanced) so a spy with no
+  // braces does not bleed into a later statement's stub, while a stub body the
+  // lazy arg-capture truncated (`JSON.stringify(...)`, a `req.reply` callback) is
+  // still fully seen.
+  const callOpen = source.indexOf("(", startIdx);
+  if (callOpen === -1) return false;
+  const window = source.slice(startIdx, parenBalancedEnd(source, callOpen));
+  if (/\breq\s*\.\s*reply\s*\(/.test(window)) return true; // routeHandler stub
+  // Strip string-literal CONTENTS (the URL/method args, any quoted header values)
+  // so a `{` or stub keyword inside a quoted string never reads as a stub object.
+  const stripped = window.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, "''");
+  // A response object literal / fixture stub carries one of these stub keys.
+  return /\{[\s\S]*\b(statusCode|status|body|headers|statusMessage|forceNetworkError|delay|fixture)\b[\s\S]*\}/.test(stripped);
+}
+
+/** The index just past the paren-balanced run that OPENS at `open` (which must
+ * point at a `(`). String/template literal contents are skipped so a `)` inside a
+ * quoted URL does not close the call early. Falls back to EOF if unbalanced. */
+function parenBalancedEnd(src: string, open: number): number {
+  // Neutralise string/template literal contents first so quoted parens/escapes
+  // never count toward depth — then a flat paren scan is correct and shallow.
+  const flat = src.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, (lit) => " ".repeat(lit.length));
+  let depth = 0;
+  for (let i = open; i < flat.length; i++) {
+    if (flat[i] === "(") depth += 1;
+    else if (flat[i] === ")" && --depth <= 0) return i + 1;
+  }
+  return src.length;
 }
 
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
@@ -125,63 +180,109 @@ function firstUrlArg(args: string): string | null {
 
 /**
  * Does the source assert on the RESPONSE of `@alias`? True when a `cy.wait('@alias')`
- * is chained into `.its('response…')`, `.then(`, or `.should('have.property','response…')`.
- * A bare `cy.wait('@alias')` with no such chain only waits — it is NOT an
- * assertion-on-response.
+ * OR a `cy.get('@alias')` (the alias-YIELD form) is chained — within a bounded
+ * window — into `.its('response…')`, `.then(`, or `.should('have.property','response…')`.
+ * A bare `cy.wait('@alias')` / `cy.get('@alias')` with no such chain only
+ * waits/yields — it is NOT an assertion-on-response. Covering `cy.get('@alias')`
+ * catches the pattern where a test yields the interception alias to read its
+ * response (`cy.get('@pay').its('response.statusCode')`), which the cy.wait-only
+ * scan missed.
  */
 function waitAssertsOnResponse(source: string, alias: string): boolean {
   const esc = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Capture each cy.wait('@alias') and the chain that immediately follows it,
-  // stopping at the statement terminator. The chain may span lines (.then((i) => {).
-  const re = new RegExp(String.raw`cy\.wait\(\s*['"\`]@${esc}['"\`]\s*\)([\s\S]{0,200})`, "g");
+  // Both `cy.wait('@alias')` and `cy.get('@alias')` can be chained into a
+  // response read; scan each occurrence's trailing chain. The tail is a LOOKAHEAD
+  // so a later `cy.wait/get('@alias')` is not swallowed by an earlier match's
+  // window (e.g. a bare `cy.wait('@x')` followed by `cy.get('@x').its(...)`).
+  const re = new RegExp(String.raw`cy\.(?:wait|get)\(\s*['"\`]@${esc}['"\`]\s*\)(?=([\s\S]{0,200}))`, "g");
   for (let m = re.exec(source); m !== null; m = re.exec(source)) {
     const tail = m[1] ?? "";
     // Stop the tail at the next cy.* call so we don't bleed into a later statement.
     const chain = tail.split(/\bcy\./)[0] ?? tail;
-    if (/\.then\s*\(/.test(chain)) return true;
-    if (/\.its\s*\(\s*['"`]response/i.test(chain)) return true;
-    if (/\.should\s*\(\s*['"`]have\.property['"`]\s*,\s*['"`]response/i.test(chain)) return true;
+    if (chainReadsResponse(chain)) return true;
   }
   return false;
 }
 
+/** A trailing chain that reads the interception's response: `.then(` (yields the
+ * interception), `.its('response…')`, or `.should('have.property','response…')`. */
+function chainReadsResponse(chain: string): boolean {
+  if (/\.then\s*\(/.test(chain)) return true;
+  if (/\.its\s*\(\s*['"`]response/i.test(chain)) return true;
+  return /\.should\s*\(\s*['"`]have\.property['"`]\s*,\s*['"`]response/i.test(chain);
+}
+
 /**
- * Diff the source intercepts against the migrated output. For each source
- * intercept the output must contain a `page.route(...<url>...` whose handler has a
- * NON-EMPTY `route.fulfill({...})` body, AND — when the source asserted on the
- * interception's response — a `page.waitForResponse(...<url>...)` that reads
- * `response.status()` / `response.json()`. Flags three drop classes:
- *   - stub entirely absent (no matching page.route),
- *   - stub present but the fulfill body is empty (codemod truncation),
- *   - assertion-on-response dropped (no waitForResponse reading the response).
+ * Diff the source intercepts against the migrated output. The required reflection
+ * depends on whether the source intercept is a STUB or a SPY:
+ *   - STUB (`hasStub`: response object / `{fixture}` / `req.reply`): the output must
+ *     contain a `page.route(...<url>...)` whose handler has a NON-EMPTY
+ *     `route.fulfill({...})` body (an absent route or empty fulfill is flagged) —
+ *     a dropped stub makes the test run against the REAL backend (false-green).
+ *   - SPY (passthrough — only observes the real call): demanding a fabricated
+ *     `page.route`/`fulfill` would be WRONG (it would invent a mock the source never
+ *     had). Instead the output must contain a `page.waitForResponse(...<url>...)`
+ *     SYNC POINT — without it the migrated test loses the wait the spy provided.
+ * On top of either, when the source asserted on the interception's RESPONSE the
+ * output must also have a `page.waitForResponse(...)` that READS the response
+ * (`response.status()` / `response.json()`); a dropped read is flagged.
  */
 export function findMissingMocks(intercepts: SourceIntercept[], outputSource: string): MissingMock[] {
   const missing: MissingMock[] = [];
   for (const it of intercepts) {
     const seg = distinctivePathSegment(it.url);
     if (seg === "") continue; // a non-matchable token (e.g. bare '*') — skip
-    const route = findRouteForSegment(outputSource, seg);
-    if (route === null) {
-      missing.push({
-        url: it.url,
-        reason: `Cypress stubbed ${it.url} but the migrated tree has no page.route() for it — the codemod dropped the stub, so the test runs against the REAL backend (false-green) or fails on a UI state the stub used to force.`,
-      });
-      continue;
-    }
-    if (!hasNonEmptyFulfill(route)) {
-      missing.push({
-        url: it.url,
-        reason: `page.route() for ${it.url} is present but has no non-empty route.fulfill({...}) body — the stub payload was truncated, so the route no longer controls the response.`,
-      });
-    }
-    if (it.assertedOn && !assertsOnResponse(outputSource, seg)) {
-      missing.push({
-        url: it.url,
-        reason: `Cypress asserted on the ${it.url} RESPONSE (cy.wait('@…').its/then/should), but the migrated tree has no page.waitForResponse(...) reading response.status()/response.json() for it — the response assertion was dropped.`,
-      });
-    }
+    if (it.hasStub) checkStubReflection(it, seg, outputSource, missing);
+    else checkSpyReflection(it, seg, outputSource, missing);
+    checkResponseAssertion(it, seg, outputSource, missing);
   }
   return missing;
+}
+
+/** A STUB must be reflected by a fulfilled `page.route(...)` — flag an absent
+ * route or an empty-body fulfill. */
+function checkStubReflection(it: SourceIntercept, seg: string, output: string, missing: MissingMock[]): void {
+  const route = findRouteForSegment(output, seg);
+  if (route === null) {
+    missing.push({
+      url: it.url,
+      reason: `Cypress stubbed ${it.url} but the migrated tree has no page.route() for it — the codemod dropped the stub, so the test runs against the REAL backend (false-green) or fails on a UI state the stub used to force.`,
+    });
+    return;
+  }
+  if (!hasNonEmptyFulfill(route)) {
+    missing.push({
+      url: it.url,
+      reason: `page.route() for ${it.url} is present but has no non-empty route.fulfill({...}) body — the stub payload was truncated, so the route no longer controls the response.`,
+    });
+  }
+}
+
+/** A SPY (passthrough) the source CONSUMED (aliased → `cy.wait`/`cy.get`-able) must
+ * be reflected by a `page.waitForResponse(...<seg>...)` sync point — a fulfilled
+ * route would fabricate a mock the source never had. An UNALIASED spy was never
+ * waited/asserted (nothing to synchronise on), so there is nothing to preserve and
+ * it is not flagged — flagging it would be a false positive. */
+function checkSpyReflection(it: SourceIntercept, seg: string, output: string, missing: MissingMock[]): void {
+  if (!it.aliased) return; // a passive, never-waited spy — no sync point to keep
+  if (waitsForResponseOnSegment(output, seg)) return;
+  // A fulfilled page.route on the same segment also satisfies the sync point
+  // (the migration chose to stub a spy — stronger, not a drop).
+  if (findRouteForSegment(output, seg) !== null) return;
+  missing.push({
+    url: it.url,
+    reason: `Cypress spied on ${it.url} (a 2-arg cy.intercept, no stub body) and waited on it, but the migrated tree has no page.waitForResponse(...) sync point for it — the wait the spy provided was dropped, so the test no longer synchronises on that call.`,
+  });
+}
+
+/** When the source asserted on the RESPONSE, the output must read it via a
+ * `page.waitForResponse(...)` that calls `response.status()`/`.json()`/… */
+function checkResponseAssertion(it: SourceIntercept, seg: string, output: string, missing: MissingMock[]): void {
+  if (!it.assertedOn || assertsOnResponse(output, seg)) return;
+  missing.push({
+    url: it.url,
+    reason: `Cypress asserted on the ${it.url} RESPONSE (cy.wait/get('@…').its/then/should), but the migrated tree has no page.waitForResponse(...) reading response.status()/response.json() for it — the response assertion was dropped.`,
+  });
 }
 
 /**
@@ -225,6 +326,18 @@ function hasNonEmptyFulfill(routeBlock: string): boolean {
   return (m[1] ?? "").trim().length > 0;
 }
 
+/** Is there a `page.waitForResponse(...)` whose matcher arg references `seg`
+ * (a string/glob URL or a `(response) => response.url().includes('seg')`
+ * predicate)? This is the SYNC POINT a spy/passthrough intercept must keep — it
+ * does NOT require the response to be read (that is `assertsOnResponse`). */
+function waitsForResponseOnSegment(output: string, seg: string): boolean {
+  const re = /page\.waitForResponse\s*\(([\s\S]*?\))\s*\)?/g;
+  for (let m = re.exec(output); m !== null; m = re.exec(output)) {
+    if ((m[1] ?? "").toLowerCase().includes(seg)) return true;
+  }
+  return false;
+}
+
 /** Does the output `page.waitForResponse(...<seg>...)` read the response
  * (`response.status()` / `response.json()` / `response.body()`)? */
 function assertsOnResponse(output: string, seg: string): boolean {
@@ -266,9 +379,61 @@ export function networkVerdict(source: string, outputSource: string): NetworkVer
     complete: missing.length === 0,
     missing,
     reason: missing.length === 0
-      ? `all ${intercepts.length} source intercept(s) are reflected by a fulfilled page.route (+ response assertions where asserted)`
+      ? `all ${intercepts.length} source intercept(s) are reflected (stubs by a fulfilled page.route, spies by a page.waitForResponse sync point; + response assertions where asserted)`
       : `${missing.length} dropped stub/assertion(s) of ${intercepts.length} source intercept(s)`,
   };
+}
+
+/**
+ * The `.ts` files under `helper/fixtures/` and `helper/actions/` of an emitted
+ * tree (recursively). A route stub is frequently parked in a mock FIXTURE
+ * (`products-mocks.fixture.ts` calls `page.route(...).fulfill(...)` in a worker
+ * fixture) or an ACTION helper, NOT imported by the spec through an `@alias` the
+ * import-following walk can see — so `collectEmittedFiles` (import + fixture-
+ * injection + stem-fallback) misses it and the validator falsely flags the stub
+ * as dropped. This DIRECTORY scan augments the file set so such stubs are seen.
+ * It is a local augmentation — `collectEmittedFiles` is left untouched.
+ */
+export function collectFixtureAndActionFiles(helperRoot: string): string[] {
+  const out: string[] = [];
+  for (const sub of ["fixtures", "actions"]) {
+    const dir = join(helperRoot, sub);
+    if (!existsSync(dir)) continue;
+    const stack = [dir];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      if (cur === undefined) break;
+      for (const entry of readdirSync(cur, { withFileTypes: true })) {
+        const full = join(cur, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "_legacy-v0.1.x") stack.push(full);
+        } else if (entry.name.endsWith(".ts")) {
+          out.push(full);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Every emitted file whose source the network diff must read: the import/fixture-
+ * reachable tree (`collectEmittedFiles`, untouched) UNIONed with the mock-fixture /
+ * action directory scan so a route stub parked in `helper/fixtures/*-mocks.fixture.ts`
+ * is seen even when the spec never imports it through an `@alias`. Deduped, existing
+ * files only. `helperRoot` is derived from `--root` so calibration fixtures resolve
+ * their own `helper/` tree.
+ */
+function collectOutputFiles(spec: string, rootDir: string): string[] {
+  const helperRoot = join(rootDir, "helper");
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of [...collectEmittedFiles(spec, helperRoot), ...collectFixtureAndActionFiles(helperRoot)]) {
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    out.push(f);
+  }
+  return out;
 }
 
 function main(): number {
@@ -294,13 +459,14 @@ function main(): number {
     process.stdout.write(`network completeness ✓ — source has no cy.intercept (nothing to reflect).\n`);
     return 0;
   }
-  const outDir = resolve(REPO_ROOT, values.root ?? "outputs", "tests");
+  const rootDir = resolve(REPO_ROOT, values.root ?? "outputs");
+  const outDir = join(rootDir, "tests");
   const spec = findGeneratedSpec(outDir, base);
   if (!spec) {
     process.stderr.write(`validate-network-completeness: no spec for ${base} under ${relative(REPO_ROOT, outDir)}.\n`);
     return 1;
   }
-  const files = collectEmittedFiles(spec).filter(existsSync);
+  const files = collectOutputFiles(spec, rootDir);
   const outputSource = files.map((f) => readFileSync(f, "utf8")).join("\n");
   const v = networkVerdict(source, outputSource);
   if (v.complete) {

@@ -80,42 +80,36 @@ questions are where the LLM is asking for your input.
 ## 4. Run your own migration
 
 Once you've seen what a plan looks like, point the pipeline at one of
-your own tests.
+your own tests. The fastest path is fully local — no fork, no CI secrets,
+mirroring the README's end-to-end recipe.
 
 ```bash
 # 1. Drop your spec into inputs/ under the matching framework folder.
-cp path/to/your-bad-test.spec.ts inputs/bad-playwright/
+cp path/to/your-test.<ext> inputs/<framework>/
 
-# 2. Commit + push on a feature branch.
-git checkout -b try-my-migration
-git add inputs/bad-playwright/your-bad-test.spec.ts
-git commit -m "try migration: your-bad-test.spec.ts"
-git push -u origin try-my-migration
+# 2. Preflight (zero token): Node 22 / Claude auth / plan setup doctor.
+npm run migrate -- --check
+
+# 3. Stage 1 — produce the auditable plan locally.
+npm run plan -- --input inputs/<framework>/your-test.<ext>
+
+# 4. Stage 2/3 — generate, run against the live app, repair, accept when green.
+MIGRATION_TARGET_URL=https://your.app \
+  npm run migrate -- --input inputs/<framework>/your-test.<ext> --repair --isolate
 ```
 
-`plan.yml` fires automatically on the push. It opens a PR labeled
-`migrator:plan` with the generated plan at
-`outputs/plans/your-bad-test.spec.ts.md`.
+`npm run plan` writes the plan markdown + envelope to `outputs/plans/`;
+review it the same way you read the demo plan in step 3 (LOW-confidence
+locator rows and open questions first). `npm run migrate` then emits the
+pwm-blueprint layered output to `outputs/tests/` and `outputs/helper/`,
+runs it against `MIGRATION_TARGET_URL`, and — with `--repair` — feeds any
+failure back to the model until the test runs green (bounded). `--isolate`
+keeps each migration's page objects from colliding with the last.
 
-Review the plan in the PR. Edit anti-pattern rows or change locator
-targets if you disagree. Merge the plan PR. Merging fires `migrate.yml`
-(Stage 2), which reads the approved plan and emits the pwm-blueprint
-layered Playwright TypeScript output to `outputs/tests/` and
-`outputs/helper/`.
-
-The reviewer-facing PR description includes confidence scores, validator
-results, and links to the metrics report.
-
-### Run Stage 2 locally instead (no CI, no fork)
-
-You don't have to push and merge a plan PR to generate code. Once a plan
-exists (from `plan.yml` or `npm run try-it`), run Stage 2 on your own
-machine:
+Useful variants:
 
 ```bash
-npm run migrate -- --check                 # preflight: Node/auth/plan setup doctor (free)
-npm run migrate -- --input inputs/<framework>/your-bad-test.spec.ts
-npm run migrate -- --input <path> --mock   # wiring check, no Claude call (free)
+npm run migrate -- --input <path> --mock           # wiring check, no Claude call (free)
 npm run migrate -- --input <path> --profile lean   # specs + page objects only (ADR 0002)
 ```
 
@@ -124,11 +118,30 @@ team wants a simpler shape — just specs + page objects, with specs importing
 `test`/`expect` straight from `@playwright/test` — pass `--profile lean`. The
 conformance gate relaxes accordingly; `pwm-blueprint` stays the default.
 
-This mirrors `migrate.yml` exactly — same prompt, inventory, model, and the
-full post-generate validator wall — so you evaluate the tool by cloning and
-running, without wiring GitHub Actions secrets. It needs `CLAUDE_CODE_OAUTH_TOKEN`
-or `ANTHROPIC_API_KEY` in your env (same as the real `try-it`), and prints a
-⚠ token-spend notice before the Claude call. CI remains the authoritative gate.
+The local run needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in your
+env (same as the real `try-it`) and prints a ⚠ token-spend notice before the
+Claude call.
+
+### Optional: the CI / PR flow
+
+If you'd rather review the plan as a pull request, push your spec on a
+feature branch instead:
+
+```bash
+git checkout -b try-my-migration
+git add inputs/<framework>/your-test.<ext>
+git commit -m "try migration: your-test.<ext>"
+git push -u origin try-my-migration
+```
+
+`plan.yml` fires automatically on the push and opens a PR labeled
+`migrator:plan` with the generated plan at
+`outputs/plans/your-test.<ext>.md`. Review the plan in the PR, edit
+anti-pattern rows or locator targets if you disagree, and merge it. Merging
+fires `migrate.yml` (Stage 2), which reads the approved plan and emits the
+same pwm-blueprint output to `outputs/tests/` and `outputs/helper/`. The
+reviewer-facing PR description includes confidence scores, validator
+results, and links to the metrics report. CI remains the authoritative gate.
 
 ## 5. Where to go next
 

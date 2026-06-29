@@ -1,0 +1,10 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials @positive",
+      "userAction": "Submit valid login form.",
+      "expectedAssertions": [

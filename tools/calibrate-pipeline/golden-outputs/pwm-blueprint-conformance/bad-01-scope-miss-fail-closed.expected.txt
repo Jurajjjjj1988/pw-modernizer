@@ -1,0 +1,7 @@
+# Exit 1. (a) FAIL-CLOSED on a zero-spec scope miss.
+# Input test_x.py + spec free-named x.spec.ts: pure-basename scoping finds 0,
+# provenance recovery (findGeneratedSpec) resolves x.spec.ts, and its planted
+# @playwright/test import is rejected — proving the scoping path no longer
+# passes vacuously. Pins the import-source block + the violation summary.
+pwm-blueprint/architecture/import-source
+validate-pwm-blueprint-conformance: 2 violation(s) (2 block / 0 warn)

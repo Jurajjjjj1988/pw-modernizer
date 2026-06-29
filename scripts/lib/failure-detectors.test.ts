@@ -45,6 +45,23 @@ test("popup detected from a Selenium getWindowHandles source token", () => {
   assert.match(hits[0]?.hint ?? "", /waitForEvent\('popup'\)/);
 });
 
+test("popup detected from a Selenium Python window_handles source token", () => {
+  const src = "handles = driver.window_handles";
+  assert.deepEqual(classes(src), ["popup"]);
+  // set_window_size is a viewport control, not a new-window signal.
+  assert.deepEqual(classes("driver.set_window_size(1024, 768)"), []);
+});
+
+test("popup detected from a Selenium Python switch_to.window source token", () => {
+  assert.deepEqual(classes("driver.switch_to.window(handles[1])"), ["popup"]);
+});
+
+test("popup detected from a Cypress invoke('removeAttr','target') source token", () => {
+  assert.deepEqual(classes("cy.get('a').invoke('removeAttr', 'target').click()"), ["popup"]);
+  // removeAttr('disabled') is an enable-control, not a new-tab workaround.
+  assert.deepEqual(classes("cy.get('#btn').invoke('removeAttr', 'disabled')"), []);
+});
+
 test("network detected from a Cypress intercept/wait source token", () => {
   const src = "cy.intercept('GET', '/api/users').as('users'); cy.wait('@users')";
   const hits = detectFailureClasses(src, "", "");

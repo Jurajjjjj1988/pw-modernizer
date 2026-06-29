@@ -1,0 +1,3 @@
+# A 2-arg SPY reflected by a page.waitForResponse sync point — no fabricated route demanded.
+network completeness ✓
+all 1 source intercept(s) are reflected

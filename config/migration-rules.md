@@ -477,7 +477,7 @@ The hierarchy. Every locator in Migrator output must come from this list, in pri
 | `test.skip` without a tracked reason | Skips become permanent. Either delete the test or link to a ticket. |
 | `page.pause()` | Debug-only API. Never in committed code. |
 | Hard-coded timeouts >5s without a comment | Long timeouts hide bugs and make CI slow. If you genuinely need >5s, justify it. |
-| Magic numbers without a named constant | `await page.goto('/products?page=37')` is unreadable. Extract `const PAGE_WITH_PAGINATION_BUG = 37`. |
+| Magic numbers without a named constant | `await page.goto('/products?page=37')` is unreadable. Extract `const PAGE_WITH_PAGINATION_BUG = 37`. Reported as a residual smell by the evaluator (it raises the smell count and lowers confidence) — not a hard block. |
 
 ### Examples
 
@@ -511,7 +511,6 @@ Exact `playwright.config.ts`:
 
 ```typescript
 import { defineConfig, devices } from "@playwright/test";
-import "dotenv/config";
 
 export default defineConfig({
   testDir: "./tests",
@@ -521,7 +520,7 @@ export default defineConfig({
   workers: process.env.CI ? 4 : undefined,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    baseURL: process.env.MIGRATION_TARGET_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -553,7 +552,7 @@ export default defineConfig({
 - **Retries in CI only.** Local retries hide flake from the author. CI retries dampen noise during the diagnosis window before the flake is fixed.
 - **`actionTimeout: 5_000`** is short on purpose. Slow actions are usually a sign that the assertion is racing the UI, not that the timeout is too tight.
 - **Trace on first retry** captures everything needed to debug a flake without slowing the happy path.
-- **`baseURL` from `.env`** via `dotenv/config`. No `env.ts` wrapper — the global rules forbid it and there is no value in another indirection layer.
+- **`baseURL` from the shell environment** — `MIGRATION_TARGET_URL` is read straight from `process.env` (export it before the run, e.g. `MIGRATION_TARGET_URL=https://your.app npx playwright test`). No `dotenv/config` import and no `env.ts` wrapper — the global rules forbid the wrapper and adding a `dotenv` import would crash any run where the module is absent.
 
 ### When to add projects
 
@@ -622,9 +621,9 @@ Where `<source>` is one of `cypress`, `selenium-java`, `selenium-python`, `bad-p
 
 ---
 
-## 8. Forbidden output patterns (hard fail)
+## 8. Forbidden output patterns
 
-The post-generate evaluator scans for these. If any appears, the migration is rejected and re-prompted.
+The post-generate evaluator scans for these. Some are hard-blocked by an independent gate (`any` types fail `tsc`; unused imports and `test.only`/`no-nth-methods` fail ESLint). The rest are **reported as residual smells** — each match raises the smell count and lowers the confidence score, which routes a low-confidence output into the verify stage rather than auto-rejecting it. Treat the table as the quality bar, not as a single blocking grep.
 
 | Pattern | Why it fails |
 |---|---|
@@ -636,14 +635,14 @@ The post-generate evaluator scans for these. If any appears, the migration is re
 | `eslint-disable` without an inline justification | Disabling a lint rule is a decision; the next reader needs the reason. |
 | Unused imports | Lints catch these; if they made it through, the gate is broken. |
 | >2 top-level `test.describe` per file | Split the file. See section 2. |
-| File >300 LOC | Split the file. Big spec files are unmaintainable. |
+| File >300 LOC | Split the file. Big spec files are unmaintainable. Reported as a residual smell — there is no LOC gate that auto-rejects the output. |
 | `try/catch` wrapping a Playwright action | Either the action is expected to throw (use `await expect(action).rejects.toThrow()`) or the catch is hiding a real failure. |
 | `if (await el.isVisible())` branching test logic on element presence | Conditional test logic means the test asserts nothing. Two tests are clearer. |
-| Duplicate selectors in the same spec file | Extract a POM. The 200-LOC threshold is a default; recurring locators trigger extraction earlier. |
+| Duplicate selectors in the same spec file | Extract a POM. The 200-LOC threshold is a default; recurring locators trigger extraction earlier. Reported as a residual smell — there is no duplicate-selector gate that auto-rejects the output. |
 | Test file without at least one `expect` | A test that asserts nothing is a smoke check, not a test. Either add an assertion or move it to `smoke/`. |
 | Test depending on test order (`test.serial` without justification) | Parallel-by-default. Serial requires a comment naming the dependency. |
 
-The evaluator emits a structured failure per match. Migrator re-prompts Claude with the failure list and a request to fix only those issues, not regenerate from scratch.
+For the patterns that are independently gated (`tsc` / ESLint), the gate emits a structured failure and Migrator re-prompts Claude with the failure list and a request to fix only those issues, not regenerate from scratch. For the smell-only patterns, the evaluator records them in the smell delta and confidence score instead.
 
 ---
 

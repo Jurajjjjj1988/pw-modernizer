@@ -156,7 +156,7 @@ For every line (or contiguous block) in the source that exhibits a known anti-pa
 **Be exhaustive.** Catalog every occurrence of any pattern below — these are forbidden in target output, so any source occurrence becomes a catalog row.
 
 <!-- include-begin: forbidden-patterns -->
-These never appear in committed Playwright TypeScript. The post-generate evaluator scans for them and rejects migrations that include any. Canonical source: `config/migration-rules.md` §5 + §8.
+These never appear in committed Playwright TypeScript. The post-generate evaluator scans for them: the ones with an independent gate (`any` fails `tsc`; `test.only`, unused imports and `.nth()` fail ESLint) hard-block; the rest are reported as residual smells that raise the smell count and lower confidence. Canonical source: `config/migration-rules.md` §5 + §8.
 
 - **Hard waits** — `page.waitForTimeout(N)`, `await new Promise(r => setTimeout(r, …))`, raw `setTimeout`, `sleep`. Replace with web-first assertion on the actual condition (element visible, URL match, specific request).
 - **`force: true` clicks** — bypasses actionability checks; the bug the force was added to suppress is still there. Only allowed when the plan explicitly authorized it with a documented reason.

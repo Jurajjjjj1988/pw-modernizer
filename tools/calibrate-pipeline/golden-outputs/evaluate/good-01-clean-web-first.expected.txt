@@ -1,0 +1,6 @@
+# Exit 0. A clean web-first migration that asserts (clears the assertion floor)
+# and contains NONE of the hard-forbidden subset must score and pass. The emitted
+# tree is ungrounded (no DOM probe), so the aggregate is capped at the
+# UNVERIFIED_LOCATOR_CONFIDENCE_CAP (0.69) — routed to verify, NOT hard-rejected.
+# The confidence number is written to stdout; no ::error:: is emitted.
+0.69

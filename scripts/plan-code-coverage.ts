@@ -36,6 +36,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Project, SyntaxKind, type Node, type SourceFile } from "ts-morph";
 
@@ -107,8 +108,40 @@ function annotate(v: Violation, mode: "strict" | "warn"): void {
   );
 }
 
-function loadEnvelope(path: string): Envelope {
-  const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+/**
+ * Thrown when the envelope file is not valid JSON or is missing the required
+ * array fields the validator dereferences (scenarios / requiredPOMs /
+ * requiredFixtures). `main()` catches this to emit a GitHub Actions annotation
+ * and exit 1 — instead of crashing on a raw `JSON.parse`/`.map` TypeError that
+ * produces no actionable inline diagnostic.
+ */
+export class EnvelopeLoadError extends Error {}
+
+/**
+ * Parse + structurally validate the plan envelope. Guards the previously
+ * unguarded `JSON.parse` + blind cast: a malformed envelope (truncated JSON,
+ * or a top-level object missing `scenarios`/`requiredPOMs`/`requiredFixtures`
+ * arrays) now throws {@link EnvelopeLoadError} with a precise reason rather
+ * than crashing later inside the validators. Valid envelopes are returned
+ * identically — this is additive.
+ */
+export function loadEnvelope(path: string): Envelope {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new EnvelopeLoadError(`envelope is not valid JSON (${reason})`);
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new EnvelopeLoadError("envelope is not a JSON object");
+  }
+  const obj = raw as Record<string, unknown>;
+  for (const key of ["scenarios", "requiredPOMs", "requiredFixtures"] as const) {
+    if (!Array.isArray(obj[key])) {
+      throw new EnvelopeLoadError(`envelope missing required array '${key}'`);
+    }
+  }
   return raw as Envelope;
 }
 
@@ -369,7 +402,18 @@ function main(): number {
     );
     return 1;
   }
-  const envelope = loadEnvelope(envelopePath);
+  let envelope: Envelope;
+  try {
+    envelope = loadEnvelope(envelopePath);
+  } catch (err) {
+    if (err instanceof EnvelopeLoadError) {
+      process.stderr.write(
+        `::error file=${envelopePath}::plan-code-coverage: envelope is not valid JSON / missing required arrays: ${err.message}\n`,
+      );
+      return 1;
+    }
+    throw err;
+  }
   const allPaths = resolveOutputFiles(args.output);
   if (allPaths.length === 0) {
     process.stderr.write(
@@ -400,4 +444,11 @@ function main(): number {
   return args.mode === "warn" ? 0 : 1;
 }
 
-process.exit(main());
+// Pure cores (loadEnvelope, EnvelopeLoadError) are exported for
+// scripts/plan-code-coverage.test.ts. The CLI entry is guarded so importing
+// this module does not call process.exit().
+export type { Envelope, Violation };
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

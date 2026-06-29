@@ -1,0 +1,4 @@
+# Exit 0. (b) The .catch(() => {}) promise-swallow idiom is NOT a try-block — the
+# widened W2 keys off a line-start `try {`, so this stays clean. Proves the
+# widening did not over-trigger on the legitimate best-effort cleanup form.
+checked — clean.

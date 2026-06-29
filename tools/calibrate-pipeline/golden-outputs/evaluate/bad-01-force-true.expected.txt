@@ -1,0 +1,7 @@
+# Exit 1. The emitted spec asserts (so it clears the assertion floor) but ships a
+# `force: true` click — a hard-forbidden correctness defect that bypasses
+# actionability and ships a green-but-lying test. evaluate.ts must HARD REJECT it
+# (exit 1) via an ::error:: annotation, not merely dock confidence by 0.1.
+::error::evaluate: emitted tree contains hard-forbidden pattern(s)
+force: true
+correctness defects that ship a green-but-lying test — REJECT.

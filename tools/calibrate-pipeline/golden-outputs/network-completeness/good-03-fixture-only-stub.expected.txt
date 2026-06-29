@@ -1,0 +1,5 @@
+# The route stub lives ONLY in helper/fixtures/products-mocks.fixture.ts; the
+# directory scan folds it in (2 emitted files) so the stub is seen as reflected.
+network completeness ✓
+all 1 source intercept(s) are reflected
+(2 emitted files)

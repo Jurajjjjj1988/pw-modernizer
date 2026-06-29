@@ -19,6 +19,20 @@
  *
  * Exit codes: 0 = ran GREEN (accepted); 1 = ran but FAILED (needs repair);
  *             2 = could not run (no spec / no url / playwright missing).
+ *
+ * --retries — the ACCEPTANCE vs DIAGNOSIS split. The two callers of this gate want
+ * OPPOSITE retry policies, so it is a flag (default = the acceptance policy):
+ *   • ACCEPTANCE (default, `--retries=1`): the validator wall's "execution vs live
+ *     SUT" step (migrate-local.ts) and the standalone `run:sut`/`run:acceptance`
+ *     gate. With retries=0 a fail-then-pass FLAKY test was tallied as a clean
+ *     "1 passed" and accepted, and parsePlaywrightVerdict's flaky guard never saw a
+ *     "1 flaky" tally to reject. With retries=1 Playwright RE-RUNS a first-attempt
+ *     failure; a deterministic test still passes on attempt 0 (no new false-green),
+ *     but a real flake now surfaces as "1 flaky" ⇒ verdict not-green ⇒ NOT accepted.
+ *   • DIAGNOSIS (`--retries=0`): the repair loop (repair-loop.ts) runs this gate
+ *     each iteration to OBSERVE the failure it must fix; a clean single failure is
+ *     the repair signal, and a retry would only mask the very error being captured.
+ *     The repair loop passes `--retries=0` explicitly.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, mkdirSync } from "node:fs";
@@ -83,12 +97,27 @@ function findPlaywrightConfig(spec: string): string | null {
   return null;
 }
 
-/** Run the spec against the SUT and parse the pass/fail verdict. */
-export function runSpecAgainstSut(spec: string, url: string, project = "chromium"): SutResult {
+/**
+ * Build the `npx playwright test` argv for one SUT run. Pure (no spawn) so the
+ * ACCEPTANCE-vs-DIAGNOSIS retry split is unit-pinned: acceptance passes retries=1
+ * (a retried pass ⇒ flaky ⇒ not accepted); diagnosis passes retries=0 (a clean
+ * single failure is the repair signal). `retries` is always emitted explicitly so
+ * the policy never silently falls back to a config default.
+ */
+export function buildSutArgs(spec: string, project: string, retries: number, config: string | null): string[] {
+  const safeRetries = Number.isFinite(retries) && retries >= 0 ? Math.trunc(retries) : 0;
+  const args = ["playwright", "test", spec, "--project", project, "--reporter=line", `--retries=${safeRetries}`];
+  if (config) args.push("--config", config);
+  return args;
+}
+
+/** Run the spec against the SUT and parse the pass/fail verdict. `retries`
+ * defaults to 1 — the ACCEPTANCE policy (surface flake as not-green). The repair
+ * loop's DIAGNOSIS run passes 0 (a clean single failure is the signal). */
+export function runSpecAgainstSut(spec: string, url: string, project = "chromium", retries = 1): SutResult {
   const specRel = relative(REPO_ROOT, spec);
   const config = findPlaywrightConfig(spec);
-  const args = ["playwright", "test", spec, "--project", project, "--reporter=line", "--retries=0"];
-  if (config) args.push("--config", config);
+  const args = buildSutArgs(spec, project, retries, config);
   const r = spawnSync("npx", args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
@@ -110,6 +139,9 @@ function main(): never {
       "out-dir": { type: "string", default: "outputs/tests" },
       "failure-out": { type: "string" },
       project: { type: "string", default: "chromium" },
+      // ACCEPTANCE vs DIAGNOSIS retry split (see header). Default 1 = acceptance:
+      // a retried pass ⇒ flaky ⇒ not accepted. The repair loop passes 0.
+      retries: { type: "string", default: "1" },
     },
     strict: true,
   });
@@ -127,8 +159,9 @@ function main(): never {
     process.exit(2);
   }
 
-  process.stdout.write(`run-against-sut: running ${relative(REPO_ROOT, spec)} against ${url} ...\n`);
-  const res = runSpecAgainstSut(spec, url, values.project ?? "chromium");
+  const retries = Math.max(0, Math.trunc(Number(values.retries ?? "1")) || 0);
+  process.stdout.write(`run-against-sut: running ${relative(REPO_ROOT, spec)} against ${url} (retries=${retries}) ...\n`);
+  const res = runSpecAgainstSut(spec, url, values.project ?? "chromium", retries);
 
   if (!res.ran) {
     process.stderr.write(`::warning::run-against-sut: could not execute the spec (browser/config). Tail:\n${res.failureTail}\n`);

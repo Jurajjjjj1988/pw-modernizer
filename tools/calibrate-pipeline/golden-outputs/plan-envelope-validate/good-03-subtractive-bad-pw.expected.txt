@@ -1,4 +1,4 @@
 # Exit 0. Subtractive bad-playwright envelope with 3 scenarios.
 plan-envelope-validate:
 3 scenario(s)
-clean (schema only)
+clean (schema only — scenario-coverage

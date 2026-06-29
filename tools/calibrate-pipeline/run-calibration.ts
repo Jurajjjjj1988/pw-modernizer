@@ -43,11 +43,14 @@ type ValidatorName =
   | "danger-policy"
   | "cypress-conformance" | "selenium-python-conformance"
   | "selenium-java-conformance"
+  | "pwm-blueprint-conformance"
   | "rag-bm25"
   | "helper-usage"
   | "validate-todo-discipline"
   | "validate-report-metrics"
-  | "validate-url-portability";
+  | "validate-url-portability"
+  | "evaluate"
+  | "network-completeness";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
@@ -56,11 +59,14 @@ const VALIDATORS: readonly ValidatorName[] = [
   "danger-policy",
   "cypress-conformance", "selenium-python-conformance",
   "selenium-java-conformance",
+  "pwm-blueprint-conformance",
   "rag-bm25",
   "helper-usage",
   "validate-todo-discipline",
   "validate-report-metrics",
   "validate-url-portability",
+  "evaluate",
+  "network-completeness",
 ];
 
 /**
@@ -73,6 +79,7 @@ const NESTED_CONFORMANCE_VALIDATORS: readonly ValidatorName[] = [
   "cypress-conformance",
   "selenium-python-conformance",
   "selenium-java-conformance",
+  "pwm-blueprint-conformance",
   "helper-usage",
 ];
 
@@ -399,6 +406,30 @@ function runSeleniumJavaConformance(fixtureName: string): FixtureResult {
   return runConformance("selenium-java-conformance", fixtureName);
 }
 
+// pwm-blueprint-conformance fixtures exercise the conformance validator's own
+// scoping + defect-class paths (not a source-language migration). Same nested
+// `{good,bad}/<scenario>/` layout, but a scenario may need extra validator flags
+// — e.g. the scope-miss fixture is driven WITH `--input-basename test_x.py`, and
+// the try/catch-in-spec defect blocks only under `--block-defects`. Each scenario
+// declares them in an optional whitespace-separated `flags.txt`; absent → no
+// extra flags (a plain `--root` run, like the language-conformance fixtures).
+function runPwmBlueprintConformance(fixtureName: string): FixtureResult {
+  const sepIdx = fixtureName.indexOf("-");
+  const polarity = fixtureName.slice(0, sepIdx);
+  const scenario = fixtureName.slice(sepIdx + 1);
+  const fixtureRoot = join(FIXTURES_ROOT, "pwm-blueprint-conformance", polarity, scenario);
+  const flagsFile = join(fixtureRoot, "flags.txt");
+  const extraFlags = existsSync(flagsFile)
+    ? readFileSync(flagsFile, "utf8").split(/\s+/).filter((s) => s.length > 0)
+    : [];
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-pwm-blueprint-conformance.ts"),
+    "--root", fixtureRoot,
+    ...extraFlags,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("pwm-blueprint-conformance", fixtureName)));
+}
+
 // helper-usage fixtures use the same nested `{good,bad}/<scenario>/` layout as
 // the conformance trees but invoke a different validator. Each scenario root
 // contains `helper/api/*.ts` (the exports) and `tests/*.ts` (consumers); we
@@ -505,6 +536,66 @@ function runUrlPortability(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("validate-url-portability", fixtureName)));
 }
 
+// evaluate fixtures are flat `{good,bad}-NN-*/` dirs, each holding input.ts +
+// a `*.spec.ts` emitted output + plan.md. evaluate.ts is the post-generation
+// SCORER that is also a GATE: it hard-rejects (exit 1) a zero-assertion tree OR
+// a tree containing a hard-forbidden pattern (force:true, page.pause(), test.only,
+// as-unknown-as, runtime test.skip/test.todo/test.fixme), else exits 0. The spec
+// stem is intentionally unique (`pwm-calib-eval-*`) so no real outputs/helper file
+// joins the emitted tree. report-out + METRICS_DB are routed into the sandbox so
+// the run touches nothing committed.
+function runEvaluate(fixtureName: string): FixtureResult {
+  const fixtureDir = join(FIXTURES_ROOT, "evaluate", fixtureName);
+  const entries = readdirSync(fixtureDir);
+  const input = join(fixtureDir, "input.ts");
+  const plan = join(fixtureDir, "plan.md");
+  const specName = entries.find((n) => n.endsWith(".spec.ts"));
+  if (specName === undefined) {
+    return {
+      fixture: fixtureName, expectedExit: expectedExitFromName(fixtureName),
+      actualExit: -1, missingSubstrings: ["(no *.spec.ts output file)"], passed: false,
+    };
+  }
+  return withTempSandbox("pwm-cal-eval-", (sandbox) => {
+    const r = spawnSync("npx", [
+      "tsx", join(SCRIPTS_DIR, "evaluate.ts"),
+      "--input", input,
+      "--output", join(fixtureDir, specName),
+      "--plan", plan,
+      "--report-out", join(sandbox, "report.md"),
+    ], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env: { ...process.env, METRICS_DB: join(sandbox, ".metrics.db") },
+    });
+    return buildResult(fixtureName, r, parseGolden(goldenPath("evaluate", fixtureName)));
+  });
+}
+// network-completeness fixtures are `{good,bad}-NN-*/` dirs, each a small emitted
+// tree: a legacy `source.cy.js`, a `tests/<spec>.spec.ts`, and (for the
+// fixture-only-stub case) `helper/fixtures/*-mocks.fixture.ts`. The validator is
+// pointed at the fixture dir via `--root`, deriving the input basename from the
+// source filename so findGeneratedSpec resolves the spec. Good fixtures reflect
+// every intercept (spy→waitForResponse, stub→route, fixture-only stub seen by the
+// directory scan) → exit 0; bad fixtures drop a stub → exit 1.
+function runNetworkCompleteness(fixtureName: string): FixtureResult {
+  const fixtureDir = join(FIXTURES_ROOT, "network-completeness", fixtureName);
+  const sourceName = readdirSync(fixtureDir).find((n) => n.startsWith("source."));
+  if (sourceName === undefined) {
+    return {
+      fixture: fixtureName, expectedExit: expectedExitFromName(fixtureName),
+      actualExit: -1, missingSubstrings: ["(no source.* file)"], passed: false,
+    };
+  }
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-network-completeness.ts"),
+    "--root", fixtureDir,
+    "--input-basename", sourceName,
+    "--source", join(fixtureDir, sourceName),
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("network-completeness", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -517,11 +608,14 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "cypress-conformance": runCypressConformance,
   "selenium-python-conformance": runSeleniumPythonConformance,
   "selenium-java-conformance": runSeleniumJavaConformance,
+  "pwm-blueprint-conformance": runPwmBlueprintConformance,
   "rag-bm25": runRagBm25,
   "helper-usage": runHelperUsage,
   "validate-todo-discipline": runTodoDiscipline,
   "validate-report-metrics": runReportMetrics,
   "validate-url-portability": runUrlPortability,
+  "evaluate": runEvaluate,
+  "network-completeness": runNetworkCompleteness,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

@@ -62,6 +62,25 @@ function annotate(v: Violation): void {
   process.stderr.write(`::error file=${v.file},line=${v.line}::${v.message}\n`);
 }
 
+/**
+ * Read + JSON.parse the envelope sidecar, turning an opaque SyntaxError into an
+ * actionable failure. Stage 1 emits the envelope as a JSON sidecar next to the
+ * plan markdown; a truncated write (max-turns cut-off, partial flush) leaves
+ * malformed JSON that the bare `JSON.parse` would surface as a raw stack trace.
+ * Pure + exported so the truncated-sidecar path is unit-testable without I/O on
+ * the live tree. The happy path returns the parsed value byte-for-byte identical
+ * to the old `JSON.parse` call, so valid envelopes flow into Ajv unchanged.
+ */
+function loadEnvelopeRaw(path: string): { ok: true; raw: unknown } | { ok: false; reason: string } {
+  const src = readFileSync(path, "utf8");
+  try {
+    return { ok: true, raw: JSON.parse(src) as unknown };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason };
+  }
+}
+
 function loadSchemaValidator(): ValidateFunction {
   const schemaSrc = readFileSync(SCHEMA_PATH, "utf8");
   const schema = JSON.parse(schemaSrc) as AnySchema;
@@ -360,7 +379,15 @@ function main(): number {
     process.stderr.write(`::error::envelope file missing: ${envelopePath}\n`);
     return 1;
   }
-  const raw: unknown = JSON.parse(readFileSync(envelopePath, "utf8"));
+  const loaded = loadEnvelopeRaw(envelopePath);
+  if (!loaded.ok) {
+    process.stderr.write(
+      `::error file=${envelopePath}::plan-envelope-validate: envelope is not valid JSON — ${loaded.reason}. ` +
+        "Stage 1 likely emitted a truncated sidecar; re-run plan.yml or delete the sidecar\n",
+    );
+    return 1;
+  }
+  const raw: unknown = loaded.raw;
   const schemaResult = validateSchema(envelopePath, raw);
   if (!schemaResult.ok) {
     schemaResult.errors.forEach(annotate);
@@ -400,7 +427,7 @@ function main(): number {
 
 // Pure cores exported for scripts/plan-envelope-validate.test.ts. The CLI entry
 // is guarded so importing this module does not call process.exit().
-export { expectedSpecBasenames, filterCodePathsByInput, validateScenarioCoverage, validateSubtractiveImports };
+export { loadEnvelopeRaw, expectedSpecBasenames, filterCodePathsByInput, validateScenarioCoverage, validateSubtractiveImports };
 export type { Envelope, Violation };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

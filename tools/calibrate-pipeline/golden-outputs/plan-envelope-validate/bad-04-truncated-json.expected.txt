@@ -1,0 +1,4 @@
+# Exit 1. Sidecar truncated mid-write — actionable guard, not an opaque SyntaxError.
+::error
+not valid JSON
+truncated sidecar

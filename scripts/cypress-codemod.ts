@@ -24,9 +24,40 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+/**
+ * Marker prepended above a `cy.get(...).type('…{enter}…')` left for the LLM.
+ * A Cypress key-sequence inside `.type()` is NOT a plain fill — `{enter}`,
+ * `{selectall}`, … are keyboard directives Cypress interprets, so a literal
+ * `.fill('foo{enter}')` would type the braces verbatim. The semantic lowering
+ * (pressSequentially + press('Enter')) is the LLM's job; the codemod just flags it.
+ */
+export const KEY_SEQUENCE_MARKER =
+  "// CODEMOD: Cypress key-sequence — translate to keyboard press (e.g. pressSequentially + press('Enter'))";
+
+/** Cypress key-sequence tokens that make `.type()` a keyboard directive, not a plain fill. */
+const KEY_SEQUENCE_RE = /\{(enter|selectall|esc|backspace|del|tab|home|end)\}/;
+/** `cy.get('X').type('…')` (single string arg) — used to detect the key-sequence special-case. */
+const GET_TYPE_RE =
+  /(?<!await\s)cy\.get\(\s*(['"`][^'"`]*['"`])\s*\)\.type\(\s*(['"`][^'"`]*['"`])\s*\)/g;
+/** Restore token for a shielded key-sequence `.type()` (no source/transform regex matches it). */
+const keySeqToken = (i: number): string => `__PWM_KEYSEQ_${i}__`;
+
 /** Apply the deterministic Cypress→Playwright transforms to one source string. */
 export function transformCypress(src: string): string {
   let out = src;
+
+  // SPECIAL-CASE (before the .type→fill / bare cy.get rewrites): a key-sequence
+  // .type() is left UNtransformed + marked. We swap each occurrence for a unique
+  // placeholder so NO subsequent regex (incl. the bare cy.get rewrite) touches it,
+  // then restore it below with the marker prepended once. Leaving cy.* in place
+  // restores cyCallsLeft visibility (the LLM tail still sees the call).
+  const keySeqSlots: string[] = [];
+  out = out.replace(GET_TYPE_RE, (match, _sel: string, arg: string) => {
+    if (!KEY_SEQUENCE_RE.test(arg)) return match;
+    const token = keySeqToken(keySeqSlots.length);
+    keySeqSlots.push(match);
+    return token;
+  });
 
   // cy.visit('X') / cy.visit("X")  →  await page.goto('X')   (idempotent: skip if already page.goto)
   out = out.replace(/(?<!await\s)cy\.visit\(\s*(['"`][^'"`]*['"`])\s*\)/g, "await page.goto($1)");
@@ -52,7 +83,35 @@ export function transformCypress(src: string): string {
   out = out.replace(/(?<!\.)\bdescribe(\.only|\.skip)?\(\s*(['"`][^'"`]*['"`])\s*,\s*(?:async\s*)?\(\s*\)\s*=>\s*\{/g,
     (_m, mod: string, name: string) => `test.describe${mod ?? ""}(${name}, () => {`);
 
+  // Restore each shielded key-sequence .type() call line-by-line, prepending the
+  // marker on its own line above (indented to match). Idempotent: a re-run re-shields
+  // the same expression, so we add the marker only when the previous OUTPUT line is
+  // not already the marker — a second pass therefore yields byte-identical output.
+  if (keySeqSlots.length > 0) {
+    out = restoreKeySequences(out, keySeqSlots);
+  }
+
   return out;
+}
+
+/** Swap each `keySeqToken(i)` back to its original `cy.get(...).type(...)`, marker prepended once. */
+function restoreKeySequences(out: string, slots: readonly string[]): string {
+  const lines = out.split("\n");
+  const result: string[] = [];
+  for (const line of lines) {
+    let restored = line;
+    for (const [i, original] of slots.entries()) {
+      // Function replacement returns the original verbatim (no `$&`/`$1` interpretation).
+      restored = restored.replace(keySeqToken(i), () => original);
+    }
+    if (restored !== line) {
+      const indent = /^[ \t]*/.exec(restored)?.[0] ?? "";
+      const prev = result.at(-1);
+      if (prev?.trim() !== KEY_SEQUENCE_MARKER) result.push(`${indent}${KEY_SEQUENCE_MARKER}`);
+    }
+    result.push(restored);
+  }
+  return result.join("\n");
 }
 
 /** Stats on what the codemod handled deterministically (for reporting). */

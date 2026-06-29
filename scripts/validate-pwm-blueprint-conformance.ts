@@ -94,7 +94,10 @@
 
 import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { findGeneratedSpec } from "./output-spec.js";
 
 interface CliArgs {
   root: string;
@@ -130,6 +133,37 @@ function expectedSpecBasenames(inputBasename: string): string[] {
   const dropTest = kebab.replace(/-tests?$/, "");
   if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
   return Array.from(out);
+}
+
+/**
+ * Resolve the spec set this `--input-basename` run is responsible for, FAILING
+ * CLOSED on a zero-spec scope miss.
+ *
+ * Without `--input-basename` the validator checks the whole `outputs/tests` tree
+ * (unscoped) — `basenameScoped` is the empty array and the caller uses every spec.
+ *
+ * WITH `--input-basename` the validator narrows to this migration's spec(s). The
+ * historical narrowing was pure-basename (`expectedSpecBasenames`), so a spec the
+ * LLM free-named (e.g. input `login-test.py` → emitted `auth.spec.ts`) resolved to
+ * ZERO specs and every spec-scoped check ran over an empty list — conformance
+ * passed VACUOUSLY. We instead:
+ *   1. take the basename matches the caller already computed; if any, use them;
+ *   2. else fall back to provenance (`findGeneratedSpec`, which matches on the
+ *      `// See outputs/plans/<input>.md` header the generator plants);
+ *   3. else return `scopeMiss: true` so the caller can refuse to pass vacuously.
+ *
+ * Pure except for the FS read inside `findGeneratedSpec` (provenance header) —
+ * exported so a unit test can pin the refusal without a token-spending run.
+ */
+export function resolveScopedSpecs(
+  testsDir: string,
+  inputBasename: string,
+  basenameScoped: string[],
+): { specs: string[]; scopeMiss: boolean } {
+  if (basenameScoped.length > 0) return { specs: basenameScoped, scopeMiss: false };
+  const viaProvenance = findGeneratedSpec(testsDir, inputBasename);
+  if (viaProvenance) return { specs: [viaProvenance], scopeMiss: false };
+  return { specs: [], scopeMiss: true };
 }
 
 interface Violation {
@@ -1134,9 +1168,25 @@ function main(): number {
     const stems = expectedSpecs.map((s) => s.replace(/\.spec\.ts$/, ""));
     return stems.some((s) => base === s || base.startsWith(`${s}-`) || base.startsWith(`${s}.`));
   };
-  const specFiles = allSpecFiles.filter(isScopedSpec);
+  let specFiles = allSpecFiles.filter(isScopedSpec);
   const pageFiles = allPageFiles.filter(isScopedPageBlock);
   const blockFiles = allBlockFiles.filter(isScopedPageBlock);
+
+  // FAIL CLOSED on a zero-spec scope miss. When --input-basename is given but
+  // pure-basename scoping found 0 specs, recover via provenance; if THAT also
+  // finds nothing there is no spec to validate for this input — refuse to pass
+  // vacuously (an empty spec list silently satisfies every spec-scoped check).
+  // No --input-basename → unscoped run, untouched.
+  if (args.inputBasename) {
+    const { specs, scopeMiss } = resolveScopedSpecs(testsDir, args.inputBasename, specFiles);
+    if (scopeMiss) {
+      process.stderr.write(
+        `::error::conformance: input ${args.inputBasename} resolved 0 specs under outputs/tests — refusing to pass vacuously\n`,
+      );
+      return 1;
+    }
+    specFiles = specs;
+  }
 
   const violations: Violation[] = [];
 
@@ -1182,6 +1232,15 @@ function main(): number {
     violations.push(...checkNoGetAccessor(rootAbs, file));
     violations.push(...checkLocatorInMethod(rootAbs, file));
     violations.push(...checkLocatorPriority(rootAbs, file));
+  }
+  // W2 (widened) — the try/catch-around-action smell is NOT page/block-only. A
+  // spec wrapping an action in try/catch, or an action helper swallowing a flake
+  // with try/catch, hides the same failure Playwright's auto-retry would surface.
+  // The line-start `try {` regex still ignores the `.catch(() => {})` idiom, so a
+  // deliberate best-effort cleanup chained on a locator is untouched. Scoped specs
+  // (this migration) + actions (walked unscoped, like W7/W8 layer-purity checks).
+  for (const file of [...specFiles, ...actionFiles]) {
+    violations.push(...checkNoTryCatchInPage(rootAbs, file));
   }
 
   // Warn-severity W6 — utilities verb prefix (utilities/CLAUDE.md).
@@ -1294,4 +1353,7 @@ function main(): number {
   return blockCount > 0 ? 1 : 0;
 }
 
-process.exit(main());
+// Only run the CLI when invoked directly — importing for tests must not exit.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

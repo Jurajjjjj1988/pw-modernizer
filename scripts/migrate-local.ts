@@ -56,7 +56,7 @@ export interface Args { input: string; inputs: string; plan: string; mock: boole
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
-interface WallResult { name: string; ok: boolean; detail: string }
+export interface WallResult { name: string; ok: boolean; detail: string }
 
 function parseCliArgs(): Args {
   const { values } = parseArgs({
@@ -565,6 +565,24 @@ function runWall(steps: WallStep[]): WallResult[] {
   return results;
 }
 
+/**
+ * Repair-wall re-gate decision (pure): a repair-loop run that reaches
+ * execution-green (repairCode === 0) is accepted ONLY when the SAME validator
+ * wall that produced the 17 greens still passes EVERY hard gate. The repair loop
+ * proves the test RUNS, but its in-loop checks (execution + B1 assertion-strength
+ * + IMP5 lint) do NOT cover the structural gates — a repair that re-introduced
+ * force:true / .nth() (conformance), dropped a cy.intercept stub (network
+ * completeness), fell below the assertion floor (assertion coverage), or broke
+ * URL portability / auth self-containment would otherwise ship on execution-green
+ * alone (false accept). AND the wall back in: accept iff repairCode === 0 AND no
+ * wall gate failed. A non-zero repairCode is never overridden (already a reject).
+ * Pure + exported so the gating logic is unit-proven without a live token run.
+ */
+export function shouldAcceptAfterRepair(repairCode: number, wallResults: WallResult[]): boolean {
+  if (repairCode !== 0) return false;
+  return wallResults.every((r) => r.ok);
+}
+
 // listOutputSpecs / expectedSpecBasenames / findGeneratedSpec now live in
 // ./output-spec.ts (shared with the CI resolver). Imported at the top.
 
@@ -788,9 +806,34 @@ function runOne(args: Args): { base: string; code: number } {
   if (code !== 0 && args.repair && sut.length > 0) {
     process.stdout.write("\n  --repair: a gate failed + a live SUT is set → running execution-guided repair loop ...\n");
     const r = spawnSync("npx", ["tsx", "scripts/repair-loop.ts", "--input-basename", p.base, "--url", sut, "--source", p.input], { cwd: REPO_ROOT, stdio: "inherit" });
-    code = r.status ?? 1;
+    code = regateAfterRepair(p, args, r.status ?? 1);
   }
   return { base: p.base, code };
+}
+
+/**
+ * Re-gate a repair-loop result through the structural validator wall. The repair
+ * loop accepts on execution-green (+ B1 assertion-strength + IMP5 lint) but does
+ * NOT re-run the structural gates — so a repair that re-introduced force:true /
+ * .nth() (conformance), dropped a cy.intercept stub (network completeness), fell
+ * below the assertion floor (assertion coverage), or broke URL portability / auth
+ * self-containment would ship on execution-green alone (a false accept). Re-run
+ * the SAME wall (same profile/env; MIGRATION_TARGET_URL is still set, so the
+ * live-SUT gates run and a genuinely-clean repair still passes) and AND it into
+ * the verdict via shouldAcceptAfterRepair. A non-zero repairCode is returned
+ * unchanged (the loop already rejected). Returns the final exit code.
+ */
+function regateAfterRepair(p: Paths, args: Args, repairCode: number): number {
+  if (repairCode !== 0) return repairCode;
+  process.stdout.write("\n  --repair reached execution-green → re-running the validator wall on the repaired output ...\n");
+  const reResults = runWall(validatorWall(p, args.profile));
+  if (shouldAcceptAfterRepair(repairCode, reResults)) {
+    process.stdout.write("\n  ✓ repaired output passes the full validator wall.\n\n");
+    return 0;
+  }
+  const reFailed = reResults.filter((res) => !res.ok).map((res) => res.name).join(", ");
+  process.stdout.write(`\n  ✗ repair went green but re-broke a hard gate (${reFailed}) — rejecting the repaired output.\n\n`);
+  return 1;
 }
 
 /** Run the pipeline over every input matched by --inputs, sequentially (safest

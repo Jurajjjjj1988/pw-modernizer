@@ -29,7 +29,7 @@
  */
 
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +41,7 @@ import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
 import { appKey, loadCache, renderCacheHints, recordFromReport } from "./locator-cache.js";
 import { runClaudeCli } from "./lib/claude-cli.js";
 import { UNVERIFIED_LOCATOR_CONFIDENCE_CAP } from "./evaluate.js";
+import { transformCypress, codemodStats } from "./cypress-codemod.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -388,6 +389,44 @@ function cacheHintsBlock(url: string | null): string {
  * When a DOM snapshot was captured (MIGRATION_TARGET_URL set), it is injected as
  * a closed vocabulary so Stage 2 cannot hallucinate locators; plus any
  * previously-verified locators for this app from the cache (IMP6). */
+const DRAFTS_DIR = join(REPO_ROOT, "outputs/.drafts");
+
+/**
+ * IMP4 / BP6 — codemod pre-pass. For a Cypress input, run the deterministic
+ * Cypress→Playwright codemod and write a Playwright DRAFT sidecar, then return a
+ * prompt block pointing Stage 2 at it. Returns "" when the input isn't Cypress,
+ * is missing, or the codemod changed nothing (no draft → no noise).
+ *
+ * Why a draft, not a replacement: the mechanical ~80% (API renames, await
+ * insertion, test()-wrapping, hard-wait removal) is deterministic and idempotent
+ * — doing it in code removes a class of LLM-variability bugs and shrinks what the
+ * model must reason about to the genuinely semantic ~20% (selector strategy,
+ * wait→assertion intent, the layered pwm-blueprint architecture).
+ */
+export function codemodDraftBlock(p: Paths): string {
+  if (!/\.cy\.[jt]s$/i.test(p.input) || !existsSync(p.input)) return "";
+  const src = readFileSync(p.input, "utf8");
+  if (src.length === 0) return "";
+  const draft = transformCypress(src);
+  const stats = codemodStats(src, draft);
+  if (!stats.transformed) return "";
+  mkdirSync(DRAFTS_DIR, { recursive: true });
+  const draftPath = join(DRAFTS_DIR, `${p.base.replace(/\.cy\.[jt]s$/i, "")}.draft.spec.ts`);
+  writeFileSync(draftPath, draft);
+  return [
+    "",
+    "## Deterministic codemod draft (BP6 — the mechanical pre-pass is already done)",
+    `A deterministic Cypress→Playwright codemod has pre-translated the UNAMBIGUOUS`,
+    `mechanical parts (API renames, await insertion, test()-wrapping, hard-wait removal —`,
+    `${stats.hardWaitsRemoved} hard wait(s) removed; ${stats.cyCallsLeft} cy.* call(s) left for you).`,
+    `- Draft: ${draftPath}`,
+    "Use it as the STARTING POINT for those mechanical transforms — do not redo them.",
+    "Your job is the semantic ~20%: selector strategy (getByRole/getByTestId per the plan",
+    "+ pwm-blueprint), wait→web-first-assertion intent, and the layered architecture. The",
+    "draft is a flat spec, NOT pwm-blueprint-shaped — restructure it to the plan + triad.",
+  ].join("\n");
+}
+
 export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: string | null = null, url: string | null = null): string {
   const assembledRel = profile === "lean"
     ? "prompts/_assembled/generate.lean.md"
@@ -426,6 +465,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: st
     "",
     "## Context to load (in this order)",
     ...context,
+    codemodDraftBlock(p),
     domGroundingBlock(snapshotPath),
     cacheHintsBlock(url),
     "",

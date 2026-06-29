@@ -42,6 +42,10 @@ outputs/.trajectories/
 # --inputs --isolate so each migration's output is preserved for review).
 outputs/.batch/
 
+# Codemod drafts (local-only, IMP4/BP6; deterministic Cypress→Playwright pre-pass
+# sidecars fed to Stage 2 — regenerated each run, never committed).
+outputs/.drafts/
+
 # Compiled-at-runtime sidecar for danger-rules.ts (created by danger.yml)
 scripts/lib/danger-rules.js
 .claude/

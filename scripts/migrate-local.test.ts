@@ -25,6 +25,7 @@ import {
   isStructuralGroundingCap,
   parseDirtyPaths,
   archiveIsolatedOutput,
+  codemodDraftBlock,
   type Args,
 } from "./migrate-local.js";
 
@@ -228,5 +229,41 @@ test("archiveIsolatedOutput: copies an untracked outputs/tests file into outputs
   } finally {
     rmSync(probe, { force: true });
     rmSync(archiveRoot, { recursive: true, force: true });
+  }
+});
+
+// ---- IMP4 / BP6: Cypress codemod pre-pass injected into the Stage-2 prompt.
+
+test("codemodDraftBlock: a real Cypress input yields a draft block + writes the sidecar", () => {
+  const p = derivePaths({ ...baseArgs, input: "inputs/cypress/checkout-flow.cy.js" });
+  const draftPath = join(REPO_ROOT, "outputs/.drafts/checkout-flow.draft.spec.ts");
+  try {
+    const block = codemodDraftBlock(p);
+    assert.match(block, /Deterministic codemod draft/);
+    assert.match(block, /hard wait\(s\) removed/);
+    assert.match(block, /semantic ~20%/);
+    assert.ok(readFileSync(draftPath, "utf8").length > 0, "draft sidecar must be written");
+  } finally {
+    rmSync(draftPath, { force: true });
+  }
+});
+
+test("codemodDraftBlock: a non-Cypress input is a no-op (empty block, no draft)", () => {
+  const p = derivePaths({ ...baseArgs, input: "inputs/bad-playwright/force-clicks.spec.ts" });
+  assert.equal(codemodDraftBlock(p), "");
+});
+
+test("codemodDraftBlock: a missing input is a no-op (empty block)", () => {
+  const p = derivePaths({ ...baseArgs, input: "inputs/cypress/does-not-exist.cy.js" });
+  assert.equal(codemodDraftBlock(p), "");
+});
+
+test("buildPrompt: a Cypress input carries the codemod draft block (integration)", () => {
+  const p = derivePaths({ ...baseArgs, input: "inputs/cypress/checkout-flow.cy.js" });
+  const draftPath = join(REPO_ROOT, "outputs/.drafts/checkout-flow.draft.spec.ts");
+  try {
+    assert.match(buildPrompt(p, "pwm-blueprint"), /Deterministic codemod draft/);
+  } finally {
+    rmSync(draftPath, { force: true });
   }
 });

@@ -30,6 +30,7 @@ import { parseArgs } from "node:util";
 
 import { collectEmittedFiles } from "./evaluate.js";
 import { findGeneratedSpec } from "./output-spec.js";
+import { extractPwAssertions, compareStrength, type PwAssertion, type StrengthViolation } from "./lib/assertion-ast.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
@@ -287,6 +288,59 @@ function handleFailure(base: string, url: string, source: string, mock: boolean,
   return null;
 }
 
+/** The assertions across the migrated tree right now (spec + reachable POMs). */
+function snapshotAssertions(base: string): PwAssertion[] {
+  const spec = findGeneratedSpec(OUT_DIR, base);
+  if (!spec) return [];
+  return collectEmittedFiles(spec).filter(existsSync).flatMap((f) => extractPwAssertions(readFileSync(f, "utf8")));
+}
+
+/** Tell Claude to undo an assertion-weakening it made to go green (B1). */
+export function buildAssertionRestorePrompt(files: string[], violations: StrengthViolation[]): string {
+  const fileList = files.map((f) => `- ${relative(REPO_ROOT, f)}`).join("\n");
+  return [
+    "A repair made the test pass by WEAKENING its assertions — that is forbidden. The test must verify",
+    "the SAME behaviour it verified before. Restore assertion strength and fix the LOCATOR/target instead.",
+    "",
+    "## Weakenings detected (each must be undone)",
+    ...violations.map((v) => `- ${v.kind}: ${v.detail}`),
+    "",
+    "## Rules",
+    "- Restore each assertion to AT LEAST its original matcher strength (e.g. toBeVisible() back to toHaveText('3')).",
+    "- Restore any dropped `.not.` or removed assertion.",
+    "- If a strong assertion fails, the real bug is the LOCATOR or the app state you reach — fix THAT, never the assertion.",
+    "- Never substitute a weaker matcher, a permissive regex, or delete an assert to go green.",
+    "",
+    "## Files you may edit",
+    fileList,
+  ].join("\n");
+}
+
+/**
+ * Accept a green run ONLY if the repair did not WEAKEN assertions versus the
+ * freshly-generated original (B1). If it did, attempt ONE restore edit + re-verify;
+ * accept only an HONEST green (strong assertions AND passing), else reject — a
+ * green bought by weakening an assertion is a false green, worse than a red.
+ * Returns the process exit code.
+ */
+function finalizeGreen(base: string, url: string, original: PwAssertion[], mock: boolean): number {
+  let violations = compareStrength(original, snapshotAssertions(base));
+  if (violations.length === 0) { ensureLintClean(base, url, mock); return 0; }
+  process.stdout.write(`  ⚠ green reached by WEAKENING assertions: ${violations.map((v) => v.detail).join("; ")}\n`);
+  if (mock) return 1;
+  const auth = detectAuth();
+  if (auth.kind === "none") return 1;
+  const spec = findGeneratedSpec(OUT_DIR, base);
+  const files = spec ? collectEmittedFiles(spec).filter(existsSync) : [];
+  process.stdout.write("  ⚠ restoring assertion strength + re-running ...\n");
+  if (!runClaude(auth, buildAssertionRestorePrompt(files, violations))) return 1;
+  const reGate = runExecutionGate(base, url);
+  violations = compareStrength(original, snapshotAssertions(base));
+  if (reGate.green && violations.length === 0) { ensureLintClean(base, url, mock); return 0; }
+  process.stdout.write(`  ✗ rejecting — ${reGate.green ? "assertions still weakened" : "the real assertion fails (was passing only by weakening)"}; needs human review.\n`);
+  return 1;
+}
+
 function main(): number {
   const { values } = parseArgs({
     options: {
@@ -307,14 +361,16 @@ function main(): number {
   // The original legacy test — the intent reference (behaviours + login steps).
   const source = values.source && existsSync(values.source) ? readFileSync(values.source, "utf8") : "";
   const maxIter = Math.max(1, Number(values["max-iterations"] ?? "3"));
+  // Baseline assertions from the freshly-generated tree — repair must not weaken
+  // them to reach green (B1).
+  const assertsOriginal = snapshotAssertions(base);
 
   for (let iter = 1; iter <= maxIter; iter++) {
     process.stdout.write(`\n  repair-loop iteration ${iter}/${maxIter} — running ${base} against ${url}\n`);
     const gate = runExecutionGate(base, url);
     if (gate.green) {
       process.stdout.write(`  ✅ GREEN — ${base} passes against ${url}${iter > 1 ? ` (repaired in ${iter - 1} iteration(s))` : " (no repair needed)"}.\n`);
-      ensureLintClean(base, url, values.mock === true); // IMP5: green AND lint-clean
-      return 0;
+      return finalizeGreen(base, url, assertsOriginal, values.mock === true); // IMP5 lint + B1 assertion-strength
     }
     process.stdout.write(`  ✗ failed against the live app — capturing snapshot + reaching files for repair\n`);
     const code = handleFailure(base, url, source, values.mock === true, gate.failureTail);
@@ -328,8 +384,7 @@ function main(): number {
   const final = runExecutionGate(base, url);
   if (final.green) {
     process.stdout.write(`  ✅ GREEN — ${base} passes against ${url} (repaired on the final iteration, ${maxIter}/${maxIter}).\n`);
-    ensureLintClean(base, url, values.mock === true); // IMP5: green AND lint-clean
-    return 0;
+    return finalizeGreen(base, url, assertsOriginal, values.mock === true); // IMP5 lint + B1 assertion-strength
   }
   process.stdout.write(`\n  ✗ still failing after ${maxIter} repair iteration(s) — needs human review.\n`);
   return 1;

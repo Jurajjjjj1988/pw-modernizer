@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure, buildLintRepairPrompt } from "./repair-loop.js";
+import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure, buildLintRepairPrompt, buildAssertionRestorePrompt } from "./repair-loop.js";
 
 test("repair prompt carries the execution error, the live snapshot, the file list, and the getByLabel hint", () => {
   const p = buildRepairPrompt(
@@ -110,6 +110,17 @@ test("buildRepairPrompt: a plain locator failure does NOT add the auth directive
 });
 
 // ---- IMP5: lint-repair (green AND lint-clean).
+
+test("buildAssertionRestorePrompt: lists the weakenings + forbids weaker matchers / dropped asserts (B1)", () => {
+  const p = buildAssertionRestorePrompt(
+    ["/r/outputs/tests/x.spec.ts"],
+    [{ kind: "strength-drop", detail: "total assertion strength 4 → 1 (a matcher was weakened, e.g. toHaveText→toBeVisible)" }],
+  );
+  assert.match(p, /WEAKENING its assertions/);
+  assert.match(p, /a matcher was weakened/);             // the specific violation
+  assert.match(p, /fix the LOCATOR\/target instead/);    // fix the real cause
+  assert.match(p, /Never substitute a weaker matcher/);  // the guard
+});
 
 test("buildLintRepairPrompt: carries the eslint output + files and forbids behaviour changes / disable-comments", () => {
   const p = buildLintRepairPrompt(

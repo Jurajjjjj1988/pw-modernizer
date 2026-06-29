@@ -15,7 +15,6 @@
  *
  * Pure core (buildJudgePrompt / parseScores / verdictFromScores) is unit-tested.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +23,7 @@ import { parseArgs } from "node:util";
 import { collectEmittedFiles, collectEmittedSources } from "./evaluate.js";
 import { findGeneratedSpec } from "./output-spec.js";
 import { cohensKappa, kappaLabel } from "./lib/kappa.js";
+import { runClaudeCli } from "./lib/claude-cli.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 
@@ -100,10 +100,10 @@ function runJudge(auth: Auth, prompt: string): string {
   const env = { ...process.env };
   if (auth.kind === "oauth") { env["CLAUDE_CODE_OAUTH_TOKEN"] = auth.value; delete env["ANTHROPIC_API_KEY"]; }
   else { env["ANTHROPIC_API_KEY"] = auth.value; delete env["CLAUDE_CODE_OAUTH_TOKEN"]; }
-  // Judge with Opus (the stronger judge) in print mode; no edits.
-  const r = spawnSync("npx", ["--yes", "@anthropic-ai/claude-code", "--model", "claude-opus-4-8", "--print", prompt],
-    { cwd: REPO_ROOT, env, encoding: "utf8" });
-  return `${r.stdout ?? ""}`;
+  // Judge with Opus (the stronger judge) in print mode; no edits. Capture stdout
+  // (the scores are parsed from it); the shared runner bounds a hung call.
+  const r = runClaudeCli(["--model", "claude-opus-4-8", "--print", prompt], { cwd: REPO_ROOT, env, capture: true });
+  return r.stdout;
 }
 
 interface GoldRecord { input_basename: string; human_acceptable: boolean }

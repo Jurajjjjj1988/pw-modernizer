@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { computeCostUsd } from "./metrics.js";
+import { runClaudeCli } from "./lib/claude-cli.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const ASSEMBLED_ANALYZE = join(REPO_ROOT, "prompts/_assembled/analyze.md");
@@ -150,15 +151,14 @@ function runClaude(auth: Auth, prompt: string): void {
   const env = { ...process.env };
   if (auth.kind === "oauth") { env["CLAUDE_CODE_OAUTH_TOKEN"] = auth.value; delete env["ANTHROPIC_API_KEY"]; }
   else { env["ANTHROPIC_API_KEY"] = auth.value; delete env["CLAUDE_CODE_OAUTH_TOKEN"]; }
-  const r = spawnSync("npx", [
-    "--yes", "@anthropic-ai/claude-code",
+  const r = runClaudeCli([
     "--model", "claude-sonnet-4-6",
     "--max-turns", "30",
     "--print",
     "--permission-mode", "acceptEdits",
     prompt,
-  ], { cwd: REPO_ROOT, env, stdio: ["ignore", "inherit", "inherit"] });
-  if (r.status !== 0) fail("Claude plan call failed — see output above.");
+  ], { cwd: REPO_ROOT, env });
+  if (!r.ok) fail(r.timedOut ? "Claude plan call timed out (hung CLI) — retry, or raise CLAUDE_CLI_TIMEOUT_MS." : "Claude plan call failed — see output above.");
   process.stdout.write("  [step] Claude plan done\n");
 }
 

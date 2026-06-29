@@ -21,6 +21,7 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
 import { Project, SyntaxKind, type SourceFile, type Node } from "ts-morph";
 import Ajv2020, { type AnySchema, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
@@ -119,11 +120,16 @@ function collectScenarioPins(sf: SourceFile): Map<string, number> {
  * file path is treated as a leaf spec regardless of extension so callers can
  * point at a single non-`.spec.ts` file for unit tests / one-offs.
  */
-function resolveCodeFiles(codeArg: string): string[] {
+interface ResolvedCode { paths: string[]; singleFile: boolean }
+
+function resolveCodeFiles(codeArg: string): ResolvedCode {
   const abs = resolve(codeArg);
-  if (!existsSync(abs)) return [];
+  if (!existsSync(abs)) return { paths: [], singleFile: false };
   const st = statSync(abs);
-  if (st.isFile()) return [abs];
+  // single-file `--code <one .spec.ts>` — the caller pointed at exactly one
+  // file (the canonical `check:envelope:code` flow). Honour it verbatim; no
+  // basename matching needed because the choice was explicit.
+  if (st.isFile()) return { paths: [abs], singleFile: true };
   const proj = new Project({ useInMemoryFileSystem: false });
   proj.addSourceFilesAtPaths(join(abs, "**/*.spec.ts"));
   // Exclude `_legacy-v0.1.x/` archive — those specs were emitted by past
@@ -132,9 +138,10 @@ function resolveCodeFiles(codeArg: string): string[] {
   // (e.g. ExplicitWaitJupiterTest.java → explicit-wait-jupiter-test.spec.ts
   // exists in both _legacy/ and tests/ root → '1.1 pinned 2 times' false
   // positive). Observed 2026-06-16 run 27627784309.
-  return proj.getSourceFiles()
+  const paths = proj.getSourceFiles()
     .map((sf) => sf.getFilePath())
     .filter((p) => !p.includes("/_legacy-v0.1.x/"));
+  return { paths, singleFile: false };
 }
 
 /**
@@ -178,18 +185,29 @@ function expectedSpecBasenames(inputBasename: string): string[] {
   return Array.from(out);
 }
 
+interface ScopedCode { scoped: string[]; matched: boolean }
+
 /**
  * Filter codePaths to specs that BELONG to this envelope's input. The
  * directory walked via `--code outputs/tests/` accumulates specs from every
  * Stage 2 run; without this filter, pin counts aggregate across unrelated
  * inputs and every scenario id 1.1 gets flagged "pinned N times".
  *
- * Match strategy — basename equals one of the candidates OR starts with one
- * of the candidate stems (covers sibling specs like `<base>.helpers.spec.ts`).
- * When NO file matches, fall back to ALL codePaths — preserves the legacy
- * behaviour for cross-language migrations where Sonnet may rename further.
+ * single-file mode (`matched` always true): the caller pointed at one explicit
+ * file — use it verbatim.
+ *
+ * directory mode — match strategy: basename equals one of the candidates OR
+ * starts with one of the candidate stems (covers sibling specs like
+ * `<base>.helpers.spec.ts`). When NO file matches we return `matched=false`
+ * and an EMPTY scoped set — the OLD code fell back to ALL codePaths here, which
+ * is a false pass: scenario ids (1.1, 1.2 …) are shared across every migration,
+ * so an unrelated spec satisfies coverage for an input whose spec was never
+ * emitted (or was renamed past our patterns). The caller turns `matched=false`
+ * into one honest "coverage unverifiable" violation — same refuse-to-guess
+ * discipline as IMP10 output-spec resolution.
  */
-function filterCodePathsByInput(envelope: Envelope, codePaths: string[]): string[] {
+function filterCodePathsByInput(envelope: Envelope, codePaths: string[], singleFile: boolean): ScopedCode {
+  if (singleFile) return { scoped: codePaths, matched: true };
   const candidates = expectedSpecBasenames(envelope.inputBasename);
   const stems = candidates.map((c) => c.replace(/\.spec\.ts$/, ""));
   const matches = codePaths.filter((p) => {
@@ -197,16 +215,33 @@ function filterCodePathsByInput(envelope: Envelope, codePaths: string[]): string
     if (candidates.includes(b)) return true;
     return stems.some((s) => b.startsWith(`${s}.`));
   });
-  return matches.length > 0 ? matches : codePaths;
+  return { scoped: matches, matched: matches.length > 0 };
 }
 
-function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Violation[] {
+function validateScenarioCoverage(envelope: Envelope, codePaths: string[], singleFile: boolean): Violation[] {
   // Scope to specs that belong to THIS envelope's input. Without this filter,
   // a directory-mode --code aggregates pins across every Stage 2 output in
   // `outputs/tests/` and flags scenario id 1.1 as "pinned N times" once you
   // have N specs (each input legitimately starts numbering at 1.1).
-  const scoped = filterCodePathsByInput(envelope, codePaths);
+  const { scoped, matched } = filterCodePathsByInput(envelope, codePaths, singleFile);
+  if (!matched && !singleFile) {
+    // Directory-mode and we could NOT locate this input's emitted spec. Refuse
+    // to fall back to ALL specs (a false pass via shared scenario ids) — emit
+    // one honest violation naming what we looked for.
+    const candidates = expectedSpecBasenames(envelope.inputBasename);
+    return [{
+      file: "(code)",
+      line: 1,
+      message: `no emitted spec matches envelope.inputBasename '${envelope.inputBasename}' (looked for: ${candidates.join(", ")}) — scenario coverage cannot be verified; emit the spec or fix its name`,
+    }];
+  }
   if (scoped.length === 0) return [];
+  const aggregated = aggregateScenarioPins(scoped);
+  return coverageViolations(envelope, aggregated, scoped[0] ?? "(code)");
+}
+
+/** Sum `// plan:scenario=<id>` pin counts across the scoped specs. */
+function aggregateScenarioPins(scoped: string[]): Map<string, number> {
   const project = new Project({ useInMemoryFileSystem: false });
   const aggregated = new Map<string, number>();
   for (const p of scoped) {
@@ -215,31 +250,24 @@ function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Viol
       aggregated.set(id, (aggregated.get(id) ?? 0) + count);
     }
   }
+  return aggregated;
+}
+
+/** Each declared scenario id must be pinned exactly once; no undeclared pins. */
+function coverageViolations(envelope: Envelope, aggregated: Map<string, number>, anchor: string): Violation[] {
   const out: Violation[] = [];
   const expected = new Set(envelope.scenarios.map((s) => s.id));
   for (const id of expected) {
     const n = aggregated.get(id) ?? 0;
     if (n === 0) {
-      out.push({
-        file: scoped[0] ?? "(code)",
-        line: 1,
-        message: `scenario id '${id}' has no '// plan:scenario=${id}' pin in generated code`,
-      });
+      out.push({ file: anchor, line: 1, message: `scenario id '${id}' has no '// plan:scenario=${id}' pin in generated code` });
     } else if (n > 1) {
-      out.push({
-        file: scoped[0] ?? "(code)",
-        line: 1,
-        message: `scenario id '${id}' pinned ${n} times — must be exactly one`,
-      });
+      out.push({ file: anchor, line: 1, message: `scenario id '${id}' pinned ${n} times — must be exactly one` });
     }
   }
   for (const id of aggregated.keys()) {
     if (!expected.has(id)) {
-      out.push({
-        file: scoped[0] ?? "(code)",
-        line: 1,
-        message: `code pins scenario '${id}' that is not declared in envelope.scenarios`,
-      });
+      out.push({ file: anchor, line: 1, message: `code pins scenario '${id}' that is not declared in envelope.scenarios` });
     }
   }
   return out;
@@ -281,13 +309,15 @@ function validatePomFixturePaths(envelope: Envelope, envelopePath: string): Viol
   return out;
 }
 
-function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Violation[] {
+function validateSubtractiveImports(envelope: Envelope, codePaths: string[], singleFile: boolean): Violation[] {
   if (!envelope.subtractive || codePaths.length === 0) return [];
   // Same scope discipline as scenario coverage — only inspect specs belonging
   // to THIS envelope's input. Otherwise we'd flag a Cypress migration's
   // `import { defineConfig } from 'cypress'` as a violation for an unrelated
   // bad-Playwright envelope being validated against the same outputs/tests/.
-  const scoped = filterCodePathsByInput(envelope, codePaths);
+  // A directory no-match returns empty scoped here (no duplicate violation —
+  // validateScenarioCoverage already emitted the one "coverage unverifiable").
+  const { scoped } = filterCodePathsByInput(envelope, codePaths, singleFile);
   if (scoped.length === 0) return [];
   const out: Violation[] = [];
   // Allow Playwright core, node built-ins, relative imports, AND pwm-blueprint path
@@ -343,13 +373,13 @@ function main(): number {
   // provided, since standalone schema validation runs on the example envelope
   // before any code generation has happened.
   if (args.code !== undefined) {
-    const codePaths = resolveCodeFiles(args.code);
+    const { paths: codePaths, singleFile } = resolveCodeFiles(args.code);
     if (codePaths.length === 0) {
       violations.push({ file: args.code, line: 1, message: `--code path not found or empty: ${args.code}` });
     } else {
       violations.push(
-        ...validateScenarioCoverage(envelope, codePaths),
-        ...validateSubtractiveImports(envelope, codePaths),
+        ...validateScenarioCoverage(envelope, codePaths, singleFile),
+        ...validateSubtractiveImports(envelope, codePaths, singleFile),
         ...validatePomFixturePaths(envelope, envelopePath),
       );
     }
@@ -359,11 +389,20 @@ function main(): number {
     process.stderr.write(`plan-envelope-validate: ${violations.length} contract violation(s)\n`);
     return 1;
   }
-  const mode = args.code === undefined ? "schema only" : "schema + code coverage";
+  const mode = args.code === undefined
+    ? "schema only — scenario-coverage + subtractive-imports NOT verified (pass --code to check)"
+    : "schema + code coverage";
   process.stdout.write(
     `plan-envelope-validate: ${envelope.scenarios.length} scenario(s), ${envelope.locatorTable.length} locator(s), ${envelope.hallucinationDefensePins.length} pin(s) — clean (${mode}).\n`,
   );
   return 0;
 }
 
-process.exit(main());
+// Pure cores exported for scripts/plan-envelope-validate.test.ts. The CLI entry
+// is guarded so importing this module does not call process.exit().
+export { expectedSpecBasenames, filterCodePathsByInput, validateScenarioCoverage, validateSubtractiveImports };
+export type { Envelope, Violation };
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

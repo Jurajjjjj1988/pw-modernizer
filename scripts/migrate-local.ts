@@ -29,7 +29,7 @@
  */
 
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +40,8 @@ import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
 import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
 import { appKey, loadCache, renderCacheHints, recordFromReport } from "./locator-cache.js";
 import { runClaudeCli } from "./lib/claude-cli.js";
+import { UNVERIFIED_LOCATOR_CONFIDENCE_CAP } from "./evaluate.js";
+import { transformCypress, codemodStats } from "./cypress-codemod.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -93,6 +95,11 @@ function printHelp(): void {
     "  npm run migrate -- --input <path> --mock     wiring check + cost preview, no Claude call",
     "  npm run migrate -- --inputs '<glob>'         batch over many inputs (sequential)",
     "  npm run migrate -- --inputs '<glob>' --mock  free batch wiring + cost preview",
+    "  npm run migrate -- --inputs '<glob>' --isolate  per-input snapshot/restore: each",
+    "                                               migration starts from the committed",
+    "                                               baseline (no cross-migration POM bleed)",
+    "                                               + its output is archived to",
+    "                                               outputs/.batch/<input>/ for review.",
     "  npm run migrate -- --check                   preflight: Node/auth/plan setup doctor",
     "  npm run migrate -- --input <p> --profile lean  emit specs + page objects only (ADR 0002; default pwm-blueprint)",
     "  npm run migrate -- --help",
@@ -221,6 +228,48 @@ function resetSharedTree(): void {
 }
 
 /**
+ * Parse `git status --porcelain -uall` into the list of changed/untracked file
+ * paths. Each line is `XY <path>` (2 status chars + space); a rename is
+ * `R  old -> new` (keep the new path). Pure + exported for tests.
+ */
+export function parseDirtyPaths(porcelain: string): string[] {
+  return porcelain
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .filter((l) => l.length > 3)
+    .map((l) => l.slice(3).trim())
+    .map((l) => (l.includes(" -> ") ? l.split(" -> ")[1] ?? l : l))
+    .filter((p) => p.length > 0);
+}
+
+/**
+ * B3 snapshot-and-restore: after an --isolate migration generates, copy THIS
+ * migration's delta — every changed/untracked file under outputs/tests +
+ * outputs/helper vs the committed baseline — into outputs/.batch/<base>/,
+ * preserving the relative tree. A batch then PRESERVES every migration's output
+ * (each authored by exactly one migration), instead of the next reset wiping
+ * all but the last (the old wipe-forward). Returns the archive dir + file count.
+ */
+export function archiveIsolatedOutput(base: string): { dir: string; files: number } {
+  const status = spawnSync(
+    "git",
+    ["status", "--porcelain", "-uall", "--", "outputs/tests", "outputs/helper"],
+    { cwd: REPO_ROOT, encoding: "utf8" },
+  );
+  const dir = join(REPO_ROOT, "outputs/.batch", base);
+  let files = 0;
+  for (const rel of parseDirtyPaths(status.stdout ?? "")) {
+    const src = join(REPO_ROOT, rel);
+    if (!existsSync(src) || !statSync(src).isFile()) continue;
+    const dest = join(dir, rel); // keeps outputs/tests/… and outputs/helper/… structure
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    files += 1;
+  }
+  return { dir, files };
+}
+
+/**
  * Offline abstention gate (lever 1) — runs ONLY when there is no DOM snapshot.
  * Without a SUT we can't ground, but we can still refuse a plan that pins a
  * HIGH-confidence locator whose accessible name isn't derivable from the source:
@@ -340,6 +389,44 @@ function cacheHintsBlock(url: string | null): string {
  * When a DOM snapshot was captured (MIGRATION_TARGET_URL set), it is injected as
  * a closed vocabulary so Stage 2 cannot hallucinate locators; plus any
  * previously-verified locators for this app from the cache (IMP6). */
+const DRAFTS_DIR = join(REPO_ROOT, "outputs/.drafts");
+
+/**
+ * IMP4 / BP6 — codemod pre-pass. For a Cypress input, run the deterministic
+ * Cypress→Playwright codemod and write a Playwright DRAFT sidecar, then return a
+ * prompt block pointing Stage 2 at it. Returns "" when the input isn't Cypress,
+ * is missing, or the codemod changed nothing (no draft → no noise).
+ *
+ * Why a draft, not a replacement: the mechanical ~80% (API renames, await
+ * insertion, test()-wrapping, hard-wait removal) is deterministic and idempotent
+ * — doing it in code removes a class of LLM-variability bugs and shrinks what the
+ * model must reason about to the genuinely semantic ~20% (selector strategy,
+ * wait→assertion intent, the layered pwm-blueprint architecture).
+ */
+export function codemodDraftBlock(p: Paths): string {
+  if (!/\.cy\.[jt]s$/i.test(p.input) || !existsSync(p.input)) return "";
+  const src = readFileSync(p.input, "utf8");
+  if (src.length === 0) return "";
+  const draft = transformCypress(src);
+  const stats = codemodStats(src, draft);
+  if (!stats.transformed) return "";
+  mkdirSync(DRAFTS_DIR, { recursive: true });
+  const draftPath = join(DRAFTS_DIR, `${p.base.replace(/\.cy\.[jt]s$/i, "")}.draft.spec.ts`);
+  writeFileSync(draftPath, draft);
+  return [
+    "",
+    "## Deterministic codemod draft (BP6 — the mechanical pre-pass is already done)",
+    `A deterministic Cypress→Playwright codemod has pre-translated the UNAMBIGUOUS`,
+    `mechanical parts (API renames, await insertion, test()-wrapping, hard-wait removal —`,
+    `${stats.hardWaitsRemoved} hard wait(s) removed; ${stats.cyCallsLeft} cy.* call(s) left for you).`,
+    `- Draft: ${draftPath}`,
+    "Use it as the STARTING POINT for those mechanical transforms — do not redo them.",
+    "Your job is the semantic ~20%: selector strategy (getByRole/getByTestId per the plan",
+    "+ pwm-blueprint), wait→web-first-assertion intent, and the layered architecture. The",
+    "draft is a flat spec, NOT pwm-blueprint-shaped — restructure it to the plan + triad.",
+  ].join("\n");
+}
+
 export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: string | null = null, url: string | null = null): string {
   const assembledRel = profile === "lean"
     ? "prompts/_assembled/generate.lean.md"
@@ -378,6 +465,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: st
     "",
     "## Context to load (in this order)",
     ...context,
+    codemodDraftBlock(p),
     domGroundingBlock(snapshotPath),
     cacheHintsBlock(url),
     "",
@@ -623,7 +711,7 @@ function runEvaluate(p: Paths, spec: string): string | null {
   const r = spawnSync("npx", args, { cwd: REPO_ROOT, encoding: "utf8" });
   if (r.status !== 0) return null;
   const out = (r.stdout ?? "").trim().split("\n").filter((l) => l.trim().length > 0);
-  return out.length > 0 ? out[out.length - 1] ?? null : null;
+  return out.at(-1) ?? null;
 }
 
 /** Run the full Stage-2 pipeline for ONE input. Returns a code instead of
@@ -700,18 +788,52 @@ function runOne(args: Args): { base: string; code: number } {
 }
 
 /** Run the pipeline over every input matched by --inputs, sequentially (safest
- * for token spend + clean interleaved logs). Exits non-zero if any input fails. */
+ * for token spend + clean interleaved logs). Exits non-zero if any input fails.
+ *
+ * With --isolate this is snapshot-and-restore (B3): each runOne resets the shared
+ * tree to baseline (so its POMs are authored by exactly one migration), then we
+ * ARCHIVE that migration's delta to outputs/.batch/<input>/ before the next reset
+ * wipes it — so every migration's output survives for review. The shared tree is
+ * restored to baseline at the end. Without --isolate, the batch accumulates into
+ * the shared tree (last write wins on shared files like base.fixture). */
 function runBatch(args: Args): number {
   const files = expandInputs(args.inputs);
   if (files.length === 0) fail(`--inputs matched 0 files: ${args.inputs}`);
-  process.stdout.write(`\n  migrate batch — ${files.length} input(s) for '${args.inputs}'${args.mock ? " (mock preview)" : ""}\n`);
+  const isolating = args.isolate && !args.mock;
+  process.stdout.write(`\n  migrate batch — ${files.length} input(s) for '${args.inputs}'${args.mock ? " (mock preview)" : ""}${isolating ? " [--isolate: per-input snapshot/restore → outputs/.batch/]" : ""}\n`);
   prepareContext(); // run-global: assemble + inventory once, not per input.
-  const results = files.map((f) => runOne({ ...args, input: f, inputs: "" }));
-  const failed = results.filter((r) => r.code !== 0);
-  process.stdout.write(`\n  Batch summary: ${results.length - failed.length}/${results.length} succeeded${failed.length > 0 ? `, ${failed.length} failed` : ""}\n`);
-  for (const r of results) process.stdout.write(`    ${r.code === 0 ? "✓" : "✗"} ${r.base}\n`);
+  const results: Array<{ base: string; code: number; archive?: string }> = [];
+  for (const f of files) {
+    const r = runOne({ ...args, input: f, inputs: "" });
+    if (isolating) {
+      // Preserve THIS migration's output before the next runOne's reset wipes it.
+      const a = archiveIsolatedOutput(r.base);
+      results.push(a.files > 0 ? { ...r, archive: a.dir } : r);
+    } else {
+      results.push(r);
+    }
+  }
+  // Restore the shared tree to the committed baseline so the canonical outputs/
+  // don't end up carrying only the last migration's delta. Each migration's
+  // reviewable output lives in its outputs/.batch/<input>/ archive.
+  if (isolating) resetSharedTree();
+  printBatchSummary(results, isolating);
+  return results.some((r) => r.code !== 0) ? 1 : 0;
+}
+
+/** Print the batch result list (+ per-input archive locations when isolating). */
+function printBatchSummary(results: Array<{ base: string; code: number; archive?: string }>, isolating: boolean): void {
+  const failed = results.filter((r) => r.code !== 0).length;
+  const failedNote = failed > 0 ? `, ${failed} failed` : "";
+  process.stdout.write(`\n  Batch summary: ${results.length - failed}/${results.length} succeeded${failedNote}\n`);
+  for (const r of results) {
+    const loc = r.archive ? ` → ${relative(REPO_ROOT, r.archive)}/` : "";
+    process.stdout.write(`    ${r.code === 0 ? "✓" : "✗"} ${r.base}${loc}\n`);
+  }
+  if (isolating) {
+    process.stdout.write("\n  --isolate: each migration's output is archived under outputs/.batch/<input>/ (review one at a time); the shared tree was reset to baseline.\n");
+  }
   process.stdout.write("\n");
-  return failed.length === 0 ? 0 : 1;
 }
 
 function main(): number {
@@ -727,6 +849,16 @@ function main(): number {
 
   prepareContext();
   return runOne(args).code;
+}
+
+/**
+ * B4.3: true when the printed confidence is the no-live-grounding STRUCTURAL
+ * cap — no MIGRATION_TARGET_URL was set, so the live DOM probe never ran and
+ * evaluate.ts capped the aggregate at UNVERIFIED_LOCATOR_CONFIDENCE_CAP. This is
+ * not a quality verdict; grounding the locators (set a URL) lifts the cap.
+ */
+export function isStructuralGroundingCap(confidence: number, sut: string): boolean {
+  return sut.trim().length === 0 && confidence <= UNVERIFIED_LOCATOR_CONFIDENCE_CAP + 0.001;
 }
 
 /** Print the wall results + confidence score; return the process exit code. */
@@ -745,6 +877,20 @@ function reportOutcome(p: Paths, results: WallResult[]): number {
     const verdict = Number(confidence) < 0.7 ? " (< 0.7 → CI would run Opus verify)" : " (≥ 0.7 → CI ships without verify)";
     process.stdout.write(`    confidence: ${confidence}${verdict}\n`);
     process.stdout.write(`    metrics report: ${p.report}\n`);
+    // B4.3: a migration run WITHOUT MIGRATION_TARGET_URL never runs the live
+    // DOM probe, so evaluate.ts caps the aggregate at UNVERIFIED_LOCATOR_CONFIDENCE_CAP
+    // (locators are "claimed, not verified"). Surface that the cap is STRUCTURAL
+    // (no live grounding) — not a quality verdict — so an offline user doesn't
+    // read 0.69 as "the migration is weak". With a URL set, a passing probe
+    // lifts the cap and the score reflects real quality.
+    const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
+    if (isStructuralGroundingCap(Number(confidence), sut)) {
+      process.stdout.write(
+        `    note: confidence is CAPPED at ${UNVERIFIED_LOCATOR_CONFIDENCE_CAP} because no MIGRATION_TARGET_URL was set —\n` +
+        "          locators were not DOM-grounded against a live page (not a quality verdict).\n" +
+        "          Re-run with MIGRATION_TARGET_URL=<url> to ground them and lift the cap.\n",
+      );
+    }
   }
   if (failed.length > 0) {
     process.stdout.write(`\n  ${failed.length} gate(s) failed — review before trusting the output.\n\n`);

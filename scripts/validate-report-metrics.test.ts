@@ -105,9 +105,31 @@ test("checkLocConsistency: an inconsistent delta fails", () => {
   const report = [
     "Source LOC: 52",
     "- `outputs/tests/thing.spec.ts` (40 LOC)",
-    "LOC delta: -3", // computes -12, claimed -3 → |(-12) - (-3)| = 9 > 2
+    "LOC delta: -3", // computes -12, claimed -3 → |(-12) - (-3)| = 9 > 1
   ].join("\n");
   const v = checkLocConsistency(emitted(40), specPath, report, "report.md");
   assert.equal(v.length, 1);
   assert.match(v[0]?.message ?? "", /LOC delta claimed -3/);
+});
+
+test("checkLocConsistency: delta off-by-1 is within the harmonised tolerance (passes)", () => {
+  const specPath = writeSpecWithLoc(40);
+  const report = [
+    "Source LOC: 52",
+    "- `outputs/tests/thing.spec.ts` (40 LOC)",
+    "LOC delta: -11", // computes -12, claimed -11 → |(-12) - (-11)| = 1, within ±1
+  ].join("\n");
+  assert.deepEqual(checkLocConsistency(emitted(40), specPath, report, "report.md"), []);
+});
+
+test("checkLocConsistency: delta off-by-2 now fails (the B4.2 tightening from ±2 → ±1)", () => {
+  const specPath = writeSpecWithLoc(40);
+  const report = [
+    "Source LOC: 52",
+    "- `outputs/tests/thing.spec.ts` (40 LOC)",
+    "LOC delta: -10", // computes -12, claimed -10 → |(-12) - (-10)| = 2, was passing under ±2
+  ].join("\n");
+  const v = checkLocConsistency(emitted(40), specPath, report, "report.md");
+  assert.equal(v.length, 1);
+  assert.match(v[0]?.message ?? "", /LOC delta claimed -10/);
 });

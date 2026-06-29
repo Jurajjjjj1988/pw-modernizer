@@ -40,6 +40,7 @@ import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
 import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
 import { appKey, loadCache, renderCacheHints, recordFromReport } from "./locator-cache.js";
 import { runClaudeCli } from "./lib/claude-cli.js";
+import { UNVERIFIED_LOCATOR_CONFIDENCE_CAP } from "./evaluate.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -729,6 +730,16 @@ function main(): number {
   return runOne(args).code;
 }
 
+/**
+ * B4.3: true when the printed confidence is the no-live-grounding STRUCTURAL
+ * cap — no MIGRATION_TARGET_URL was set, so the live DOM probe never ran and
+ * evaluate.ts capped the aggregate at UNVERIFIED_LOCATOR_CONFIDENCE_CAP. This is
+ * not a quality verdict; grounding the locators (set a URL) lifts the cap.
+ */
+export function isStructuralGroundingCap(confidence: number, sut: string): boolean {
+  return sut.trim().length === 0 && confidence <= UNVERIFIED_LOCATOR_CONFIDENCE_CAP + 0.001;
+}
+
 /** Print the wall results + confidence score; return the process exit code. */
 function reportOutcome(p: Paths, results: WallResult[]): number {
   const failed = results.filter((r) => !r.ok);
@@ -745,6 +756,20 @@ function reportOutcome(p: Paths, results: WallResult[]): number {
     const verdict = Number(confidence) < 0.7 ? " (< 0.7 → CI would run Opus verify)" : " (≥ 0.7 → CI ships without verify)";
     process.stdout.write(`    confidence: ${confidence}${verdict}\n`);
     process.stdout.write(`    metrics report: ${p.report}\n`);
+    // B4.3: a migration run WITHOUT MIGRATION_TARGET_URL never runs the live
+    // DOM probe, so evaluate.ts caps the aggregate at UNVERIFIED_LOCATOR_CONFIDENCE_CAP
+    // (locators are "claimed, not verified"). Surface that the cap is STRUCTURAL
+    // (no live grounding) — not a quality verdict — so an offline user doesn't
+    // read 0.69 as "the migration is weak". With a URL set, a passing probe
+    // lifts the cap and the score reflects real quality.
+    const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
+    if (isStructuralGroundingCap(Number(confidence), sut)) {
+      process.stdout.write(
+        `    note: confidence is CAPPED at ${UNVERIFIED_LOCATOR_CONFIDENCE_CAP} because no MIGRATION_TARGET_URL was set —\n` +
+        "          locators were not DOM-grounded against a live page (not a quality verdict).\n" +
+        "          Re-run with MIGRATION_TARGET_URL=<url> to ground them and lift the cap.\n",
+      );
+    }
   }
   if (failed.length > 0) {
     process.stdout.write(`\n  ${failed.length} gate(s) failed — review before trusting the output.\n\n`);

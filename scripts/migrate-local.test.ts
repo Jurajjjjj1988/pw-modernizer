@@ -22,6 +22,7 @@ import {
   estimateTokensFromChars,
   expandInputs,
   expectedSpecBasenames,
+  isStructuralGroundingCap,
   type Args,
 } from "./migrate-local.js";
 
@@ -171,4 +172,18 @@ test("buildPrompt: no DOM grounding block when snapshot is null (ungrounded, unc
   const p = derivePaths({ ...baseArgs, input: "inputs/cypress/x.cy.js" });
   const prompt = buildPrompt(p, "pwm-blueprint", null);
   assert.ok(!prompt.includes("CLOSED VOCABULARY"), "ungrounded prompt must not carry a grounding block");
+});
+
+test("isStructuralGroundingCap: no SUT + confidence at the cap → structural cap note (B4.3)", () => {
+  assert.equal(isStructuralGroundingCap(0.69, ""), true);
+  assert.equal(isStructuralGroundingCap(0.69, "   "), true); // whitespace-only URL still ungrounded
+  assert.equal(isStructuralGroundingCap(0.5, ""), true); // below the cap, still ungrounded
+});
+
+test("isStructuralGroundingCap: a URL was set → NOT structural (probe ran, score is real)", () => {
+  assert.equal(isStructuralGroundingCap(0.69, "https://www.saucedemo.com"), false);
+});
+
+test("isStructuralGroundingCap: no SUT but confidence ABOVE the cap → not the cap note", () => {
+  assert.equal(isStructuralGroundingCap(0.82, ""), false);
 });

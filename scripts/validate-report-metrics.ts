@@ -218,7 +218,13 @@ export function checkLocConsistency(
   }
   if (block.sourceLoc !== null && block.outputLoc !== null && block.delta !== null) {
     const expectedDelta = block.outputLoc - block.sourceLoc;
-    if (Math.abs(expectedDelta - block.delta) > 2) {
+    // Tolerance harmonised with the individual LOC checks above (±1). This is
+    // claim-vs-claim arithmetic (claimed delta vs claimed output − claimed
+    // source), so ±1 already gives a one-line grace for any single rounding
+    // slip; the prior ±2 was looser than BOTH file checks and let a 2-line
+    // delta hallucination pass unflagged. The genuine hallucination class this
+    // guards (PR #13 PromptJupiter) is many lines off, well outside ±1.
+    if (Math.abs(expectedDelta - block.delta) > 1) {
       out.push({
         file: reportPath,
         line: emitted.line,

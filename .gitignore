@@ -52,3 +52,9 @@ outputs/.rag-index.json
 
 # Per-app verified-locator cache (IMP6, local-only, regenerated from dom-probe reports).
 outputs/locator-cache/
+
+# Validation-corpus inputs pulled from GitHub (local-only; re-fetchable, avoid plan.yml CI trigger).
+inputs/cypress/batch/
+inputs/selenium-java/batch/
+inputs/**/github*
+inputs/**/Github*

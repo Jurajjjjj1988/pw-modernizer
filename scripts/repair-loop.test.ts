@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure, buildLintRepairPrompt } from "./repair-loop.js";
+import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure, buildLintRepairPrompt, buildAssertionRestorePrompt } from "./repair-loop.js";
 
 test("repair prompt carries the execution error, the live snapshot, the file list, and the getByLabel hint", () => {
   const p = buildRepairPrompt(
@@ -109,7 +109,30 @@ test("buildRepairPrompt: a plain locator failure does NOT add the auth directive
   assert.ok(!/authentication is NOT self-contained/i.test(p), "locator failures must not trigger the auth block");
 });
 
+test("buildRepairPrompt: a source with a dialog token gets the dialog fix hint (B2 detector wiring)", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "Timeout 5000ms exceeded", "- button x", "https://app", true,
+    "cy.on('window:confirm', () => true); cy.get('.del').click();");
+  assert.match(p, /page\.on\('dialog'/, "the dialog detector hint must be appended");
+});
+
+test("buildRepairPrompt: a plain login source adds NO framework-semantic hints", () => {
+  const p = buildRepairPrompt("/r/x.spec.ts", [], "waiting for getByLabel(/u/i)", "- textbox", "https://app", true,
+    "cy.get('#username').type('x'); cy.get('#login').click();");
+  assert.ok(!/page\.on\('dialog'|frameLocator|waitForEvent\('popup'\)|page\.route/.test(p), "no false-positive hints on a plain test");
+});
+
 // ---- IMP5: lint-repair (green AND lint-clean).
+
+test("buildAssertionRestorePrompt: lists the weakenings + forbids weaker matchers / dropped asserts (B1)", () => {
+  const p = buildAssertionRestorePrompt(
+    ["/r/outputs/tests/x.spec.ts"],
+    [{ kind: "strength-drop", detail: "total assertion strength 4 → 1 (a matcher was weakened, e.g. toHaveText→toBeVisible)" }],
+  );
+  assert.match(p, /WEAKENING its assertions/);
+  assert.match(p, /a matcher was weakened/);             // the specific violation
+  assert.match(p, /fix the LOCATOR\/target instead/);    // fix the real cause
+  assert.match(p, /Never substitute a weaker matcher/);  // the guard
+});
 
 test("buildLintRepairPrompt: carries the eslint output + files and forbids behaviour changes / disable-comments", () => {
   const p = buildLintRepairPrompt(

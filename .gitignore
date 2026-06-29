@@ -38,6 +38,10 @@ outputs/.stage1-cache/
 # Layer 11 / Trajectory Review scaffold).
 outputs/.trajectories/
 
+# Per-input isolated-batch archives (local-only, B3; written by migrate-local
+# --inputs --isolate so each migration's output is preserved for review).
+outputs/.batch/
+
 # Compiled-at-runtime sidecar for danger-rules.ts (created by danger.yml)
 scripts/lib/danger-rules.js
 .claude/

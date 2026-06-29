@@ -23,6 +23,8 @@ import {
   expandInputs,
   expectedSpecBasenames,
   isStructuralGroundingCap,
+  parseDirtyPaths,
+  archiveIsolatedOutput,
   type Args,
 } from "./migrate-local.js";
 
@@ -186,4 +188,45 @@ test("isStructuralGroundingCap: a URL was set → NOT structural (probe ran, sco
 
 test("isStructuralGroundingCap: no SUT but confidence ABOVE the cap → not the cap note", () => {
   assert.equal(isStructuralGroundingCap(0.82, ""), false);
+});
+
+// ---- B3: git-porcelain delta parsing for --isolate batch archiving.
+
+test("parseDirtyPaths: untracked (??) + modified ( M) lines yield clean paths", () => {
+  const porcelain = [
+    "?? outputs/tests/internet-select.spec.ts",
+    " M outputs/helper/fixtures/base.fixture.ts",
+    "A  outputs/helper/page-object/pages/select.page.ts",
+  ].join("\n");
+  assert.deepEqual(parseDirtyPaths(porcelain), [
+    "outputs/tests/internet-select.spec.ts",
+    "outputs/helper/fixtures/base.fixture.ts",
+    "outputs/helper/page-object/pages/select.page.ts",
+  ]);
+});
+
+test("parseDirtyPaths: a rename keeps the NEW path (after ' -> ')", () => {
+  assert.deepEqual(
+    parseDirtyPaths("R  outputs/tests/old.spec.ts -> outputs/tests/new.spec.ts"),
+    ["outputs/tests/new.spec.ts"],
+  );
+});
+
+test("parseDirtyPaths: blank / trailing-whitespace lines are dropped", () => {
+  assert.deepEqual(parseDirtyPaths("\n   \n?? outputs/tests/x.spec.ts\n"), ["outputs/tests/x.spec.ts"]);
+});
+
+test("archiveIsolatedOutput: copies an untracked outputs/tests file into outputs/.batch/<base>/ (B3 end-to-end)", () => {
+  const probe = join(REPO_ROOT, "outputs/tests/__b3probe__.spec.ts");
+  const archiveRoot = join(REPO_ROOT, "outputs/.batch/__b3test__");
+  try {
+    writeFileSync(probe, "// b3 archive probe\n");
+    const r = archiveIsolatedOutput("__b3test__");
+    const copied = join(archiveRoot, "outputs/tests/__b3probe__.spec.ts");
+    assert.ok(r.files >= 1, `expected >=1 archived file, got ${r.files}`);
+    assert.equal(readFileSync(copied, "utf8"), "// b3 archive probe\n");
+  } finally {
+    rmSync(probe, { force: true });
+    rmSync(archiveRoot, { recursive: true, force: true });
+  }
 });

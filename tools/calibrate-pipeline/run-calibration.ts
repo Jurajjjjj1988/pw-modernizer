@@ -46,7 +46,8 @@ type ValidatorName =
   | "rag-bm25"
   | "helper-usage"
   | "validate-todo-discipline"
-  | "validate-report-metrics";
+  | "validate-report-metrics"
+  | "validate-url-portability";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
@@ -59,6 +60,7 @@ const VALIDATORS: readonly ValidatorName[] = [
   "helper-usage",
   "validate-todo-discipline",
   "validate-report-metrics",
+  "validate-url-portability",
 ];
 
 /**
@@ -494,6 +496,15 @@ function runReportMetrics(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("validate-report-metrics", fixtureName)));
 }
 
+function runUrlPortability(fixtureName: string): FixtureResult {
+  const fixtureDir = join(FIXTURES_ROOT, "validate-url-portability", fixtureName);
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "validate-url-portability.ts"),
+    "--root", fixtureDir,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("validate-url-portability", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -510,6 +521,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "helper-usage": runHelperUsage,
   "validate-todo-discipline": runTodoDiscipline,
   "validate-report-metrics": runReportMetrics,
+  "validate-url-portability": runUrlPortability,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

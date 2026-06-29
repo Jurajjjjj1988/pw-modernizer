@@ -3,7 +3,7 @@
 // eslint-plugin-playwright enforces web-first assertions + forbids smells
 // (no-wait-for-timeout, no-force-option, no-nth-methods, etc.).
 //
-// Type-aware baseline adopted from qa-master:
+// Type-aware baseline adopted from pwm-blueprint:
 //   - js.configs.recommended catches no-undef, no-unreachable, no-dupe-keys etc. for free
 //   - tseslint.configs.recommendedTypeChecked unlocks no-floating-promises (THE #1 silent
 //     Playwright flake source: missed `await` on actions/assertions), no-misused-promises,
@@ -19,7 +19,7 @@ import playwright from 'eslint-plugin-playwright';
 // Output profile (ADR 0002). Under PWM_PROFILE=lean the spec-layer import-source
 // and page-goto-in-spec restrictions are lifted so lean specs may import
 // test/expect straight from @playwright/test and navigate directly — matching
-// validate-qa-master-conformance.ts --profile lean. Default (unset) = qa-master,
+// validate-pwm-blueprint-conformance.ts --profile lean. Default (unset) = pwm-blueprint,
 // byte-identical to before.
 const LEAN = process.env.PWM_PROFILE === 'lean';
 
@@ -69,13 +69,13 @@ export default tseslint.config(
       'playwright/no-conditional-in-test': 'error',
       'playwright/no-conditional-expect': 'error',
       'playwright/no-page-pause': 'error',
-      // qa-master pattern: specs delegate ALL assertions to page methods named
+      // pwm-blueprint pattern: specs delegate ALL assertions to page methods named
       // `expect*` (e.g. webFormPage.expectPageTitle()). eslint-plugin-playwright
       // expect-expect rule's assertFunctionNames option doesn't reliably match
       // member-call patterns like `*.expect*` across plugin versions. Downgrade
       // to `warn`: rule still surfaces tests without any visible expect-shape
       // assertion (real bug), but it no longer hard-blocks the validate gate on
-      // false positives (page-method delegations). The qa-master conformance
+      // false positives (page-method delegations). The pwm-blueprint conformance
       // validator catches the real risk — page methods missing [LABEL] expects.
       'playwright/expect-expect': ['warn', {
         assertFunctionNames: ['expect', 'expect*', '*.expect*'],
@@ -95,36 +95,36 @@ export default tseslint.config(
       'playwright/valid-expect-in-promise': 'error', // forgotten await inside promise chain
       'playwright/require-top-level-describe': 'warn',
       'playwright/max-nested-describe': ['error', { max: 2 }], // mirrors migration-rules §2 max 2 describe levels
-      // qa-master imports — adopted 2026-06-10:
+      // pwm-blueprint imports — adopted 2026-06-10:
       // THE #1 silent flake source in Playwright suites. Catches every missed
       // `await` on page actions and `expect(...)` assertions — exactly what
       // type-aware linting was designed to find.
       '@typescript-eslint/no-floating-promises': 'error',
       // Fixture-only bindings (e.g. `({ authedPage: _ })`) and intentionally
-      // unused params need a `_` escape hatch — matches qa-master.
+      // unused params need a `_` escape hatch — matches pwm-blueprint.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // TypeScript anti-patterns — generate.md hard rules forbid `any` and `as unknown as`.
       '@typescript-eslint/no-explicit-any': 'error',
       'no-console': 'error',
-      // qa-master v0.2.0 architecture rules — first-class ESLint enforcement so
+      // pwm-blueprint v0.2.0 architecture rules — first-class ESLint enforcement so
       // the validate step catches violations BEFORE the conformance gate, giving
       // Sonnet's fix-lint-errors retry a clear actionable error.
       'no-restricted-imports': LEAN ? 'off' : ['error', {
         paths: [{
           name: '@playwright/test',
-          message: 'KB qa-master/architecture/import-source: specs must import test+expect from @fixtures/base.fixture (the single spec-layer source).',
+          message: 'KB pwm-blueprint/architecture/import-source: specs must import test+expect from @fixtures/base.fixture (the single spec-layer source).',
         }],
       }],
       'no-restricted-syntax': LEAN ? 'off' : ['error', {
         selector: "CallExpression[callee.object.name='page'][callee.property.name='goto']",
-        message: 'KB qa-master/architecture/page-goto-in-spec: navigation lives on the Page (pageObject.open()) — specs must not call page.goto().',
+        message: 'KB pwm-blueprint/architecture/page-goto-in-spec: navigation lives on the Page (pageObject.open()) — specs must not call page.goto().',
       }],
     },
   },
   {
-    // Legacy v0.1.x specs from before the qa-master rewrite. Exempt from the
+    // Legacy v0.1.x specs from before the pwm-blueprint rewrite. Exempt from the
     // v0.2.0 import / page.goto discipline — they predate the architecture and
-    // are not under active maintenance. New migrations land in the qa-master
+    // are not under active maintenance. New migrations land in the pwm-blueprint
     // shape and these rules apply to them.
     files: [
       'outputs/tests/_legacy-v0.1.x/**/*.ts',

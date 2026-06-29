@@ -26,7 +26,7 @@ import {
 } from "./migrate-local.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const baseArgs: Args = { input: "", inputs: "", plan: "", mock: false, help: false, check: false, profile: "qa-master", repair: false, isolate: false };
+const baseArgs: Args = { input: "", inputs: "", plan: "", mock: false, help: false, check: false, profile: "pwm-blueprint", repair: false, isolate: false };
 
 test("derivePaths: BASE/plan/envelope/report mirror migrate.yml (BASE = basename(input))", () => {
   const p = derivePaths({ ...baseArgs, input: "inputs/bad-playwright/foo.spec.ts" });
@@ -115,39 +115,39 @@ test("expandInputs: real bad-playwright specs resolve and sort", () => {
 
 const demoPaths = derivePaths({ ...baseArgs, input: "inputs/cypress/demo.cy.js" });
 
-test("buildPrompt qa-master: keeps the qa-master triad/STOP block + style anchor (unchanged)", () => {
-  const prompt = buildPrompt(demoPaths, "qa-master");
+test("buildPrompt pwm-blueprint: keeps the pwm-blueprint triad/STOP block + style anchor (unchanged)", () => {
+  const prompt = buildPrompt(demoPaths, "pwm-blueprint");
   assert.match(prompt, /generate\.md/);
-  assert.match(prompt, /FULL qa-master triad/);
+  assert.match(prompt, /FULL pwm-blueprint triad/);
   assert.match(prompt, /HARD-REJECTED/);
-  assert.match(prompt, /examples\/reference\/qa-master\/ — style anchor/);
+  assert.match(prompt, /examples\/reference\/pwm-blueprint\/ — style anchor/);
 });
 
 test("buildPrompt lean: points at generate.lean.md, relaxes the contract, drops the STOP block", () => {
   const prompt = buildPrompt(demoPaths, "lean");
   assert.match(prompt, /generate\.lean\.md/);
   assert.match(prompt, /MAY import test\/expect from @playwright\/test/);
-  assert.ok(!/FULL qa-master triad/.test(prompt), "lean must NOT carry the qa-master STOP block");
+  assert.ok(!/FULL pwm-blueprint triad/.test(prompt), "lean must NOT carry the pwm-blueprint STOP block");
   assert.ok(!/HARD-REJECTED/.test(prompt), "lean must NOT threaten the @playwright/test hard-reject");
-  assert.ok(!/style anchor/.test(prompt), "lean does not load the qa-master style anchor");
+  assert.ok(!/style anchor/.test(prompt), "lean does not load the pwm-blueprint style anchor");
 });
 
-test("assembledPromptPath: lean resolves generate.lean.md, qa-master resolves generate.md", () => {
+test("assembledPromptPath: lean resolves generate.lean.md, pwm-blueprint resolves generate.md", () => {
   assert.ok(assembledPromptPath("lean").endsWith("prompts/_assembled/generate.lean.md"));
-  assert.ok(assembledPromptPath("qa-master").endsWith("prompts/_assembled/generate.md"));
+  assert.ok(assembledPromptPath("pwm-blueprint").endsWith("prompts/_assembled/generate.md"));
 });
 
-test("assembled generate.lean.md: keeps quality fragments, drops qa-master layering directives (catches a copy-from-qa-master regression)", () => {
+test("assembled generate.lean.md: keeps quality fragments, drops pwm-blueprint layering directives (catches a copy-from-pwm-blueprint regression)", () => {
   const lean = readFileSync(join(REPO_ROOT, "prompts/_assembled/generate.lean.md"), "utf8");
   // Quality fragments survived the composition (the bar on the CODE is unchanged).
   assert.match(lean, /force: true/, "forbidden-patterns fragment body present");
   assert.match(lean, /getByRole/, "locator-priority fragment body present");
   assert.match(lean, /LEAN profile|lean profile|spec \+ page object/i, "states the lean contract");
-  // qa-master-only DIRECTIVES must NOT leak in — if someone regenerates this from
+  // pwm-blueprint-only DIRECTIVES must NOT leak in — if someone regenerates this from
   // a copy of generate.md these positive-directive sentinels reappear and fail.
-  assert.ok(!lean.includes("qa-master multi-file layout"), "no qa-master files-to-produce heading");
-  assert.ok(!lean.includes("Always produce"), "no qa-master 'Always produce' layer directive");
-  assert.ok(!lean.includes("Imports policy — STRICT"), "no qa-master strict two-scope import policy");
+  assert.ok(!lean.includes("pwm-blueprint multi-file layout"), "no pwm-blueprint files-to-produce heading");
+  assert.ok(!lean.includes("Always produce"), "no pwm-blueprint 'Always produce' layer directive");
+  assert.ok(!lean.includes("Imports policy — STRICT"), "no pwm-blueprint strict two-scope import policy");
 });
 
 // ---- DOM grounding: closed-vocabulary snapshot injection into the Stage-2 prompt.
@@ -158,7 +158,7 @@ test("buildPrompt: injects the closed-vocabulary DOM snapshot when a snapshot pa
     const snap = join(root, "snap.yaml");
     writeFileSync(snap, '- textbox "Username"\n- button "Login"\n');
     const p = derivePaths({ ...baseArgs, input: "inputs/cypress/x.cy.js" });
-    const prompt = buildPrompt(p, "qa-master", snap);
+    const prompt = buildPrompt(p, "pwm-blueprint", snap);
     assert.match(prompt, /CLOSED VOCABULARY/, "grounding block header present");
     assert.match(prompt, /MUST cite\s+\n?\s*a node that appears VERBATIM/i, "closed-vocab rule present");
     assert.match(prompt, /button "Login"/, "real snapshot content injected");
@@ -169,6 +169,6 @@ test("buildPrompt: injects the closed-vocabulary DOM snapshot when a snapshot pa
 
 test("buildPrompt: no DOM grounding block when snapshot is null (ungrounded, unchanged)", () => {
   const p = derivePaths({ ...baseArgs, input: "inputs/cypress/x.cy.js" });
-  const prompt = buildPrompt(p, "qa-master", null);
+  const prompt = buildPrompt(p, "pwm-blueprint", null);
   assert.ok(!prompt.includes("CLOSED VOCABULARY"), "ungrounded prompt must not carry a grounding block");
 });

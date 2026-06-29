@@ -2,7 +2,7 @@
 /**
  * validate-pom-provenance.ts — catch cross-migration POM contamination (DEF2).
  *
- * The shared qa-master tree (outputs/helper) accumulates page objects from every
+ * The shared pwm-blueprint tree (outputs/helper) accumulates page objects from every
  * migration. When two migrations against DIFFERENT apps both author the same
  * shared file (e.g. login.page.ts), the second OVERWRITES the first: the file
  * ends up holding only the second app's locators, while the FIRST migration's
@@ -16,7 +16,7 @@
  * — it was literally authored by two migrations (co-authored contamination).
  *
  * We deliberately do NOT flag "a spec reaches a POM whose plan != the spec's":
- * that is indistinguishable from LEGITIMATE qa-master reuse (spec B intentionally
+ * that is indistinguishable from LEGITIMATE pwm-blueprint reuse (spec B intentionally
  * reusing spec A's page object — the whole point of the shared tree). Verified by
  * running this gate against the committed corpus, where it false-positived on real
  * reuse (silent-conditionals reusing force-clicks's dashboard.page.ts). The
@@ -58,7 +58,7 @@ export function extractPlanRefs(content: string): string[] {
  * The UNAMBIGUOUS contamination signal: a POM that carries >1 distinct plan
  * reference was authored by >1 migration. Pure — the caller does file I/O. We do
  * NOT flag a single-plan POM reached by a different spec's plan: that is legitimate
- * qa-master reuse, not contamination (no reliable static way to tell them apart).
+ * pwm-blueprint reuse, not contamination (no reliable static way to tell them apart).
  */
 export function findProvenanceIssues(poms: { path: string; planRefs: string[] }[]): ProvenanceIssue[] {
   const issues: ProvenanceIssue[] = [];

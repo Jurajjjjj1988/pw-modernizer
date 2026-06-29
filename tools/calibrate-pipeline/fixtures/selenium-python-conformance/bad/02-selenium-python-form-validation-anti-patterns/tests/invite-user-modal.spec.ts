@@ -28,7 +28,7 @@ test.describe(
           await page.goto("/users");
           // Anti-pattern #1 (first occurrence) — hard wait carried over
           // from the selenium `time.sleep(1)` after the navigation. The
-          // qa-master architecture forbids hard waits anywhere under
+          // pwm-blueprint architecture forbids hard waits anywhere under
           // outputs/. Conformance Check 8 must block.
           await page.waitForTimeout(1000);
           await page.getByRole("button", { name: "Invite" }).click();

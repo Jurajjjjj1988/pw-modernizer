@@ -9,7 +9,7 @@ const LABEL = "Login";
  * the team-members KPI locator is a raw `.locator('.kpi-card')` CSS class —
  * the selenium `By.CSS_SELECTOR('.kpi-card')` selector was migrated verbatim
  * instead of being lifted to `getByRole('region', { name: 'Team members' })`
- * per qa-master selector priority. The conformance validator's W5
+ * per pwm-blueprint selector priority. The conformance validator's W5
  * (locator-priority) must flag this row.
  */
 export class PageClassLogin extends BasePage {

@@ -13,7 +13,7 @@
 
 ### Calibration corpus
 
-- ✅ PR #90 — first `cypress-conformance` fixture pair (good + bad anti-patterns; runner wired so `npm run calibrate` exercises qa-master conformance against a Cypress-origin tree)
+- ✅ PR #90 — first `cypress-conformance` fixture pair (good + bad anti-patterns; runner wired so `npm run calibrate` exercises pwm-blueprint conformance against a Cypress-origin tree)
 - ✅ PR #93 — first `selenium-python-conformance` fixture pair (mirror shape; closes the cross-framework conformance calibration symmetry gap)
 - ✅ PR #102 — conformance fixture pair #02 (cypress intercept + sel-py form-validation); validates the conformance gate against the harder modal / intercept anti-patterns
 

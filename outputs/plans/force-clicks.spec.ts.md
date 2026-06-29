@@ -2,7 +2,7 @@
 
 ## Source framework
 
-**bad-playwright** — subtractive migration, no framework translation required. Source is already Playwright TypeScript; the migration removes anti-patterns (hardcoded URL, hardcoded credentials, `force: true` bypass, magic strings/numbers, assertion roulette) and restructures to the qa-master layered architecture.
+**bad-playwright** — subtractive migration, no framework translation required. Source is already Playwright TypeScript; the migration removes anti-patterns (hardcoded URL, hardcoded credentials, `force: true` bypass, magic strings/numbers, assertion roulette) and restructures to the pwm-blueprint layered architecture.
 
 **Source file:** `inputs/bad-playwright/force-clicks.spec.ts`
 **Target file(s):** `outputs/tests/force-clicks.spec.ts` + POMs + fixture mutation + test-data constants
@@ -60,7 +60,7 @@ Since this is a subtractive bad-playwright migration, every existing locator is 
 
 ## Structural changes
 
-**Extract POM: yes** — two pages are visited (login → dashboard), and qa-master requires at least one POM per visited page. A `PageClassLogin` encapsulates the email/password fields, the Sign-in button, and the newsletter modal dismissal. A `PageClassDashboard` encapsulates the four post-login assertions as POM properties.
+**Extract POM: yes** — two pages are visited (login → dashboard), and pwm-blueprint requires at least one POM per visited page. A `PageClassLogin` encapsulates the email/password fields, the Sign-in button, and the newsletter modal dismissal. A `PageClassDashboard` encapsulates the four post-login assertions as POM properties.
 
 **Extract Action: no** — the login flow crosses `PageClassLogin` → `PageClassDashboard`, which would normally trigger an `actions/` extraction. However, this spec IS the one test that owns the login flow; extracting an action here adds indirection without a consumer. Reconsider when a second spec needs to reach the dashboard as a precondition (at that point, extract `outputs/helper/actions/login.ts` and let both specs use it via the `authenticated.fixture.ts` pattern).
 

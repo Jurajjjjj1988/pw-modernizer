@@ -41,7 +41,7 @@ test.describe(
           // Anti-pattern #1 — hard wait carried over from the selenium
           // `WebDriverWait(driver, 5)` ceremony (the migrator mistranslated
           // the explicit wait into a fixed sleep instead of dropping it for
-          // web-first auto-waiting). The qa-master architecture forbids hard
+          // web-first auto-waiting). The pwm-blueprint architecture forbids hard
           // waits anywhere under outputs/. Conformance Check 8 must block.
           await page.waitForTimeout(5000);
           await expect(

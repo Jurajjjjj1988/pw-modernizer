@@ -549,7 +549,7 @@ test('renders the page', async ({ checkoutPage }) => {
 });
 ```
 
-Rationale: qa-master v0.2.0 architecture mandates a single fixture entry point (`outputs/helper/fixtures/base.fixture.ts`) that owns `test` + `expect` for the whole project (per-migration fixtures attach to the base via `.extend<...>()`). Specs that import from `@playwright/test` directly bypass the fixture layer — they lose access to project-specific fixtures (POMs, blocks, authenticated session helpers), they re-introduce the page-only fixture context, and they create N drift surfaces for a future migration off Playwright. The `validate-qa-master-conformance.ts` validator hard-fails this at the spec layer; ESLint's `no-restricted-imports` is the local mirror. Prevents `BypassedFixtureLayer` drift class. See [`config/migration-rules.md §2.1`](../config/migration-rules.md) + `examples/reference/qa-master/helper/fixtures/CLAUDE.md` for the canonical fixture-as-source-of-truth pattern.
+Rationale: pwm-blueprint v0.2.0 architecture mandates a single fixture entry point (`outputs/helper/fixtures/base.fixture.ts`) that owns `test` + `expect` for the whole project (per-migration fixtures attach to the base via `.extend<...>()`). Specs that import from `@playwright/test` directly bypass the fixture layer — they lose access to project-specific fixtures (POMs, blocks, authenticated session helpers), they re-introduce the page-only fixture context, and they create N drift surfaces for a future migration off Playwright. The `validate-pwm-blueprint-conformance.ts` validator hard-fails this at the spec layer; ESLint's `no-restricted-imports` is the local mirror. Prevents `BypassedFixtureLayer` drift class. See [`config/migration-rules.md §2.1`](../config/migration-rules.md) + `examples/reference/pwm-blueprint/helper/fixtures/CLAUDE.md` for the canonical fixture-as-source-of-truth pattern.
 
 #### 1.1.27 `@types/<module>` prefix on a runtime import (use `@type-defs/*` for local declarations)
 
@@ -560,12 +560,12 @@ import { fetchPaymentSession } from '@types/external/payment-api';
 ```
 
 ```ts
-// CANONICAL — qa-master local declarations live under the @type-defs/* alias
+// CANONICAL — pwm-blueprint local declarations live under the @type-defs/* alias
 import type { CartItem } from '@type-defs/external/cart-api';
 import { fetchPaymentSession } from '@type-defs/external/payment-api';
 ```
 
-Rationale: `@types/<pkg>` is the npm convention for DefinitelyTyped declaration-only packages — they ship `.d.ts` files and nothing else. TypeScript treats the `@types/` namespace as the DefinitelyTyped scope even when you configure it as a tsconfig path alias, and still emits `TS6137: Cannot import type declaration files`. qa-master v0.2.0+ uses `@type-defs/*` as the alias for project-local declaration files under `outputs/helper/types/` to avoid this collision (tsconfig + reference qa-master both updated 2026-06-17). Sonnet drifts into the `@types/` prefix on complex multi-fixture migrations when the original code referenced a `@types/...` triple-slash directive or a `tsconfig.types` entry and conflates "type lives in @types/" with "import path starts with @types/". Observed 2026-06-17 on `inputs/cypress/checkout-flow.cy.js` Stage 2 (run 27672121245) — three TS6137 errors in `helper/fixtures/checkout-mocks.fixture.ts` and `helper/test-data/checkout.ts`. Prevents `TypeOnlyImportPrefix` drift class. See [TypeScript handbook — Type-Only Imports and Exports](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html#type-only-imports-and-export).
+Rationale: `@types/<pkg>` is the npm convention for DefinitelyTyped declaration-only packages — they ship `.d.ts` files and nothing else. TypeScript treats the `@types/` namespace as the DefinitelyTyped scope even when you configure it as a tsconfig path alias, and still emits `TS6137: Cannot import type declaration files`. pwm-blueprint v0.2.0+ uses `@type-defs/*` as the alias for project-local declaration files under `outputs/helper/types/` to avoid this collision (tsconfig + reference pwm-blueprint both updated 2026-06-17). Sonnet drifts into the `@types/` prefix on complex multi-fixture migrations when the original code referenced a `@types/...` triple-slash directive or a `tsconfig.types` entry and conflates "type lives in @types/" with "import path starts with @types/". Observed 2026-06-17 on `inputs/cypress/checkout-flow.cy.js` Stage 2 (run 27672121245) — three TS6137 errors in `helper/fixtures/checkout-mocks.fixture.ts` and `helper/test-data/checkout.ts`. Prevents `TypeOnlyImportPrefix` drift class. See [TypeScript handbook — Type-Only Imports and Exports](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html#type-only-imports-and-export).
 
 ---
 
@@ -3290,16 +3290,16 @@ npx playwright test outputs/ --grep @smoke --trace on --reporter=line
 
 ---
 
-## qa-master target architecture (v0.2.0 default)
+## pwm-blueprint target architecture (v0.2.0 default)
 
-PWmodernizer's default `TARGET_STYLE` is `qa-master` — Sonnet emits multi-file
-layered output matching `examples/reference/qa-master/` (CustomInk's
+PWmodernizer's default `TARGET_STYLE` is `pwm-blueprint` — Sonnet emits multi-file
+layered output matching `examples/reference/pwm-blueprint/` (CustomInk's
 production Playwright suite). The KB IDs below catalogue the anti-patterns
-the qa-master conformance validator and verify CANDOR check for in
+the pwm-blueprint conformance validator and verify CANDOR check for in
 generated output. Cross-references to ARCHITECTURE.md sections in the
 reference directory.
 
-### qa-master/architecture/import-source
+### pwm-blueprint/architecture/import-source
 
 **Smell**: spec imports `test`/`expect` directly from `@playwright/test`.
 **Fix**: import from `@fixtures/base.fixture` — the single source per
@@ -3314,7 +3314,7 @@ import { test, expect } from "@playwright/test";
 import { test, expect } from "@fixtures/base.fixture";
 ```
 
-### qa-master/architecture/relative-imports
+### pwm-blueprint/architecture/relative-imports
 
 **Smell**: relative imports like `../../helper/page-object/cart.page`.
 **Fix**: path aliases — `@page-object`, `@actions`, `@fixtures`, `@api`,
@@ -3322,7 +3322,7 @@ import { test, expect } from "@fixtures/base.fixture";
 import order: builtin → external → internal (internal alphabetised within
 group). ARCHITECTURE.md §9.
 
-### qa-master/architecture/no-constructor
+### pwm-blueprint/architecture/no-constructor
 
 **Smell**: a `PageClass*` or `BlockClass*` declares its own constructor.
 **Fix**: only `BasePage`/`BaseBlock` (the abstract bases) declare constructors;
@@ -3342,13 +3342,13 @@ class PageClassCart extends BasePage {
 }
 ```
 
-### qa-master/architecture/locator-no-describe
+### pwm-blueprint/architecture/locator-no-describe
 
 **Smell**: a `readonly` locator field without `.describe()`.
 **Fix**: every locator carries a `[SECTION_LABEL]` describe so failures
 self-explain in trace + error output. ARCHITECTURE.md §5.
 
-### qa-master/architecture/expect-no-label
+### pwm-blueprint/architecture/expect-no-label
 
 **Smell**: `expect(locator).toBeVisible()` inside a page-method without a
 `[LABEL]` message argument.
@@ -3369,7 +3369,7 @@ async waitForPageLoad(): Promise<void> {
 }
 ```
 
-### qa-master/architecture/parameterised-locator-method
+### pwm-blueprint/architecture/parameterised-locator-method
 
 **Smell**: `byStyleId(id: string): Locator { return page.getByTestId(...); }`
 declared as a method.
@@ -3385,7 +3385,7 @@ readonly byColorSwatch = (name: string) =>
   this.page.getByTestId(`color-swatch-${name}`).describe(`[${LABEL_PDP}] Color swatch ${name}`);
 ```
 
-### qa-master/architecture/naming-no-prefix
+### pwm-blueprint/architecture/naming-no-prefix
 
 **Smell**: locator named `addBtn` / `nameField` / `prices` — caller can't
 tell element type from the stack trace.
@@ -3394,7 +3394,7 @@ tell element type from the stack trace.
 `arrayPrices`, `arrayProductCards`, `byStyleId(id)`, `byColorSwatch(name)`.
 ARCHITECTURE.md §5.
 
-### qa-master/architecture/nav-returns-void
+### pwm-blueprint/architecture/nav-returns-void
 
 **Smell**: a navigation method returns `void`; the spec has to re-instantiate
 the next POM and rerun `waitForPageLoad()`.
@@ -3412,7 +3412,7 @@ async startDesigning(): Promise<PageClassNDX> {
 }
 ```
 
-### qa-master/architecture/parse-in-page-method
+### pwm-blueprint/architecture/parse-in-page-method
 
 **Smell**: a page-method calls `.text()` / `.allTextContents()` then
 `parseFloat()` / `JSON.parse()` / `.replace()` to compute a structured
@@ -3421,13 +3421,13 @@ result.
 a pure `utilities/` function PARSES, the spec ASSERTS. Parsing is unit-testable
 in isolation; 100% coverage gate on utilities. ARCHITECTURE.md §4.
 
-### qa-master/architecture/page-goto-in-spec
+### pwm-blueprint/architecture/page-goto-in-spec
 
 **Smell**: spec calls `page.goto('/products/123')` directly.
 **Fix**: never `page.goto()` in a test — always `productPage.open(styleId)`.
 Specs are behavior, not URL strings. ARCHITECTURE.md §6.
 
-### qa-master/architecture/ui-data-prep
+### pwm-blueprint/architecture/ui-data-prep
 
 **Smell**: spec creates a user via UI (sign-up form filled), creates a cart
 via UI (add-to-cart clicks), then asserts on something downstream.
@@ -3435,13 +3435,13 @@ via UI (add-to-cart clicks), then asserts on something downstream.
 The UI-creation flow is exercised in exactly ONE test (the sign-up test);
 every other test uses the API helper. ARCHITECTURE.md §7.
 
-### qa-master/architecture/should-test-name
+### pwm-blueprint/architecture/should-test-name
 
 **Smell**: `test("should display logo when …")` — "should" is filler.
 **Fix**: `[TICKET-ID] - Check that <user-perceivable outcome>`. Start with
 `Check that`. Never imperative ("displays") or "should". ARCHITECTURE.md §6.
 
-### qa-master/architecture/step-without-action
+### pwm-blueprint/architecture/step-without-action
 
 **Smell**: `test.step("Verify cart has 3 items", () => { ... });` — a
 step that only asserts.
@@ -3449,34 +3449,34 @@ step that only asserts.
 names the **action** ("Add the product to the cart"); body performs the
 action AND asserts the expected outcome. No nested steps. ARCHITECTURE.md §6.
 
-### qa-master/architecture/selector-not-testid-first
+### pwm-blueprint/architecture/selector-not-testid-first
 
 **Smell**: a freshly-created locator uses `getByText` or `getByRole` when
 the underlying element has a `data-testid`.
-**Fix**: selector priority for qa-master = **`getByTestId` first**, then
+**Fix**: selector priority for pwm-blueprint = **`getByTestId` first**, then
 `getByRole` → `getByLabel` → `getByText` → `getByPlaceholder` → CSS → XPath.
-This is the ONE point where qa-master diverges from the general Playwright
+This is the ONE point where pwm-blueprint diverges from the general Playwright
 recommendation (getByRole-first); the rationale is that the CustomInk
 front-end ships maintained testids and they're the most stable contract
 in that codebase. ARCHITECTURE.md §5.
 
-### qa-master/architecture/foreign-framework-import
+### pwm-blueprint/architecture/foreign-framework-import
 
 **Smell**: subtractive migration leaves an `import` from `cypress`,
 `selenium-webdriver`, or another framework.
 **Fix**: subtractive mode bans every non-`@playwright/test` non-relative
 non-`node:` import. Either translate the API or drop it. Already enforced
-by `plan-envelope-validate.ts:validateSubtractiveImports`; qa-master mode
+by `plan-envelope-validate.ts:validateSubtractiveImports`; pwm-blueprint mode
 extends this to ban `@playwright/test` outside the fixture file too.
 
-### qa-master/architecture/utilities-coverage
+### pwm-blueprint/architecture/utilities-coverage
 
 **Smell**: `helper/utilities/parse-prices.ts` exists but has no unit tests.
 **Fix**: `utilities/` carries a 100% coverage gate. Parsing functions are
 pure; testing them is cheap; not testing them means the spec inherits their
 bugs invisibly. ARCHITECTURE.md §3.3.
 
-### qa-master/page-object/click-without-assertion
+### pwm-blueprint/page-object/click-without-assertion
 
 **Smell**: a page-object method's last statement is `await this.<locator>.click();`
 with no follow-up `expect(...)`. The caller can't tell whether the click did
@@ -3484,29 +3484,29 @@ anything; failures surface in the next method, far from the cause.
 **Fix**: every action ends with the assertion that proves the action took effect
 (`await expect(this.textConfirmation, '[LABEL] WHY').toBeVisible()`). Per
 `helper/page-object/CLAUDE.md`: "Never end a method on click() — assert after."
-`validate-qa-master-conformance.ts` emits: `Page method ends on .click() with
-no following assertion — KB qa-master/page-object/click-without-assertion`.
+`validate-pwm-blueprint-conformance.ts` emits: `Page method ends on .click() with
+no following assertion — KB pwm-blueprint/page-object/click-without-assertion`.
 
-### qa-master/page-object/no-try-catch
+### pwm-blueprint/page-object/no-try-catch
 
 **Smell**: `try { ... } catch (e) { ... }` inside a `*.page.ts` or `*.block.ts`.
 **Fix**: page objects must not swallow errors. Playwright's web-first assertions
 already auto-retry; a `try/catch` either masks a real flake or duplicates that
 retry. Let the failure propagate so the spec sees the real cause.
-`validate-qa-master-conformance.ts` emits: `try/catch in page/block — KB
-qa-master/page-object/no-try-catch`.
+`validate-pwm-blueprint-conformance.ts` emits: `try/catch in page/block — KB
+pwm-blueprint/page-object/no-try-catch`.
 
-### qa-master/page-object/no-get-accessor
+### pwm-blueprint/page-object/no-get-accessor
 
 **Smell**: `get buttonSubmit(): Locator { return this.page.getByRole(...); }` —
 a getter returning a locator.
 **Fix**: locators are `readonly` fields — eager for static elements, arrow-function
 for parameterised ones. Getters re-evaluate on every access (no caching) and
 break the "every locator has a `.describe()` label" contract.
-`validate-qa-master-conformance.ts` emits: `get <name>() returns a locator — KB
-qa-master/page-object/no-get-accessor`.
+`validate-pwm-blueprint-conformance.ts` emits: `get <name>() returns a locator — KB
+pwm-blueprint/page-object/no-get-accessor`.
 
-### qa-master/page-object/locator-in-method
+### pwm-blueprint/page-object/locator-in-method
 
 **Smell**: a page method declares `const x = this.page.getByRole(...)` to use a
 locator on the fly.
@@ -3514,21 +3514,21 @@ locator on the fly.
 on the class (with a `.describe()` label). Method bodies act on existing fields;
 they don't build new locators ad-hoc. Parameterised locators are arrow-function
 fields, not inline `const`s.
-`validate-qa-master-conformance.ts` emits: `Locator built inside method body —
-KB qa-master/page-object/locator-in-method`.
+`validate-pwm-blueprint-conformance.ts` emits: `Locator built inside method body —
+KB pwm-blueprint/page-object/locator-in-method`.
 
-### qa-master/page-object/locator-priority
+### pwm-blueprint/page-object/locator-priority
 
 **Smell**: `this.page.locator('.product-name')` or `this.page.locator('//div[@id="foo"]')` —
 a bare CSS / XPath selector when a higher-priority `getBy*` would do.
-**Fix**: selector priority for qa-master is
+**Fix**: selector priority for pwm-blueprint is
 `getByTestId` → `getByRole` → `getByLabel` → `getByText` → `getByPlaceholder` → CSS → XPath.
 The `.locator()` fallback is a last resort after the four `getBy*` paths have
 been exhausted. Per `helper/page-object/CLAUDE.md`.
-`validate-qa-master-conformance.ts` emits: `Bare CSS/XPath locator '<sel>' — KB
-qa-master/page-object/locator-priority`.
+`validate-pwm-blueprint-conformance.ts` emits: `Bare CSS/XPath locator '<sel>' — KB
+pwm-blueprint/page-object/locator-priority`.
 
-### qa-master/utilities/verb-prefix
+### pwm-blueprint/utilities/verb-prefix
 
 **Smell**: `helper/utilities/prices.ts` exports `cents(x: string): number` — a
 noun-named function in a utility module.
@@ -3536,10 +3536,10 @@ noun-named function in a utility module.
 calculate*, verify*, generate*, normalize*". The verb prefix makes call sites
 read as actions (`parsePrices(rows)`) and pairs naturally with the
 "Grab → Parse → Assert" three-layer separation.
-`validate-qa-master-conformance.ts` emits: `Exported utility '<name>' has no
-verb prefix — KB qa-master/utilities/verb-prefix`.
+`validate-pwm-blueprint-conformance.ts` emits: `Exported utility '<name>' has no
+verb prefix — KB pwm-blueprint/utilities/verb-prefix`.
 
-### qa-master/actions/page-param
+### pwm-blueprint/actions/page-param
 
 **Smell**: `export async function signInAndAddToCart(email: string, sku: string): Promise<void>` —
 an action whose first argument is not a destructured object containing `page`.
@@ -3547,10 +3547,10 @@ an action whose first argument is not a destructured object containing `page`.
 `{ page, ...params }`". Every action receives the Playwright `page` (and any
 other dependencies) as a destructured-object first arg so callers can extend
 without re-ordering positional args.
-`validate-qa-master-conformance.ts` emits: `Action '<name>' first param is not
-a destructured object including \`page\` — KB qa-master/actions/page-param`.
+`validate-pwm-blueprint-conformance.ts` emits: `Action '<name>' first param is not
+a destructured object including \`page\` — KB pwm-blueprint/actions/page-param`.
 
-### qa-master/actions/cross-page-only
+### pwm-blueprint/actions/cross-page-only
 
 **Smell**: `helper/actions/account-rename.ts` constructs only one
 `new AccountsPage(page)` — a single-page flow disguised as an action.
@@ -3558,10 +3558,10 @@ a destructured object including \`page\` — KB qa-master/actions/page-param`.
 objects, or for flows shared across multiple specs. Single-page logic stays on
 the page object. Per `helper/actions/CLAUDE.md`: "Create one when 2+ page
 objects are involved or a flow is shared setup across files."
-`validate-qa-master-conformance.ts` emits: `Action constructs only 1 page
-object (<Class>) — KB qa-master/actions/cross-page-only`.
+`validate-pwm-blueprint-conformance.ts` emits: `Action constructs only 1 page
+object (<Class>) — KB pwm-blueprint/actions/cross-page-only`.
 
-### qa-master/runtime/route-in-spec
+### pwm-blueprint/runtime/route-in-spec
 
 **Smell**: `await page.route('**/api/payments', …)` appearing directly in a
 spec or a page object.
@@ -3569,79 +3569,79 @@ spec or a page object.
 level, set up once across the suite), not a per-spec ad-hoc inline call.
 Centralise the route handler in `helper/fixtures/*.fixture.ts` so every test
 inherits a deterministic network surface.
-`validate-qa-master-conformance.ts` emits: `page.route() outside fixtures — KB
-qa-master/runtime/route-in-spec`.
+`validate-pwm-blueprint-conformance.ts` emits: `page.route() outside fixtures — KB
+pwm-blueprint/runtime/route-in-spec`.
 
-### qa-master/specs/test-name-format
+### pwm-blueprint/specs/test-name-format
 
 **Smell**: `test('Sign-in works', …)` or `test('should sign in', …)`.
 **Fix**: titles must match `^\[[^\]]+\]\s*-\s*Check\b` — i.e. start with a
 bracketed ticket id, then ` - Check that <user-perceivable outcome>`. Pairs
-with the existing `qa-master/architecture/should-test-name` rule but enforces
+with the existing `pwm-blueprint/architecture/should-test-name` rule but enforces
 the structural form (ticket id + "Check") in addition to banning "should".
-`validate-qa-master-conformance.ts` emits: `Test title '<title>' not in
-'[TICKET-ID] - Check that ...' form — KB qa-master/specs/test-name-format`.
+`validate-pwm-blueprint-conformance.ts` emits: `Test title '<title>' not in
+'[TICKET-ID] - Check that ...' form — KB pwm-blueprint/specs/test-name-format`.
 
-### qa-master/specs/single-describe
+### pwm-blueprint/specs/single-describe
 
 **Smell**: a `*.spec.ts` file declaring two or more `test.describe(...)` blocks.
 **Fix**: one describe per feature, one feature per file. Multiple describes in
 one file signal a file that should be split into siblings under the same
 feature folder.
-`validate-qa-master-conformance.ts` emits: `Spec has <N> test.describe()
-blocks — KB qa-master/specs/single-describe`.
+`validate-pwm-blueprint-conformance.ts` emits: `Spec has <N> test.describe()
+blocks — KB pwm-blueprint/specs/single-describe`.
 
-### qa-master/specs/no-nested-steps
+### pwm-blueprint/specs/no-nested-steps
 
 **Smell**: `test.step('Outer', async () => { await test.step('Inner', …); })`.
 **Fix**: each `test.step()` is ONE action → ONE assertion. Nesting muddies that
 contract and produces useless trace timelines. Refactor inner steps into
 sibling steps (or into the page object method).
-`validate-qa-master-conformance.ts` emits: `Nested test.step() — KB
-qa-master/specs/no-nested-steps`.
+`validate-pwm-blueprint-conformance.ts` emits: `Nested test.step() — KB
+pwm-blueprint/specs/no-nested-steps`.
 
-### qa-master/files/kebab-case
+### pwm-blueprint/files/kebab-case
 
 **Smell**: a file emitted under `outputs/` named `signInPage.ts` or
 `order_history.spec.ts` — uppercase or underscore in the stem.
 **Fix**: kebab-case throughout (`sign-in-page.ts`, `order-history.spec.ts`).
-The convention matches the qa-master reference and the path-alias map.
-`validate-qa-master-conformance.ts` emits: `Filename '<base>' contains
-uppercase or underscore — KB qa-master/files/kebab-case`.
+The convention matches the pwm-blueprint reference and the path-alias map.
+`validate-pwm-blueprint-conformance.ts` emits: `Filename '<base>' contains
+uppercase or underscore — KB pwm-blueprint/files/kebab-case`.
 
-### qa-master/architecture/relative-imports-sibling
+### pwm-blueprint/architecture/relative-imports-sibling
 
 **Smell**: `from "./checkout.api"` from a helper file — a sibling-dir relative
 import between two different concerns.
-**Fix**: extends `qa-master/architecture/relative-imports` (which already bans
+**Fix**: extends `pwm-blueprint/architecture/relative-imports` (which already bans
 parent-dir `../...`). Same-dir `./...` imports across helper concerns also
 bypass the path-alias surface and make refactors brittle. Use the alias
 (`@page-object`, `@api`, `@fixtures`, `@test-data`, …) for every cross-helper
 reference, even within the same folder.
-`validate-qa-master-conformance.ts` emits: `Sibling relative import (./…) —
-KB qa-master/architecture/relative-imports-sibling`.
+`validate-pwm-blueprint-conformance.ts` emits: `Sibling relative import (./…) —
+KB pwm-blueprint/architecture/relative-imports-sibling`.
 
-### qa-master/runtime/no-hard-waits
+### pwm-blueprint/runtime/no-hard-waits
 
 **Smell**: `page.waitForSelector(...)`, `page.waitForTimeout(...)` or `page.waitForLoadState(...)` anywhere in `outputs/`.
-**Fix**: hard-waits are THE #1 flake source per root CLAUDE.md. Use web-first assertions (`await expect(locator).toBeVisible()`, `.toHaveText(...)`) that auto-retry until the condition holds. `validate-qa-master-conformance.ts` emits: `Hard-wait 'page.waitForXxx(' — KB qa-master/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`
+**Fix**: hard-waits are THE #1 flake source per root CLAUDE.md. Use web-first assertions (`await expect(locator).toBeVisible()`, `.toHaveText(...)`) that auto-retry until the condition holds. `validate-pwm-blueprint-conformance.ts` emits: `Hard-wait 'page.waitForXxx(' — KB pwm-blueprint/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`
 
-### qa-master/observability/no-console
+### pwm-blueprint/observability/no-console
 
 **Smell**: `console.log/warn/error/info/debug(...)` in `outputs/tests/**` or `outputs/helper/**` (other than the sanctioned `helper/utilities/logger.ts` wrapper).
-**Fix**: diagnostics route through `import logger from "@logger"` — single source of structured output, easy to silence or redirect. Only `outputs/helper/utilities/logger.ts` is allowed to call `console.*` directly (it IS the wrapper). `validate-qa-master-conformance.ts` emits: `console.<level>() in test/helper code — KB qa-master/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`
+**Fix**: diagnostics route through `import logger from "@logger"` — single source of structured output, easy to silence or redirect. Only `outputs/helper/utilities/logger.ts` is allowed to call `console.*` directly (it IS the wrapper). `validate-pwm-blueprint-conformance.ts` emits: `console.<level>() in test/helper code — KB pwm-blueprint/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`
 
-### qa-master/layer/utilities-pure
+### pwm-blueprint/layer/utilities-pure
 
 **Smell**: a file under `outputs/helper/utilities/**` imports `@playwright/test`, imports `fs` / `axios`, or calls `fetch(...)`.
 **Fix**: utilities are pure parsers / formatters / validators — no browser, no HTTP, no fs. Move browser interaction to a page object; move HTTP to `helper/api/`. `logger.ts` is exempt because its 4-method interface (info/warn/error/debug) is stable and it IS the sanctioned console wrapper.
 
-### qa-master/layer/test-data-constants-only
+### pwm-blueprint/layer/test-data-constants-only
 
 **Smell**: a file under `outputs/helper/test-data/**` declares `export function`, `export async function`, or `export class`.
 **Fix**: `test-data/` ships `export const` payloads only — fixtures, sample records, enum-like option lists. Logic that derives data belongs in a pure utility (`helper/utilities/`) or an api helper (`helper/api/`).
 
-### qa-master/layer/api-not-in-page
+### pwm-blueprint/layer/api-not-in-page
 
 **Smell**: a page object under `outputs/helper/page-object/**` calls `fetch(...)` or `page.request.<verb>(...)`.
 **Fix**: API wrappers belong in `outputs/helper/api/` — never in a page object. Page objects are UI-only; mixing HTTP into them breaks the layer boundary and makes the test untestable in isolation.

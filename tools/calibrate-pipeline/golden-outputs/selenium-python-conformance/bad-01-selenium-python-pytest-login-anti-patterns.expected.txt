@@ -4,7 +4,7 @@
 # no-hard-waits (page.waitForTimeout(2000) carried over from the selenium time.sleep(2)). The
 # fourth (W5 locator-priority on .kpi-card) is warn-severity in default mode — we do NOT pin on
 # it because the runner invokes the validator in default (non-strict) mode.
-qa-master/architecture/import-source
-qa-master/architecture/page-goto-in-spec
-qa-master/runtime/no-hard-waits
-validate-qa-master-conformance: 3 violation(s) (3 block / 0 warn)
+pwm-blueprint/architecture/import-source
+pwm-blueprint/architecture/page-goto-in-spec
+pwm-blueprint/runtime/no-hard-waits
+validate-pwm-blueprint-conformance: 3 violation(s) (3 block / 0 warn)

@@ -79,7 +79,7 @@
     },
     "requiredPOMs": {
       "type": "array",
-      "description": "Page Object Model file paths Stage 2 must produce, relative to repo root. Accepts BOTH legacy v0.1.x path (`outputs/tests/pages/foo.page.ts`) AND qa-master v0.2.0 path (`outputs/helper/page-object/pages/foo.page.ts`). The validator's qa-master fallback maps the legacy path to the new location when checking on-disk existence (PR #156). Empty array when no POM extraction is justified.",
+      "description": "Page Object Model file paths Stage 2 must produce, relative to repo root. Accepts BOTH legacy v0.1.x path (`outputs/tests/pages/foo.page.ts`) AND pwm-blueprint v0.2.0 path (`outputs/helper/page-object/pages/foo.page.ts`). The validator's pwm-blueprint fallback maps the legacy path to the new location when checking on-disk existence (PR #156). Empty array when no POM extraction is justified.",
       "items": {
         "type": "string",
         "pattern": "^outputs/(tests/pages|helper/page-object/pages)/[A-Za-z0-9._/-]+\\.page\\.ts$"
@@ -87,7 +87,7 @@
     },
     "requiredFixtures": {
       "type": "array",
-      "description": "Legacy fixture file paths (`outputs/tests/fixtures/...`) — preserved for v0.1.x compatibility. v0.2.0 qa-master target prefers `outputs/helper/fixtures/...` (e.g. base.fixture.ts).",
+      "description": "Legacy fixture file paths (`outputs/tests/fixtures/...`) — preserved for v0.1.x compatibility. v0.2.0 pwm-blueprint target prefers `outputs/helper/fixtures/...` (e.g. base.fixture.ts).",
       "items": {
         "type": "string",
         "pattern": "^outputs/(tests/fixtures|helper/fixtures)/[A-Za-z0-9._/-]+\\.fixture\\.ts$"
@@ -95,7 +95,7 @@
     },
     "requiredPages": {
       "type": "array",
-      "description": "qa-master Page Object Model files Stage 2 must emit (e.g. 'outputs/helper/page-object/pages/dialog.page.ts'). Each extends BasePage with the no-constructor / readonly-fields / .describe() / [LABEL]-expects discipline from migration-rules.md §3.",
+      "description": "pwm-blueprint Page Object Model files Stage 2 must emit (e.g. 'outputs/helper/page-object/pages/dialog.page.ts'). Each extends BasePage with the no-constructor / readonly-fields / .describe() / [LABEL]-expects discipline from migration-rules.md §3.",
       "items": {
         "type": "string",
         "pattern": "^outputs/helper/page-object/pages/[A-Za-z0-9._/-]+\\.page\\.ts$"
@@ -103,7 +103,7 @@
     },
     "requiredBlocks": {
       "type": "array",
-      "description": "qa-master Block files Stage 2 must emit (e.g. 'outputs/helper/page-object/blocks/header.block.ts'). Each extends BaseBlock. Extract when a section reaches ~5+ locators or 3+ methods, or appears on 3+ pages.",
+      "description": "pwm-blueprint Block files Stage 2 must emit (e.g. 'outputs/helper/page-object/blocks/header.block.ts'). Each extends BaseBlock. Extract when a section reaches ~5+ locators or 3+ methods, or appears on 3+ pages.",
       "items": {
         "type": "string",
         "pattern": "^outputs/helper/page-object/blocks/[A-Za-z0-9._/-]+\\.block\\.ts$"
@@ -111,7 +111,7 @@
     },
     "requiredApi": {
       "type": "array",
-      "description": "qa-master API wrapper files Stage 2 must emit (e.g. 'outputs/helper/api/accounts.api.ts'). One file per endpoint. Used for data preparation — the only sanctioned path; never UI-prep.",
+      "description": "pwm-blueprint API wrapper files Stage 2 must emit (e.g. 'outputs/helper/api/accounts.api.ts'). One file per endpoint. Used for data preparation — the only sanctioned path; never UI-prep.",
       "items": {
         "type": "string",
         "pattern": "^outputs/helper/api/[A-Za-z0-9._/-]+\\.api\\.ts$"

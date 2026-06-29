@@ -1,4 +1,4 @@
 # Exit 1. Single block-severity violation: a page-method assertion omits its
 # [LABEL] message argument. We pin the rule id + violation-count line.
-qa-master/architecture/expect-no-label
-validate-qa-master-conformance: 1 violation(s) (1 block / 0 warn)
+pwm-blueprint/architecture/expect-no-label
+validate-pwm-blueprint-conformance: 1 violation(s) (1 block / 0 warn)

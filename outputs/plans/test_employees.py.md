@@ -4,7 +4,7 @@
 
 **Selenium Python** (selenium 4.x, pytest). Confirmed by: `from selenium.webdriver.common.by import By`, `WebDriverWait`, `expected_conditions as EC`, `@pytest.fixture`, `def test_*` function shape, and `NoSuchElementException` import. No `conftest.py`, `requirements.txt`, or `pages/employees_page.py` were included in the migration input — framework version is estimated as Selenium 4.x (modern `By.*` constant style, not deprecated `find_element_by_id` methods).
 
-**Target**: Playwright TypeScript (latest stable, v1.49+), qa-master layered architecture (v0.2.0 default).
+**Target**: Playwright TypeScript (latest stable, v1.49+), pwm-blueprint layered architecture (v0.2.0 default).
 
 **Note — sibling file missing:** The source imports `from pages.employees_page import EmployeesPage`. This POM file (`pages/employees_page.py`) is **not present** in the migration input. The actual locators behind `EmployeesPage.search_box` and `EmployeesPage.search_button` are unknown. See Q1–Q2 and all LOW-confidence rows.
 
@@ -12,7 +12,7 @@
 
 ## Summary
 
-This test suite exercises two independent employee-management features: (1) filtering the employees list by department and navigating from the filtered list to an employee detail page, and (2) verifying that the add-employee form rejects an empty submission with a visible validation error. The source uses `time.sleep` hard waits, snapshot-based `find_elements` list indexing, raw XPath with a CSS-class condition, `driver.page_source` substring assertions, a `try/except NoSuchElementException` presence-check, and a hand-rolled pytest driver fixture — all of which are replaced with Playwright web-first patterns and the qa-master page-object structure.
+This test suite exercises two independent employee-management features: (1) filtering the employees list by department and navigating from the filtered list to an employee detail page, and (2) verifying that the add-employee form rejects an empty submission with a visible validation error. The source uses `time.sleep` hard waits, snapshot-based `find_elements` list indexing, raw XPath with a CSS-class condition, `driver.page_source` substring assertions, a `try/except NoSuchElementException` presence-check, and a hand-rolled pytest driver fixture — all of which are replaced with Playwright web-first patterns and the pwm-blueprint page-object structure.
 
 ### What bug does this catch?
 
@@ -254,7 +254,7 @@ Impact if wrong: tests run against the wrong host; failures are environment-spec
 **Q10: Does the staging environment contain Engineering employees?**
 Context: Scenario 1.1 asserts that filtering by "Engineering" yields ≥1 row. The source test makes the same assumption implicitly.
 What I assumed: staging data includes at least one Engineering employee.
-Impact if wrong: the filter assertion `not.toHaveCount(0)` fails spuriously on a fresh/empty environment; consider a pre-test API fixture (per qa-master §5d) to seed an Engineering employee.
+Impact if wrong: the filter assertion `not.toHaveCount(0)` fails spuriously on a fresh/empty environment; consider a pre-test API fixture (per pwm-blueprint §5d) to seed an Engineering employee.
 
 **Q11: Are there existing ticket IDs to reference in test titles?**
 Context: test titles must follow `[TICKET-ID] - Check that <outcome>` per `migration-rules.md`. No ticket IDs are visible in the source.

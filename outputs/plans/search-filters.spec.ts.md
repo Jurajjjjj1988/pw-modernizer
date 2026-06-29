@@ -2,7 +2,7 @@
 
 ## Source framework
 
-**bad-playwright** — subtractive migration, no framework translation required. Source is already Playwright TypeScript; the migration removes anti-patterns and reshapes the file into the qa-master layered architecture (Page + Block + fixture injection). No new top-level framework imports beyond rewiring `test`/`expect` from `@fixtures/base.fixture`.
+**bad-playwright** — subtractive migration, no framework translation required. Source is already Playwright TypeScript; the migration removes anti-patterns and reshapes the file into the pwm-blueprint layered architecture (Page + Block + fixture injection). No new top-level framework imports beyond rewiring `test`/`expect` from `@fixtures/base.fixture`.
 
 **Source file:** `inputs/bad-playwright/search-filters.spec.ts`
 **Target file(s):** `outputs/tests/search-filters.spec.ts` + POM/Block/fixture files listed in §Structural changes
@@ -65,7 +65,7 @@ Catches a regression where (1) applying search filters fails to update the produ
 
 ### Unclassified smells
 
-**U1 — Wrong import source (line 1):** `import { test, expect } from '@playwright/test'` violates the qa-master hard rule: specs may only import `test`/`expect` from `@fixtures/base.fixture`. Only `outputs/helper/fixtures/base.fixture.ts` may import from `@playwright/test`. Stage 2 must change the import. No KB entry — this is a qa-master conformance rule (see `config/migration-rules.md` §2 and `CLAUDE.md`). Severity: **H** (test won't typecheck against fixture-injected page objects).
+**U1 — Wrong import source (line 1):** `import { test, expect } from '@playwright/test'` violates the pwm-blueprint hard rule: specs may only import `test`/`expect` from `@fixtures/base.fixture`. Only `outputs/helper/fixtures/base.fixture.ts` may import from `@playwright/test`. Stage 2 must change the import. No KB entry — this is a pwm-blueprint conformance rule (see `config/migration-rules.md` §2 and `CLAUDE.md`). Severity: **H** (test won't typecheck against fixture-injected page objects).
 
 **U2 — `.type()` instead of `.fill()` (lines 10, 25, 26, 43):** `locator.type(str)` dispatches individual keystroke events (keydown/keypress/keyup per character), which can trigger debounce handlers, autocomplete dropdowns, and validation mid-type. `locator.fill(str)` replaces the value atomically and is preferred for simple text entry. Closest KB analog: KB-1.2.27 (Cypress keystroke-delay smell). Severity: **M**. Stage 2 must replace all four `.type()` calls with `.fill()`.
 

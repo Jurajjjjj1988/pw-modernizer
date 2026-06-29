@@ -7,13 +7,13 @@ const LABEL = "Settings";
 /**
  * App settings page. Migrated from
  * `examples/cypress-05-conditional-and-jquery/input.spec.ts`. The cypress
- * source juggled three anti-patterns the qa-master flow refuses to copy:
+ * source juggled three anti-patterns the pwm-blueprint flow refuses to copy:
  * conditional `if ($body.find('.cookie-banner'))` UI probes (replaced by a
  * pre-seeded cookie in the fixture), `cy.get('html').then(($html) =>
  * $html.attr('data-theme'))` jQuery escapes (replaced by a web-first
  * `toHaveAttribute` assertion), and `cy.window().its('app.store')` redux
  * store probes (replaced by an assertion on the user-visible welcome
- * heading). Locators follow the qa-master selector priority — `getByLabel`
+ * heading). Locators follow the pwm-blueprint selector priority — `getByLabel`
  * for form fields, `getByRole('button')` for the Save button, `getByRole`
  * with a heading name for the welcome surface.
  */

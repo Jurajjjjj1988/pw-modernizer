@@ -99,7 +99,7 @@ git push -u origin try-my-migration
 
 Review the plan in the PR. Edit anti-pattern rows or change locator
 targets if you disagree. Merge the plan PR. Merging fires `migrate.yml`
-(Stage 2), which reads the approved plan and emits the qa-master
+(Stage 2), which reads the approved plan and emits the pwm-blueprint
 layered Playwright TypeScript output to `outputs/tests/` and
 `outputs/helper/`.
 
@@ -119,10 +119,10 @@ npm run migrate -- --input <path> --mock   # wiring check, no Claude call (free)
 npm run migrate -- --input <path> --profile lean   # specs + page objects only (ADR 0002)
 ```
 
-By default the output is the full **qa-master** layered architecture. If your
+By default the output is the full **pwm-blueprint** layered architecture. If your
 team wants a simpler shape — just specs + page objects, with specs importing
 `test`/`expect` straight from `@playwright/test` — pass `--profile lean`. The
-conformance gate relaxes accordingly; `qa-master` stays the default.
+conformance gate relaxes accordingly; `pwm-blueprint` stays the default.
 
 This mirrors `migrate.yml` exactly — same prompt, inventory, model, and the
 full post-generate validator wall — so you evaluate the tool by cloning and
@@ -134,7 +134,7 @@ or `ANTHROPIC_API_KEY` in your env (same as the real `try-it`), and prints a
 
 - [`walkthrough.md`](walkthrough.md) — end-to-end narrative on a real
   Selenium → Playwright migration (PR #6 → PR #13 on the public repo).
-  Shows what the qa-master multi-file Stage 2 output looks like.
+  Shows what the pwm-blueprint multi-file Stage 2 output looks like.
 - [`/CLAUDE.md`](../CLAUDE.md) — orientation file for Claude / for
   anyone wanting the architectural summary in 100 lines.
 - [`troubleshooting.md`](troubleshooting.md) — known failure modes and

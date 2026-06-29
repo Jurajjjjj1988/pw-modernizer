@@ -22,9 +22,9 @@ Do not add rules speculatively. Every rule here exists because output without it
 
 ---
 
-## 1. Project structure target (qa-master architecture — v0.2.0 default)
+## 1. Project structure target (pwm-blueprint architecture — v0.2.0 default)
 
-Every migrated suite lands in this exact layout, matching `examples/reference/qa-master/`. Reference: `config/knowledge-base.md` §`qa-master/...` namespace.
+Every migrated suite lands in this exact layout, matching `examples/reference/pwm-blueprint/`. Reference: `config/knowledge-base.md` §`pwm-blueprint/...` namespace.
 
 ```
 outputs/
@@ -71,7 +71,7 @@ Extract a function in `helper/actions/` when **2+ page objects** are involved in
 
 ALWAYS, before driving test data through the UI. Every test that needs setup uses `helper/api/<feature>.api.ts` — never UI-prep. Exercise each UI flow in exactly ONE test (the one that owns that behaviour).
 
-### POM vs page-utility split (qa-master discipline)
+### POM vs page-utility split (pwm-blueprint discipline)
 
 A POM owns *locators* and *thin action methods that touch only its own page*. It does NOT own:
 
@@ -82,7 +82,7 @@ A POM owns *locators* and *thin action methods that touch only its own page*. It
 
 ---
 
-## 2. Test file template (qa-master)
+## 2. Test file template (pwm-blueprint)
 
 Every `*.spec.ts` file Migrator emits follows this skeleton. `test` and `expect` come from `@fixtures/base.fixture` — never from `@playwright/test` (that import is allowed in exactly ONE file in the whole project: `helper/fixtures/base.fixture.ts`).
 
@@ -291,7 +291,7 @@ export class PageClassCheckout extends BasePage {
 }
 ```
 
-### Rules (qa-master)
+### Rules (pwm-blueprint)
 
 - **No constructor on the subclass.** Only `BasePage`/`BaseBlock` declares the constructor (parameter property `readonly page: Page`). The subclass uses `readonly` class fields that reference `this.page`. Field initialisers run after `super()`, so `this.page` is set when they execute.
 - **Every static locator is a `readonly` field with `.describe('[LABEL] …')`.** The label prefix is a per-section constant (e.g. `LABEL_CHK = "Checkout"`) imported from `@test-data/labels`. The describe surfaces in trace viewer and failure messages.
@@ -333,7 +333,7 @@ class PageClassDashboard extends BasePage {
 
 ---
 
-## 4. Fixture template (qa-master)
+## 4. Fixture template (pwm-blueprint)
 
 `helper/fixtures/base.fixture.ts` is the **single import source** for `test` and `expect` across the whole repo. Every spec, every action helper, every page object that needs `expect` imports from here. It's the only file allowed to import from `@playwright/test`.
 

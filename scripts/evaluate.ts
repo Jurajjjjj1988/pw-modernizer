@@ -284,7 +284,7 @@ function webFirstAssertionRate(source: string): number {
 // (which scans raw comment lines in outputs/); here we only catch executable
 // placeholders. NB: findForbidden runs over outputs/ via evaluate.ts and is
 // never invoked by calibration, so the intentional `test.fixme(` calls in
-// examples/reference/qa-master/tests/** are out of scope and not flagged.
+// examples/reference/pwm-blueprint/tests/** are out of scope and not flagged.
 export function findForbidden(rawSource: string): string[] {
   const source = rawSource
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -580,7 +580,7 @@ ${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\
 
 // ---- Emitted-tree collection.
 //
-// The qa-master architecture moves every locator, count, assertion, and
+// The pwm-blueprint architecture moves every locator, count, assertion, and
 // conditional OUT of the spec and into POM/block/fixture/api files under
 // outputs/helper/. A scorer that reads only the spec sees an empty file and
 // reports "100% canonical / no forbidden patterns / 0 assertions" even when a
@@ -698,7 +698,7 @@ function followHelperImportFiles(
 /**
  * The FILE PATHS that make up a migration's emitted tree: the spec plus every
  * POM / block / helper it reaches by fixture injection and `@alias` import
- * (qa-master hides every locator in these files, not the spec). This is the
+ * (pwm-blueprint hides every locator in these files, not the spec). This is the
  * same resolution `collectEmittedSources` uses to score the tree — exposed as
  * paths so the live DOM probe (dom-ground.ts --probe-tree) can probe the SAME
  * files the scorer credits. Without this the probe saw a spec with zero
@@ -886,7 +886,7 @@ function main(): void {
   const outputSrc = readFileSync(args.output, "utf8");
   const planMd = readFileSync(args.plan, "utf8");
   // OUTPUT-quality signals score the WHOLE emitted tree (spec + the POM/block/
-  // helper files it imports), not the bare spec — qa-master hides locators,
+  // helper files it imports), not the bare spec — pwm-blueprint hides locators,
   // smells, and forbidden patterns in helpers. LOC/AST-diff stay spec-scoped.
   const emittedSrc = collectEmittedSources(args.output);
 

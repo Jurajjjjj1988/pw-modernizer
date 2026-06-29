@@ -3,7 +3,7 @@
 # (one after openInviteModal click, one after submit click — carried over from the selenium
 # time.sleep(1) ceremony). Block rules to anchor on: import-source, page-goto-in-spec,
 # no-hard-waits. The validator must emit the summary line with 5 total / 4 block / 1 warn.
-qa-master/architecture/import-source
-qa-master/architecture/page-goto-in-spec
-qa-master/runtime/no-hard-waits
-validate-qa-master-conformance: 5 violation(s) (4 block / 1 warn)
+pwm-blueprint/architecture/import-source
+pwm-blueprint/architecture/page-goto-in-spec
+pwm-blueprint/runtime/no-hard-waits
+validate-pwm-blueprint-conformance: 5 violation(s) (4 block / 1 warn)

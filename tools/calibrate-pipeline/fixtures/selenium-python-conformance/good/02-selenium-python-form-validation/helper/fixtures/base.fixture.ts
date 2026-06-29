@@ -3,7 +3,7 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassUsersAdmin } from "@page-object/pages/users.page";
 
 /**
- * Per-migration extension of the qa-master base fixture. This is the ONLY
+ * Per-migration extension of the pwm-blueprint base fixture. This is the ONLY
  * file in the selenium-python-form-validation migration permitted to import
  * `test` from `@playwright/test` — every spec imports from
  * `@fixtures/base.fixture` (this barrel) instead.
@@ -11,7 +11,7 @@ import { PageClassUsersAdmin } from "@page-object/pages/users.page";
  * The selenium source declared a class-scoped `BaseTest` with
  * `setup_class` / `teardown_class` that spun up a real Chrome driver, and
  * a `setup_method` that re-navigated to `/users` and slept `time.sleep(1)`
- * before every test. The qa-master equivalent is lazy page-object
+ * before every test. The pwm-blueprint equivalent is lazy page-object
  * injection: each test owns its own browser context via Playwright's
  * default isolation, and the page object's `open()` waits on the visible
  * Invite button instead of sleeping.

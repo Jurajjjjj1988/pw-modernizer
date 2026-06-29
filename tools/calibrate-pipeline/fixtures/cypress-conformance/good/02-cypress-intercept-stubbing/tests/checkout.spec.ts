@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from `examples/cypress-03-intercept-stubbing/input.spec.ts`. The
  * cypress source juggled four overlapping aliases (`getCart`, `payReq`,
- * `firstPay`, `firstFail`, `retrySuccess`) for two scenarios; the qa-master
+ * `firstPay`, `firstFail`, `retrySuccess`) for two scenarios; the pwm-blueprint
  * flow keeps route stubs OUT of specs entirely (they live in `mockPayApi`,
  * declared in the fixture barrel) and asserts on the user-perceivable result
  * — the `/order-confirmed` landing surface — instead of internal response

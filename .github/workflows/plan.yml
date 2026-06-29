@@ -624,7 +624,7 @@ jobs:
           # Files are similar size; the cost difference is in *decision*
           # complexity — checkout-flow has 2 intercepts, response-body
           # assertions, dynamic .each iteration, form-input clusters.
-          # Each is a known-heavy mapping (KB lookup + qa-master layering
+          # Each is a known-heavy mapping (KB lookup + pwm-blueprint layering
           # decision) that costs turns. Flat bump masks the signal; this
           # adaptive table preserves the cheap path for simple inputs.
           #

@@ -1,6 +1,6 @@
 # Canonical anchor examples (per framework)
 
-These three migrations are the qa-master canonical examples for each source
+These three migrations are the pwm-blueprint canonical examples for each source
 framework. Stage 1 sees them on every invocation regardless of retrieval
 mode - they are the static few-shot anchor the rest of the RAG context
 augments. Phase 1, ADR-0001.
@@ -31,7 +31,7 @@ assertions.
 
 The canonical "Cypress idioms -> Playwright fixtures" case. Demonstrates:
 `cy.session` -> `storageState` fixture migration, `cy.intercept` ->
-`page.route` route stub (lifted into a fixture per qa-master), test
+`page.route` route stub (lifted into a fixture per pwm-blueprint), test
 data constants in `helper/test-data/`. Scenario IDs are `1.1` / `1.2`
 (authenticated dashboard load / mocked teams roster).
 

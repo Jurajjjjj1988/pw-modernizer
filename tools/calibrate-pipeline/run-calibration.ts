@@ -63,7 +63,7 @@ const VALIDATORS: readonly ValidatorName[] = [
 
 /**
  * Validators that share the nested `{good,bad}/<scenario>/` fixture layout.
- * Conformance validators land qa-master trees per scenario; helper-usage
+ * Conformance validators land pwm-blueprint trees per scenario; helper-usage
  * follows the same shape with `<scenario>/helper/api/*.ts` + `<scenario>/
  * tests/*.ts` so the runner branches on a single set.
  */
@@ -107,7 +107,7 @@ function listFixtureNames(validator: ValidatorName): string[] {
   if (!existsSync(dir)) return [];
   // cypress-conformance + selenium-python-conformance use a nested layout —
   // fixtures live under `good/<scenario>/` and `bad/<scenario>/` because each
-  // fixture is a multi-file qa-master tree (spec + page object + fixture). We
+  // fixture is a multi-file pwm-blueprint tree (spec + page object + fixture). We
   // synthesise flat names `good-<scenario>` / `bad-<scenario>` so the rest of
   // the runner (expectedExitFromName, golden lookup, printReport) stays
   // agnostic of the on-disk shape.
@@ -359,9 +359,9 @@ function runDangerPolicy(fixtureName: string): FixtureResult {
 
 /**
  * cypress-conformance + selenium-python-conformance fixtures are nested
- * `{good,bad}/<scenario>/` qa-master trees (spec + page object + base
+ * `{good,bad}/<scenario>/` pwm-blueprint trees (spec + page object + base
  * fixture). Each fixture is invoked by pointing
- * `validate-qa-master-conformance.ts --root <scenario-dir>` at the scenario
+ * `validate-pwm-blueprint-conformance.ts --root <scenario-dir>` at the scenario
  * root and asserting exit code matches the polarity (good → 0, bad → 1) plus
  * the golden substring set.
  *
@@ -379,7 +379,7 @@ function runConformance(
   const scenario = fixtureName.slice(sepIdx + 1);
   const fixtureRoot = join(FIXTURES_ROOT, validator, polarity, scenario);
   const r = spawnSync("npx", [
-    "tsx", join(SCRIPTS_DIR, "validate-qa-master-conformance.ts"),
+    "tsx", join(SCRIPTS_DIR, "validate-pwm-blueprint-conformance.ts"),
     "--root", fixtureRoot,
   ], { cwd: REPO_ROOT, encoding: "utf8" });
   return buildResult(fixtureName, r, parseGolden(goldenPath(validator, fixtureName)));

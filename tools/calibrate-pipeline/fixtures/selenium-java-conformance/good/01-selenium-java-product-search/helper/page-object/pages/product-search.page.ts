@@ -7,7 +7,7 @@ const LABEL = "ProductSearch";
 /**
  * Storefront search. Migrated from `selenium-java-01-search`: the source
  * found the search box via `By.id("search-input")` + a `WebDriverWait`
- * polling for results; qa-master uses role-based locators and relies on
+ * polling for results; pwm-blueprint uses role-based locators and relies on
  * Playwright auto-wait at the assertion.
  */
 export class PageClassProductSearch extends BasePage {

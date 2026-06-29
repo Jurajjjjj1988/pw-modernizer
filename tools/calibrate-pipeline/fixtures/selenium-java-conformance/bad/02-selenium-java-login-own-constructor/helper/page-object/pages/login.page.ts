@@ -7,7 +7,7 @@ const LABEL = "Login";
 /**
  * Bad fixture — same login scenario as good/02 but seeded with a single
  * block-severity violation: the PageClass declares its own constructor, which
- * KB qa-master/architecture/no-constructor forbids (BasePage already wires
+ * KB pwm-blueprint/architecture/no-constructor forbids (BasePage already wires
  * `page`; subclasses use readonly fields referencing `this.page`).
  */
 export class PageClassLogin extends BasePage {

@@ -39,7 +39,7 @@ test.describe(
           await page.getByLabel("Password").fill(ADMIN.password);
           await page.getByRole("button", { name: "Sign in" }).click();
           // Anti-pattern #1 — hard wait carried over from the selenium
-          // `time.sleep(2)`. The qa-master architecture forbids hard waits
+          // `time.sleep(2)`. The pwm-blueprint architecture forbids hard waits
           // anywhere under outputs/. Conformance Check 8 must block.
           await page.waitForTimeout(2000);
           await expect(

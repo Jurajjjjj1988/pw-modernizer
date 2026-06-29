@@ -7,7 +7,7 @@ const LABEL = "Login";
 /**
  * Auth login. Migrated from a Selenium Java login test: the source found the
  * username via `By.id("user")` + a `WebDriverWait` polling for the dashboard;
- * qa-master uses role-based locators and relies on Playwright auto-wait.
+ * pwm-blueprint uses role-based locators and relies on Playwright auto-wait.
  */
 export class PageClassLogin extends BasePage {
   readonly url = "/login";

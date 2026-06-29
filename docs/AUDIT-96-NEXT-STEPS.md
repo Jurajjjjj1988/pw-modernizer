@@ -47,7 +47,7 @@ Also fix `metrics-report.ts:184` `COUNT(*)` → `COUNT(DISTINCT input_basename)`
 ## Wave 3 — raise the number
 
 - **`no-source-equivalence-gate`** [pipeline] · eff L — nothing checks the migration asserts the SAME behavior as source; `ASSERTION_FLOOR=1`; envelope `expectedAssertions` declared but never read. New `scripts/assertion-coverage.ts` (ts-morph intent map source→output via `envelope.scenarios[].expectedAssertions`), hard CI gate + confidence input + calibration fixtures.
-- **`warn-checks-never-gate`** [pipeline] · eff M — 17 conformance checks are warn-only and the pipeline runs without `--strict`, so W1/W2/W5/W15 (the defect classes behind 33%) never block. Add a "defect" severity tier between warn/block that gates those four; inline-suppression escape; tally `defectCount` in `validate-qa-master-conformance.ts:~1259-1268`.
+- **`warn-checks-never-gate`** [pipeline] · eff M — 17 conformance checks are warn-only and the pipeline runs without `--strict`, so W1/W2/W5/W15 (the defect classes behind 33%) never block. Add a "defect" severity tier between warn/block that gates those four; inline-suppression escape; tally `defectCount` in `validate-pwm-blueprint-conformance.ts:~1259-1268`.
 - **`scorer-scores-whole-shared-pom`** [pipeline] · eff L — scorer unions WHOLE shared POM files (dead/inherited methods) → confidence drifts to 1.0 + history-coupled non-determinism. Add `sliceReachablePom(pomSrc, calledMethods)` + `extractCalledMethods(specSrc, fixtureName)` in `evaluate.ts:633-679`; reset shared `outputs/helper/` between legs (`migrate-local.ts:645-656`). Gate behind `PWM_SCORE_SCOPE=reachable|whole`.
 
 ## Wave 4 — breadth + adoption (parallelizable)

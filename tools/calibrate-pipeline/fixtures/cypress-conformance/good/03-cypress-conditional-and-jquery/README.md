@@ -1,16 +1,16 @@
 # good / 03-cypress-conditional-and-jquery
 
-Represents the qa-master Stage 2 output a clean migration of
+Represents the pwm-blueprint Stage 2 output a clean migration of
 `examples/cypress-05-conditional-and-jquery/input.spec.ts` should produce.
-The cypress source did three things the qa-master architecture refuses to
+The cypress source did three things the pwm-blueprint architecture refuses to
 copy verbatim: (a) probed `cy.get('body').then(($body) => if-present)` to
-conditionally dismiss a cookie banner — qa-master pre-seeds the
+conditionally dismiss a cookie banner — pwm-blueprint pre-seeds the
 `cookies_accepted` cookie in the spec's `beforeEach` so the conditional
 disappears entirely; (b) read DOM internals via `cy.get('html').then(($html)
-=> $html.attr('data-theme'))` jQuery escape — qa-master replaces this with
+=> $html.attr('data-theme'))` jQuery escape — pwm-blueprint replaces this with
 `await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')`;
 (c) asserted on a Redux store via `cy.window().its('app.store').invoke('getState')`
-— qa-master asserts on user-perceivable surface (the welcome heading) instead
+— pwm-blueprint asserts on user-perceivable surface (the welcome heading) instead
 of internal state. This "good" version models the settings surface as a
 `PageClassSettings` that extends `BasePage` (no own constructor, `readonly`
 locator fields with `.describe()` labels, navigation owned by `open()`),

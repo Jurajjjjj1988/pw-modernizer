@@ -9,7 +9,7 @@ const LABEL = "UsersAdmin";
  * `examples/selenium-python-02-modal-interaction/input.py`. The selenium
  * source used positional indexing (`find_elements(...)[0]`, `[1]`) and CSS
  * selectors (`.modal-overlay`, `.modal`, `.field-error`) inside an XPath
- * chain (`//main//button[contains(.,'Invite')]`); the qa-master flow models
+ * chain (`//main//button[contains(.,'Invite')]`); the pwm-blueprint flow models
  * the modal surface as a single `dialogInviteUser` locator chained off
  * `getByRole('dialog', { name: 'Invite a new user' })` and reads scoped
  * children via `dialogInviteUser.getByLabel('Email')` /
@@ -68,7 +68,7 @@ export class PageClassUsersAdmin extends BasePage {
    * Fill the email field inside the modal and submit. Asserts the modal
    * remains open after submit (the validation/loading surface lands inside
    * the same dialog, so the method never ends on `.click()` per the
-   * qa-master `page-object/click-without-assertion` rule).
+   * pwm-blueprint `page-object/click-without-assertion` rule).
    */
   async submitInvite(email: string): Promise<void> {
     await this.inputInviteEmail.fill(email);

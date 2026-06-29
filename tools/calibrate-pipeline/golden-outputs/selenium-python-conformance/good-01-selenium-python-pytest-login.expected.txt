@@ -1,7 +1,7 @@
-# Exit 0. The qa-master conformance validator must accept the good selenium-python login fixture
+# Exit 0. The pwm-blueprint conformance validator must accept the good selenium-python login fixture
 # as clean: spec routes test/expect through @fixtures/base.fixture, navigation lives in
 # PageClassLogin.open(), no page.waitForTimeout (the selenium time.sleep(2) is gone), inputs use
 # getByLabel / getByRole per selector priority (no XPath survives). Anchor on the clean summary so
 # any drift toward emitting a violation list breaks the calibration.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

@@ -9,7 +9,7 @@ const LABEL = "Settings";
  * the theme-preview locator is a raw `.locator('.theme-preview')` CSS class —
  * the cypress `cy.get('.theme-preview')` selector was migrated verbatim
  * instead of being lifted to `getByRole('region', { name: 'Theme preview' })`
- * per qa-master selector priority. The conformance validator's W5
+ * per pwm-blueprint selector priority. The conformance validator's W5
  * (locator-priority) must flag this row.
  */
 export class PageClassSettings extends BasePage {

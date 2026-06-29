@@ -194,7 +194,7 @@ export function buildRepairPrompt(
     "  name is derived. If `getByLabel(name)` fails, the field likely has a placeholder or aria-label, not a",
     "  <label>: prefer `getByRole('textbox', { name })` or `getByPlaceholder(name)` — pick the one that",
     "  actually resolves on this page.",
-    "- Keep qa-master architecture (locators in the page object, web-first assertions, no hard waits).",
+    "- Keep pwm-blueprint architecture (locators in the page object, web-first assertions, no hard waits).",
     "- Do NOT weaken assertions to make them pass; fix the locator/target so the real assertion holds.",
     "- Edit the existing files in place (you MAY add a LoginPage page object if auth needs it).",
   );
@@ -242,7 +242,7 @@ export function buildLintRepairPrompt(files: string[], lintOutput: string): stri
     "- Fix the reported errors at the cause (e.g. remove an unused `expect` import / dead var).",
     "- Do NOT change assertions, locators, or behaviour — the test is green; keep it green.",
     "- Do NOT add eslint-disable comments to silence a rule.",
-    "- Keep qa-master architecture (spec imports from @fixtures/base.fixture; locators in POMs).",
+    "- Keep pwm-blueprint architecture (spec imports from @fixtures/base.fixture; locators in POMs).",
   ].join("\n");
 }
 

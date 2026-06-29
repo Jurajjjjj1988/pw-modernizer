@@ -8,11 +8,11 @@ const LABEL = "Checkout";
  * Cart + checkout surface. Migrated from `cypress-03-intercept-stubbing`:
  * the cypress source used deep CSS selectors (`.cart-row`, `input[name="card"]`,
  * `button.pay-now`) and ran `cy.wait('@payReq').then(interception => …)`
- * against an alias chain. The qa-master flow lifts every selector to
+ * against an alias chain. The pwm-blueprint flow lifts every selector to
  * `getByRole` / `getByLabel` per the priority ladder, exposes one
  * `payWithCard()` action that wraps the form-fill + submit, and asserts on
  * the user-perceivable post-payment surface — the route stub itself is
- * declared in the fixture barrel (qa-master: route stubs are fixtures, not
+ * declared in the fixture barrel (pwm-blueprint: route stubs are fixtures, not
  * inline spec setup), matching `expected-output.spec.ts` in the example
  * folder.
  */

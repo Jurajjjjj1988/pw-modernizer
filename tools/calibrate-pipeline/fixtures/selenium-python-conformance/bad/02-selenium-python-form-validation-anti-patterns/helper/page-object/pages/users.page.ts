@@ -9,7 +9,7 @@ const LABEL = "UsersAdmin";
  * the invite-user dialog locator is a raw `this.page.locator('.modal')`
  * CSS-class selector — the selenium `By.CSS_SELECTOR('div.modal-overlay >
  * div.modal')` was migrated verbatim instead of being lifted to
- * `getByRole('dialog', { name: 'Invite a new user' })` per qa-master
+ * `getByRole('dialog', { name: 'Invite a new user' })` per pwm-blueprint
  * selector priority. The conformance validator's W5 (locator-priority)
  * must flag this row.
  */

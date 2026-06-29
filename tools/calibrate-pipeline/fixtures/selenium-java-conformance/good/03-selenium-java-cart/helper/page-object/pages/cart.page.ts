@@ -6,7 +6,7 @@ const LABEL = "Cart";
 
 /**
  * Shopping cart. Migrated from a Selenium Java test that used Thread.sleep
- * between add-to-cart steps; qa-master uses role-based locators and a
+ * between add-to-cart steps; pwm-blueprint uses role-based locators and a
  * web-first badge assertion instead of any hard wait.
  */
 export class PageClassCart extends BasePage {

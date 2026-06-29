@@ -6,7 +6,7 @@
 # page-goto-in-spec, no-hard-waits. Summary: 5 total / 3 block / 2 warn (the second warn is
 # click-without-assertion on the signIn() page method — the spec's missing post-click landing
 # assertion + the bad page object's loose signIn() both come from the same migration smell).
-qa-master/architecture/import-source
-qa-master/architecture/page-goto-in-spec
-qa-master/runtime/no-hard-waits
-validate-qa-master-conformance: 5 violation(s) (3 block / 2 warn)
+pwm-blueprint/architecture/import-source
+pwm-blueprint/architecture/page-goto-in-spec
+pwm-blueprint/runtime/no-hard-waits
+validate-pwm-blueprint-conformance: 5 violation(s) (3 block / 2 warn)

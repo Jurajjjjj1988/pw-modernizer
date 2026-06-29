@@ -19,9 +19,9 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const VALIDATOR = join(REPO_ROOT, "scripts", "validate-qa-master-conformance.ts");
+const VALIDATOR = join(REPO_ROOT, "scripts", "validate-pwm-blueprint-conformance.ts");
 
-/** Write a one-page qa-master tree and run the conformance validator over it. */
+/** Write a one-page pwm-blueprint tree and run the conformance validator over it. */
 function runOverPage(pageSrc: string): string {
   const root = mkdtempSync(join(tmpdir(), "pwm-w15-"));
   try {

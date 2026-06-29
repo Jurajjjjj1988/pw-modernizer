@@ -3,7 +3,7 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassSettings } from "@page-object/pages/settings.page";
 
 /**
- * Per-migration extension of the qa-master base fixture. This is the ONLY
+ * Per-migration extension of the pwm-blueprint base fixture. This is the ONLY
  * file in the cypress-conditional-and-jquery migration permitted to import
  * `test` from `@playwright/test` — every spec imports from
  * `@fixtures/base.fixture` (this barrel) instead.
@@ -11,7 +11,7 @@ import { PageClassSettings } from "@page-object/pages/settings.page";
  * The `acceptCookies` fixture pre-seeds the `cookies_accepted` cookie so the
  * cypress source's `if ($body.find('.cookie-banner'))` conditional UI probe
  * disappears entirely — the banner never renders, so no test needs to
- * dismiss it. This is the qa-master pattern for handling "may-or-may-not-be-
+ * dismiss it. This is the pwm-blueprint pattern for handling "may-or-may-not-be-
  * present" UI: pre-set the state instead of branching on it.
  */
 type Fixtures = {

@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from `examples/selenium-java-01-search/input.java`. The JUnit
  * source instantiated ChromeDriver in @BeforeEach + WebDriverWait + WebElement
- * chains; qa-master delegates form interaction to ProductSearchPage and uses
+ * chains; pwm-blueprint delegates form interaction to ProductSearchPage and uses
  * Playwright's auto-wait.
  */
 test.describe(

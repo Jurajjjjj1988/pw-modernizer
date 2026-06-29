@@ -2,7 +2,7 @@ import { test, expect } from "@fixtures/base.fixture";
 
 /**
  * Migrated from a JUnit + WebDriver add-to-cart test. The source used
- * Thread.sleep between steps; qa-master delegates the interaction to CartPage
+ * Thread.sleep between steps; pwm-blueprint delegates the interaction to CartPage
  * and replaces the sleeps with a web-first badge assertion.
  */
 test.describe("Cart: add to cart", { tag: ["@desktop", "@cart"] }, () => {

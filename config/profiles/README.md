@@ -1,9 +1,9 @@
 # Output profiles (ADR 0002)
 
 A profile selects the **shape** of the migrated output. The default is
-`qa-master`; `lean` is an opt-in for adopters who want a simpler tree.
+`pwm-blueprint`; `lean` is an opt-in for adopters who want a simpler tree.
 
-| | `qa-master` (default) | `lean` |
+| | `pwm-blueprint` (default) | `lean` |
 | --- | --- | --- |
 | Spec import source | `@fixtures/base.fixture` | `@playwright/test` (allowed) |
 | Fixture barrel (`base.fixture`) | required | not required |
@@ -28,14 +28,14 @@ npm run migrate -- --input inputs/<framework>/your-test.spec.ts --profile lean
 The CLI threads `--profile lean` to the conformance gate, sets `PWM_PROFILE=lean`
 so the ESLint step relaxes the same rules, and selects the lean generate prompt
 (`prompts/generate.lean.md` → `_assembled/generate.lean.md`) — a spec + page
-object contract that drops the qa-master triad/STOP block while keeping the
+object contract that drops the pwm-blueprint triad/STOP block while keeping the
 shared quality fragments (no waits/nth/force, web-first, locator priority). The
-default (no `--profile`) is `qa-master`, byte-identical to before.
+default (no `--profile`) is `pwm-blueprint`, byte-identical to before.
 
 ## How it's wired (single source)
 
-- `config/profiles/{qa-master,lean}.json` — declarative descriptors.
-- `scripts/validate-qa-master-conformance.ts --profile lean` — relaxes the
+- `config/profiles/{pwm-blueprint,lean}.json` — declarative descriptors.
+- `scripts/validate-pwm-blueprint-conformance.ts --profile lean` — relaxes the
   spec import-source rule (Check 1), `page.goto`-in-spec (Check 7), and the
   relative-import rules (Check 5 + sibling).
 - `eslint.config.js` reads `PWM_PROFILE`; under `lean` the matching
@@ -43,14 +43,14 @@ default (no `--profile`) is `qa-master`, byte-identical to before.
   rules are turned off.
 - Regression guard: `scripts/lean-profile.test.ts` proves a lean spec (and a
   realistic spec + page object) passes under `lean` while staying blocked under
-  `qa-master`.
+  `pwm-blueprint`.
 
 ## Status
 
 Phase 1 + the cross-validator relaxations + the lean generate prompt are
 implemented and guarded for the **local CLI** (`buildPrompt` selects
 `generate.lean.md`; `migrate-local.test.ts` pins the profile branching and the
-no-qa-master-leak invariant). Not yet wired into the CI pipeline (`migrate.yml`
-always runs `qa-master`) — CI lean still needs per-profile calibration fixtures
+no-pwm-blueprint-leak invariant). Not yet wired into the CI pipeline (`migrate.yml`
+always runs `pwm-blueprint`) — CI lean still needs per-profile calibration fixtures
 and a real supervised lean migration to verify output quality (Phase 2). See
 `docs/adr/0002-output-profiles.md`.

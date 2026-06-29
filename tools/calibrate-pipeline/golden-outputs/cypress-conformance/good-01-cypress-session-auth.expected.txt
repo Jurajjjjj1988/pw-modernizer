@@ -1,7 +1,7 @@
-# Exit 0. The qa-master conformance validator must accept the good fixture as clean:
+# Exit 0. The pwm-blueprint conformance validator must accept the good fixture as clean:
 # spec routes test/expect through @fixtures/base.fixture, no page.goto in spec, no hard waits,
 # locator priority obeyed (getByRole / getByTestId — no raw CSS class), POM extends BasePage
 # with no own constructor, readonly locator fields with .describe() labels.
 # We anchor on the clean-line summary so any drift toward emitting a violation list breaks the calibration.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

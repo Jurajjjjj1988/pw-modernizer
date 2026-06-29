@@ -68,9 +68,9 @@ DOM snapshot absent (no file at `outputs/dom-snapshots/missing-await.spec.ts.yam
 
 ## Structural changes
 
-Single-file input. No source files are DROPPED. The input spec is RESHAPED into the qa-master layered output. This is a subtractive migration — no new framework imports are added beyond the fixture rewiring.
+Single-file input. No source files are DROPPED. The input spec is RESHAPED into the pwm-blueprint layered output. This is a subtractive migration — no new framework imports are added beyond the fixture rewiring.
 
-- **Extract POM:** yes — `PageClassCart` at `outputs/helper/page-object/pages/cart.page.ts`. Mandated by qa-master architecture (migration-rules.md §5a: "Always at least one — every page the test visits gets a `PageClass<Name>`"). The two CSS-class locators that need upgrading, the repeated `page.goto` + page-load wait pattern, and the five action methods additionally justify extraction. Class has no own constructor; `readonly` locator fields with `.describe('[Cart] …')`.
+- **Extract POM:** yes — `PageClassCart` at `outputs/helper/page-object/pages/cart.page.ts`. Mandated by pwm-blueprint architecture (migration-rules.md §5a: "Always at least one — every page the test visits gets a `PageClass<Name>`"). The two CSS-class locators that need upgrading, the repeated `page.goto` + page-load wait pattern, and the five action methods additionally justify extraction. Class has no own constructor; `readonly` locator fields with `.describe('[Cart] …')`.
 - **Extract fixture:** yes — `outputs/helper/fixtures/base.fixture.ts` (mutate); add `cartPage: PageClassCart` as an injectable fixture. Spec receives `{ cartPage }` from the fixture; no `new PageClassCart(page)` in the spec body.
 - **Split into multiple specs:** no — both scenarios target the same cart page and share the same page object.
 - **New test-data:** `outputs/helper/test-data/labels.ts` (mutate); add `LABEL_CART = "Cart"`. The spec also defines inline file-scoped constants: `EXPECTED_SUBTOTAL`, `PRODUCT_LINEN_TEE`, `PRODUCT_DENIM_JACKET`, `PRODUCT_WOOL_BEANIE`.
@@ -95,7 +95,7 @@ Single-file input. No source files are DROPPED. The input spec is RESHAPED into 
 
 | Layer | File path | Why it exists |
 |---|---|---|
-| Page | `outputs/helper/page-object/pages/cart.page.ts` | Exposes `byAddItemButton`, `textSubtotal`, `inputQuantity`, `buttonUpdate`, `textEmptyCart`; `[LABEL]` describes; qa-master §5a mandates ≥1 PageClass per visited page |
+| Page | `outputs/helper/page-object/pages/cart.page.ts` | Exposes `byAddItemButton`, `textSubtotal`, `inputQuantity`, `buttonUpdate`, `textEmptyCart`; `[LABEL]` describes; pwm-blueprint §5a mandates ≥1 PageClass per visited page |
 | Block | (none) | 5 locators, single cart section, no reuse across pages — threshold not met |
 | Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add `cartPage: PageClassCart` injection; spec must never call `new PageClassCart(page)` |
 | API | (none) | Tests drive the UI add-item flow themselves; no backend data-prep needed |

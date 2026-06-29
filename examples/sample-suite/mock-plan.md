@@ -9,7 +9,7 @@
 **bad-playwright** — subtractive migration. Source is already Playwright TypeScript; the migration removes anti-patterns without translating a framework.
 
 **Source file:** `examples/sample-suite/bad-test.spec.ts`
-**Target file(s):** `outputs/tests/bad-test.spec.ts` (+ helper tree per qa-master)
+**Target file(s):** `outputs/tests/bad-test.spec.ts` (+ helper tree per pwm-blueprint)
 
 ## Summary
 

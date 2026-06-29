@@ -8,7 +8,7 @@ const LABEL = "Checkout";
  * BAD version. Same scenario as good/02 but seeded with anti-pattern #4:
  * the cart-row locator is a raw `this.page.locator('.cart-row')` CSS class
  * — the cypress `cy.get('.cart-row')` selector was migrated verbatim
- * instead of being lifted to `getByRole('row')` per qa-master selector
+ * instead of being lifted to `getByRole('row')` per pwm-blueprint selector
  * priority. The conformance validator's W5 (locator-priority) must flag
  * this row.
  */

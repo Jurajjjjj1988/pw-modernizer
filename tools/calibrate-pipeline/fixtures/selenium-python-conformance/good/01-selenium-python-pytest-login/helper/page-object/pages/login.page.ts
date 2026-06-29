@@ -8,7 +8,7 @@ const LABEL = "Login";
  * Beacon HR login page. Migrated from `examples/selenium-python-01-login/input.py`:
  * the selenium source navigated via `driver.get(...)`, located inputs by
  * `By.ID('email')`/`By.ID('password')` + `By.XPATH` for submit, then slept
- * `time.sleep(2)` before asserting `.dashboard-greeting`. The qa-master flow
+ * `time.sleep(2)` before asserting `.dashboard-greeting`. The pwm-blueprint flow
  * owns navigation through `open()`, uses `getByLabel`/`getByRole` per the
  * selector-priority ladder, and waits on web-first assertions instead of
  * `time.sleep()` — no manual waits anywhere. The post-login surface

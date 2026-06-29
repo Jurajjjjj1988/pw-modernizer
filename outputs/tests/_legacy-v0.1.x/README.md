@@ -1,6 +1,6 @@
 # Legacy v0.1.x specs (archived)
 
-These specs were emitted by Stage 2 BEFORE the v0.2.0 qa-master rewrite. They
+These specs were emitted by Stage 2 BEFORE the v0.2.0 pwm-blueprint rewrite. They
 use the v0.1.x single-file pattern (`import { test, expect } from "@playwright/test"`,
 inline `page.goto`, no PageClass).
 
@@ -8,7 +8,7 @@ inline `page.goto`, no PageClass).
 
 1. They served as the calibration baseline that proved Stage 1/Stage 2 work end-to-end.
 2. They are PR-merged history — rewriting them would mask the actual calibration trajectory.
-3. They are excluded from v0.2.0 validators (qa-master conformance, ESLint qa-master rules) via per-file overrides.
+3. They are excluded from v0.2.0 validators (pwm-blueprint conformance, ESLint pwm-blueprint rules) via per-file overrides.
 
 **Why archived here:** before this move, these files lived directly under
 `outputs/tests/` and confused Sonnet on new migrations (the v0.1.x file with

@@ -3,5 +3,5 @@
 # positional indexing, relies on web-first auto-waiting assertions instead of time.sleep, and
 # obeys every import-source + page-goto + locator-priority rule. The validator MUST accept it as
 # clean.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

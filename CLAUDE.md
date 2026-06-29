@@ -1,10 +1,10 @@
 # PWmodernizer — Claude orientation
 
-> Read this first on every new session. ~100 lines, scannable. Reflects v0.2.0 qa-master architecture.
+> Read this first on every new session. ~100 lines, scannable. Reflects v0.2.0 pwm-blueprint architecture.
 
 ## What this repo is
 
-PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (bad Playwright TS, Cypress, Selenium Java, Selenium Python) into **clean modern Playwright TypeScript** you own. As of v0.2.0 every migration emits the **qa-master layered architecture** by default — a spec under `outputs/tests/`, a `PageClass` under `outputs/helper/page-object/pages/`, a base-fixture extension under `outputs/helper/fixtures/`, plus optional blocks / API wrappers / actions / utilities / test-data / types. **Human review is required** before merge. Step 1 (bad-Playwright) is the active quality bar — 70% acceptable rate gates promotion of Cypress / Selenium beyond example status.
+PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (bad Playwright TS, Cypress, Selenium Java, Selenium Python) into **clean modern Playwright TypeScript** you own. As of v0.2.0 every migration emits the **pwm-blueprint layered architecture** by default — a spec under `outputs/tests/`, a `PageClass` under `outputs/helper/page-object/pages/`, a base-fixture extension under `outputs/helper/fixtures/`, plus optional blocks / API wrappers / actions / utilities / test-data / types. **Human review is required** before merge. Step 1 (bad-Playwright) is the active quality bar — 70% acceptable rate gates promotion of Cypress / Selenium beyond example status.
 
 ## Quick map (v0.2.0)
 
@@ -12,15 +12,15 @@ PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (b
 - `outputs/` — pipeline deliverables
   - `plans/` — Stage 1 markdown + envelope JSON sidecar
   - `tests/` — Stage 2 spec files (`<kebab>.spec.ts` only; imports `test`/`expect` from `@fixtures/base.fixture`)
-  - `helper/` — qa-master layered tree shared across migrations
+  - `helper/` — pwm-blueprint layered tree shared across migrations
     - `page-object/{basepage,baseblock}.ts` (committed scaffolding) + `pages/<name>.page.ts` + `blocks/<name>.block.ts`
     - `fixtures/base.fixture.ts` (the ONE file allowed to import from `@playwright/test`; extended per migration)
     - `api/`, `actions/`, `utilities/`, `test-data/`, `types/{external,internal}`
   - `reports/` — per-migration metrics (`<basename>.md` + optional verify lens reports + DOM-probe JSON)
 - `prompts/` — Stage 1 (`analyze.md`), Stage 2 (`generate.md`), verify (`verify-sdet.md` + `verify-code-review.md`), plus `_fragments/` + `_assembled/`
-- `config/` — `knowledge-base.md` (130 KB IDs incl. `qa-master/` namespace), `migration-rules.md` §1–§4 rewritten for qa-master, `kb-id-migration.md`
-- `examples/reference/qa-master/` — production-grade style anchor Sonnet reads at Stage 2 (real-company Playwright TS, owner-permitted snapshot)
-- `scripts/` — validators (`validate-qa-master-conformance.ts`, `validate-report-metrics.ts`, `plan-envelope-validate.ts`, …), evaluators, replay, calibration, dashboards
+- `config/` — `knowledge-base.md` (130 KB IDs incl. `pwm-blueprint/` namespace), `migration-rules.md` §1–§4 rewritten for pwm-blueprint, `kb-id-migration.md`
+- `examples/reference/pwm-blueprint/` — production-grade style anchor Sonnet reads at Stage 2 (real-company Playwright TS, owner-permitted snapshot)
+- `scripts/` — validators (`validate-pwm-blueprint-conformance.ts`, `validate-report-metrics.ts`, `plan-envelope-validate.ts`, …), evaluators, replay, calibration, dashboards
 - `.github/workflows/` — 8 workflows: `plan.yml`, `migrate.yml`, `verify.yml`, `danger.yml`, `regression-test.yml`, `regression-semantic.yml`, `regenerate-dispatch.yml`, `lint-output.yml`
 - `docs/` — `walkthrough.md`, `troubleshooting.md`, `baselines.md`, `dom-ground-public-suts.md`, `beyond-v1-research.md`, `playwright-mcp-integration.md`
 
@@ -31,20 +31,20 @@ inputs/<framework>/foo.spec.ts
         │
         ▼
  ┌─────────────────────┐
- │ Stage 1 — Plan      │  reads: kb + rules + qa-master reference + input
+ │ Stage 1 — Plan      │  reads: kb + rules + pwm-blueprint reference + input
  │ plan.yml            │  writes: outputs/plans/foo.spec.ts.md (+ envelope)
  └─────────────────────┘  GATE: PR labeled `migrator:plan` → HUMAN reviews + merges
         │
         ▼
  ┌─────────────────────┐
- │ Stage 2 — Generate  │  reads: approved plan + envelope + kb + rules + qa-master ref
+ │ Stage 2 — Generate  │  reads: approved plan + envelope + kb + rules + pwm-blueprint ref
  │ migrate.yml         │  writes: outputs/tests/<kebab>.spec.ts
  └─────────────────────┘         + outputs/helper/page-object/pages/<name>.page.ts
         │                        + outputs/helper/fixtures/base.fixture.ts (extended)
         │                        + helper/{blocks,api,actions,utilities,test-data,types}/* per plan
         │                  GATES: tsc · eslint-plugin-playwright · pw test --list
         │                         · ast-diff-not-trivial · plan-vs-code coverage
-        │                         · qa-master conformance · report-metric self-consistency
+        │                         · pwm-blueprint conformance · report-metric self-consistency
         ▼                         · evaluate.ts (confidence 0..1)
  ┌─────────────────────┐
  │ Stage 3 — Verify    │  Opus CANDOR (SDET + Code Review) — fires when confidence < 0.7
@@ -79,8 +79,8 @@ gh workflow run regenerate-dispatch.yml -f path=outputs/tests/foo.spec.ts  # re-
 - **NEVER** push to `main` without explicit user OK — PR-based flow is the default
 - **NEVER** use `any` in TypeScript
 - **NEVER** use hard waits (`waitForTimeout`, `setTimeout`, `sleep`) — the pipeline migrates *away from* them
-- **ALWAYS** prefer stable selectors: `getByTestId`, `getByRole`, `getByLabel`, `getByPlaceholder` (qa-master priority)
-- **NEVER** import `test`/`expect` from `@playwright/test` in a spec — only `outputs/helper/fixtures/base.fixture.ts` may; specs import from `@fixtures/base.fixture` (qa-master conformance hard rule)
+- **ALWAYS** prefer stable selectors: `getByTestId`, `getByRole`, `getByLabel`, `getByPlaceholder` (pwm-blueprint priority)
+- **NEVER** import `test`/`expect` from `@playwright/test` in a spec — only `outputs/helper/fixtures/base.fixture.ts` may; specs import from `@fixtures/base.fixture` (pwm-blueprint conformance hard rule)
 - **NEVER** declare an own constructor on a `PageClass`/`BlockClass` — `BasePage`/`BaseBlock` wires `page`; subclasses use `readonly` locator fields with `.describe('[LABEL] …')`
 - **NEVER** invent KB IDs — every ID in a plan must exist in `config/knowledge-base.md`
 - **NEVER** create wrapper helpers for things Playwright already provides (`test.step`, locator chaining, etc.)
@@ -98,13 +98,13 @@ A pipeline failure is **deterministic** (parser, validator, ESLint, YAML, max-tu
 
 - **Living state** — `ROADMAP.md` + `CHANGELOG.md` (v0.2.0 entry is the architecture-rewrite delta)
 - **Pipeline behavior** — `docs/walkthrough.md` (end-to-end narrative on PromptJupiterTest)
-- **qa-master target architecture** — `examples/reference/qa-master/docs/ARCHITECTURE.md` + `docs/CLAUDE.md`
+- **pwm-blueprint target architecture** — `examples/reference/pwm-blueprint/docs/ARCHITECTURE.md` + `docs/CLAUDE.md`
 - **Known failure modes** — `docs/troubleshooting.md`
-- **KB-ID conventions** — `config/kb-id-migration.md` (kebab-case rules, `qa-master/` namespace)
+- **KB-ID conventions** — `config/kb-id-migration.md` (kebab-case rules, `pwm-blueprint/` namespace)
 
 ## Don't touch without intent
 
 - Anything under `outputs/` — pipeline owns it (except the committed scaffolding files: `helper/page-object/{basepage,baseblock}.ts`, `helper/fixtures/base.fixture.ts`, `helper/utilities/logger.ts`)
-- `examples/reference/qa-master/` — verbatim style anchor; included with owner permission, not modified
+- `examples/reference/pwm-blueprint/` — verbatim style anchor; included with owner permission, not modified
 - `dangerfile.ts` — PR gate logic
 - `examples/*/expected-*` — golden corpus; `validate-examples.ts --strict` fails on drift

@@ -10,7 +10,7 @@
 
 ## Notes
 
-Single-file migration. JUnit + WebDriver -> qa-master spec backed by
+Single-file migration. JUnit + WebDriver -> pwm-blueprint spec backed by
 EmployeesPage. The Output basename derives from the input
 (EmployeesTest.java -> employees.spec.ts) and the claimed 29 LOC matches
 wc -l on the emitted file, so the metric self-check is clean.

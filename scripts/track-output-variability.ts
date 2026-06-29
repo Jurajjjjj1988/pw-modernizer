@@ -133,7 +133,7 @@ function loc(filePath: string): number {
 /** Collect emitted output files for this migration (spec + helpers + report). */
 function collectOutputs(basename: string): string[] {
   // Match plan-code-coverage resolver semantics: any *.spec.ts under
-  // outputs/tests (excl. _legacy) + all qa-master helper paths.
+  // outputs/tests (excl. _legacy) + all pwm-blueprint helper paths.
   const out: string[] = [];
   const testsDir = "outputs/tests";
   if (existsSync(testsDir)) {

@@ -5,5 +5,5 @@ WebDriver source drives a product search + result-count assertion. Qa-master
 output moves the form interaction into a `ProductSearchPage` POM, drops
 `WebDriverWait` for Playwright auto-wait, and uses role-based locators.
 
-Calibration intent: the qa-master conformance validator must accept this
+Calibration intent: the pwm-blueprint conformance validator must accept this
 as clean (zero block-severity violations).

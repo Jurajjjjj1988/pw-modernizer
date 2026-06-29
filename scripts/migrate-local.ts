@@ -50,7 +50,7 @@ const ASSEMBLED_GENERATE = join(REPO_ROOT, "prompts/_assembled/generate.md");
 const INVENTORY_PATH = join(REPO_ROOT, "outputs/.snippets-inventory.md");
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
 
-export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "qa-master" | "lean"; repair: boolean; isolate: boolean }
+export interface Args { input: string; inputs: string; plan: string; mock: boolean; help: boolean; check: boolean; profile: "pwm-blueprint" | "lean"; repair: boolean; isolate: boolean }
 interface Paths { input: string; base: string; plan: string; envelope: string; report: string }
 interface Auth { kind: "oauth" | "api" | "none"; value: string }
 interface WallStep { name: string; cmd: string; args: string[] }
@@ -65,7 +65,7 @@ function parseCliArgs(): Args {
       mock: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       check: { type: "boolean", default: false },
-      profile: { type: "string", default: "qa-master" },
+      profile: { type: "string", default: "pwm-blueprint" },
       repair: { type: "boolean", default: false },
       isolate: { type: "boolean", default: false },
     },
@@ -77,7 +77,7 @@ function parseCliArgs(): Args {
     mock: values.mock === true,
     help: values.help === true,
     check: values.check === true,
-    profile: values.profile === "lean" ? "lean" : "qa-master",
+    profile: values.profile === "lean" ? "lean" : "pwm-blueprint",
     repair: values.repair === true,
     isolate: values.isolate === true,
   };
@@ -94,7 +94,7 @@ function printHelp(): void {
     "  npm run migrate -- --inputs '<glob>'         batch over many inputs (sequential)",
     "  npm run migrate -- --inputs '<glob>' --mock  free batch wiring + cost preview",
     "  npm run migrate -- --check                   preflight: Node/auth/plan setup doctor",
-    "  npm run migrate -- --input <p> --profile lean  emit specs + page objects only (ADR 0002; default qa-master)",
+    "  npm run migrate -- --input <p> --profile lean  emit specs + page objects only (ADR 0002; default pwm-blueprint)",
     "  npm run migrate -- --help",
     "",
     "Auth (one of):",
@@ -207,7 +207,7 @@ function captureDomSnapshot(p: Paths): string | null {
   return out;
 }
 
-/** Reset outputs/helper + outputs/tests to the committed baseline (the qa-master
+/** Reset outputs/helper + outputs/tests to the committed baseline (the pwm-blueprint
  * scaffolding: basepage/baseblock/base.fixture/logger), removing every generated
  * POM/block/spec/test-data. Git is the source of truth for the baseline. Used by
  * --isolate so a migration cannot inherit a sibling migration's locators. */
@@ -284,7 +284,7 @@ function validateEnvelopeSchema(p: Paths): boolean {
 }
 
 /** The assembled system prompt for the active profile — lean reads
- * generate.lean.md (spec + page object only); qa-master reads generate.md. */
+ * generate.lean.md (spec + page object only); pwm-blueprint reads generate.md. */
 export function assembledPromptPath(profile: Args["profile"]): string {
   if (profile === "lean") {
     const lean = join(REPO_ROOT, "prompts/_assembled/generate.lean.md");
@@ -335,8 +335,8 @@ function cacheHintsBlock(url: string | null): string {
 }
 
 /** The Stage-2 wrapper prompt — points Claude at the assembled spec + context,
- * mirroring migrate.yml. Profile-aware: lean drops the qa-master triad/STOP
- * block + style anchor and states the relaxed contract; qa-master is unchanged.
+ * mirroring migrate.yml. Profile-aware: lean drops the pwm-blueprint triad/STOP
+ * block + style anchor and states the relaxed contract; pwm-blueprint is unchanged.
  * When a DOM snapshot was captured (MIGRATION_TARGET_URL set), it is injected as
  * a closed vocabulary so Stage 2 cannot hallucinate locators; plus any
  * previously-verified locators for this app from the cache (IMP6). */
@@ -355,7 +355,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: st
     : [
       "You are running Stage 2 of the PWmodernizer pipeline (local migrate run).",
       `Read ${assembledRel} — that is your full system prompt. Follow it`,
-      "exactly, including the STOP block: write the FULL qa-master triad (spec under",
+      "exactly, including the STOP block: write the FULL pwm-blueprint triad (spec under",
       "outputs/tests/<kebab>.spec.ts importing test/expect from @fixtures/base.fixture,",
       "the PageClass under outputs/helper/page-object/pages/, and the extended",
       "base.fixture) plus any helper layers the plan declares. A spec that imports from",
@@ -365,7 +365,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: st
     `1. ${assembledRel} — task spec (READ FIRST)`,
     "2. config/migration-rules.md + config/knowledge-base.md — rules + KB IDs",
   ];
-  if (profile !== "lean") context.push("3. examples/reference/qa-master/ — style anchor");
+  if (profile !== "lean") context.push("3. examples/reference/pwm-blueprint/ — style anchor");
   context.push(`${context.length + 1}. ${p.plan} and ${p.input}`);
   return [
     ...lead,
@@ -423,7 +423,7 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     { name: "plan-code coverage", cmd: "npx", args: ["tsx", "scripts/plan-code-coverage.ts", "--envelope", p.envelope, "--output", "outputs/tests"] },
     { name: "assertion coverage (source-equivalence)", cmd: "npx", args: ["tsx", "scripts/assertion-coverage.ts", "--envelope", p.envelope, "--output", findGeneratedSpec(OUT_DIR, p.base) ?? "outputs/tests", ...(process.env["ASSERTION_COVERAGE_STRICT"] === "true" ? ["--strict"] : [])] },
     { name: "helper-usage", cmd: "npx", args: ["tsx", "scripts/validate-helper-usage.ts"] },
-    { name: "qa-master conformance", cmd: "npx", args: ["tsx", "scripts/validate-qa-master-conformance.ts", "--root", "outputs", "--input-basename", p.base, "--block-defects", ...(profile === "lean" ? ["--profile", "lean"] : [])] },
+    { name: "pwm-blueprint conformance", cmd: "npx", args: ["tsx", "scripts/validate-pwm-blueprint-conformance.ts", "--root", "outputs", "--input-basename", p.base, "--block-defects", ...(profile === "lean" ? ["--profile", "lean"] : [])] },
     // Auth self-contained: a storageState FILE reference with no producer in the
     // tree COMPILES + passes every other gate, but dies at setup (ENOENT) on a
     // real app. Catch it deterministically (zero tokens) instead of at the live
@@ -511,10 +511,10 @@ function assembledPromptChars(p: Paths, wrapperPrompt: string, profile: Args["pr
   ]) {
     total += readChars(f);
   }
-  // The qa-master reference dir is the style anchor — loaded only for qa-master;
+  // The pwm-blueprint reference dir is the style anchor — loaded only for pwm-blueprint;
   // lean does not read it (matching buildPrompt's context list).
   if (profile !== "lean") {
-    const refDir = join(REPO_ROOT, "examples/reference/qa-master");
+    const refDir = join(REPO_ROOT, "examples/reference/pwm-blueprint");
     if (existsSync(refDir)) {
       for (const f of walkFiles(refDir)) total += readChars(f);
     }

@@ -14,7 +14,7 @@ Before doing anything else, read these files end-to-end:
 
 1. **`config/knowledge-base.md`** — the full anti-pattern catalog. Every anti-pattern in the source must be matched to an entry here and cited by ID.
 2. **`config/migration-rules.md`** — the target Playwright TypeScript conventions, the plan schema (see §9), and the locator priority order.
-3. **`examples/reference/qa-master/helper/<layer>/CLAUDE.md` × 7** — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser). Read the layer files that match the structural decisions you're about to propose in §5 — they bind the plan's `requiredApi` / `requiredPages` / `requiredFixtures` / `requiredUtilities` / `requiredActions` / `requiredTestData` arrays to the rules Stage 2 will be checked against (e.g. when planning API wrappers, `helper/api/CLAUDE.md` says one wrapper per endpoint, typed, never called from a Page).
+3. **`examples/reference/pwm-blueprint/helper/<layer>/CLAUDE.md` × 7** — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser). Read the layer files that match the structural decisions you're about to propose in §5 — they bind the plan's `requiredApi` / `requiredPages` / `requiredFixtures` / `requiredUtilities` / `requiredActions` / `requiredTestData` arrays to the rules Stage 2 will be checked against (e.g. when planning API wrappers, `helper/api/CLAUDE.md` says one wrapper per endpoint, typed, never called from a Page).
 4. **The input file** — passed to you as `inputs/<framework>/<name>/<file>`. Read it line-by-line, not just skim the top.
 5. **Sibling files in the input directory** — there may be a `README.md` describing intent, a `package.json` showing dependencies, or supporting files (fixtures, page objects, config) you need to migrate together.
 
@@ -24,7 +24,7 @@ If any of these files is missing, **stop and emit a plan that says "BLOCKED: mis
 
 # Canonical anchor examples (per framework)
 
-These three migrations are the qa-master canonical examples for each source
+These three migrations are the pwm-blueprint canonical examples for each source
 framework. Stage 1 sees them on every invocation regardless of retrieval
 mode - they are the static few-shot anchor the rest of the RAG context
 augments. Phase 1, ADR-0001.
@@ -55,7 +55,7 @@ assertions.
 
 The canonical "Cypress idioms -> Playwright fixtures" case. Demonstrates:
 `cy.session` -> `storageState` fixture migration, `cy.intercept` ->
-`page.route` route stub (lifted into a fixture per qa-master), test
+`page.route` route stub (lifted into a fixture per pwm-blueprint), test
 data constants in `helper/test-data/`. Scenario IDs are `1.1` / `1.2`
 (authenticated dashboard load / mocked teams roster).
 
@@ -276,11 +276,11 @@ The pin is a contract for Stage 2: it tells the code generator EXACTLY what sele
 
 If your locator table contains zero MED/LOW rows (rare, only happens on subtractive bad-Playwright migrations where every original locator is already on the canonical hierarchy), emit the section with body "N/A — all locators are HIGH confidence." The section MUST be present even when empty so the schema validator doesn't reject the plan.
 
-### Step 5 — Structural decisions (qa-master multi-file layout)
+### Step 5 — Structural decisions (pwm-blueprint multi-file layout)
 
-The target architecture is qa-master (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
+The target architecture is pwm-blueprint (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
 
-**Style anchor — open this before planning**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating the EXACT shape Stage 2 generates against. Look at `helper/page-object/accounts.page.ts` for the canonical PageClass pattern (no-constructor, readonly fields with `.describe('[LABEL] …')`, type-prefix names, `[LABEL]` expects in page methods), `helper/fixtures/base.fixture.ts` for the single import source, and `tests/account.sign-in.spec.ts` for the canonical spec. Your plan should propose a file structure that, after Stage 2 executes it, lands code that would belong in this reference tree.
+**Style anchor — open this before planning**: `examples/reference/pwm-blueprint/` contains real-company Playwright TypeScript files demonstrating the EXACT shape Stage 2 generates against. Look at `helper/page-object/accounts.page.ts` for the canonical PageClass pattern (no-constructor, readonly fields with `.describe('[LABEL] …')`, type-prefix names, `[LABEL]` expects in page methods), `helper/fixtures/base.fixture.ts` for the single import source, and `tests/account.sign-in.spec.ts` for the canonical spec. Your plan should propose a file structure that, after Stage 2 executes it, lands code that would belong in this reference tree.
 
 For each input, decide what goes in which directory:
 
@@ -374,7 +374,7 @@ Per-file fate — record each source file as **KEPT** (reshaped), **DROPPED** (f
 
 - **`BasePage` / `BaseTest`** (parent class with `driver`, `wait`, shared helpers) — typically **DROPPED**. `WebDriverWait` / `ExpectedConditions` helpers map to Playwright web-first matchers (`await expect(...).toBeVisible()` / `.toBeHidden()`); `try-catch-as-flow` helpers (`isVisibleSafe()`) map to the same matchers. KEEP only if helpers carry domain logic.
 - **`WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture** — **DROPPED**. Playwright's `page` fixture + worker config replace it entirely. No target file.
-- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a qa-master PageClass at `outputs/helper/page-object/pages/login.page.ts`. `PageClassLogin extends BasePage` (Playwright BasePage at `@page-object/basepage`, NOT the Java one); NO own constructor; `readonly` `Locator` fields with `.describe('[Login] …')`; role-based locators where DOM evidence supports, CSS id as documented fallback. Selenium's `@FindBy` proxies become Playwright lazy locator fields referencing `this.page`.
+- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a pwm-blueprint PageClass at `outputs/helper/page-object/pages/login.page.ts`. `PageClassLogin extends BasePage` (Playwright BasePage at `@page-object/basepage`, NOT the Java one); NO own constructor; `readonly` `Locator` fields with `.describe('[Login] …')`; role-based locators where DOM evidence supports, CSS id as documented fallback. Selenium's `@FindBy` proxies become Playwright lazy locator fields referencing `this.page`.
 - **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file under `outputs/tests/`. The spec imports `test`/`expect` from `@fixtures/base.fixture` (NEVER `@playwright/test`) and uses the injected page-object fixtures the plan declared. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the page-object fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures. Specs NEVER call `page.goto()` — navigation lives on the Page's `open()` method.
 
 Stage 1 emits the per-file fate in the plan's `## Structural changes` section. Stage 2's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory — do not produce target files for DROPPED sources.

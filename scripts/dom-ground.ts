@@ -105,7 +105,7 @@ interface CliArgs {
   mode: "live" | "mock";
   highStrictOnly: boolean;
   /** Probe the whole emitted tree (spec + reachable POMs/helpers), not just the
-   * spec. qa-master hides every locator in the POMs, so a spec-only probe sees
+   * spec. pwm-blueprint hides every locator in the POMs, so a spec-only probe sees
    * zero locators and grounding can never confirm. */
   probeTree: boolean;
 }
@@ -362,7 +362,7 @@ function formatHighFailureList(failures: readonly ProbedLocator[]): string {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
-  // qa-master hides every locator in POMs/blocks reached by fixture injection,
+  // pwm-blueprint hides every locator in POMs/blocks reached by fixture injection,
   // so probing the spec alone finds zero locators and grounding can never
   // confirm. With --probe-tree we probe the SAME emitted-tree files the scorer
   // credits (spec + reachable POMs/helpers).
@@ -371,7 +371,7 @@ async function main(): Promise<void> {
   if (locators.length === 0) {
     process.stderr.write(
       `::warning::dom-ground: 0 locators found across ${probePaths.length} file(s) ` +
-        `(${args.probeTree ? "emitted tree" : args.probe}). With qa-master, probe the tree via --probe-tree.\n`,
+        `(${args.probeTree ? "emitted tree" : args.probe}). With pwm-blueprint, probe the tree via --probe-tree.\n`,
     );
   }
   const probed = await probeLocators(locators, args.url, args.mode);

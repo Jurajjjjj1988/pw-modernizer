@@ -3,13 +3,13 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassLogin } from "@page-object/pages/login.page";
 
 /**
- * Per-migration extension of the qa-master base fixture. This file is the
+ * Per-migration extension of the pwm-blueprint base fixture. This file is the
  * ONLY one in the cypress-login-flow migration allowed to import `test`
  * from `@playwright/test` - every spec imports from `@fixtures/base.fixture`
  * (this barrel).
  *
  * No storageState wiring here - the cypress source ran the login flow
- * directly in every test, and the qa-master migration follows the same
+ * directly in every test, and the pwm-blueprint migration follows the same
  * shape because the assertion under test is the login submit itself.
  */
 type Fixtures = {

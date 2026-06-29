@@ -51,10 +51,36 @@ test("findGeneratedSpec resolves a cross-language rename (Java input → kebab s
   }
 });
 
-test("findGeneratedSpec falls back to the lexically-first spec when no basename match", () => {
+test("findGeneratedSpec REFUSES to guess when several specs exist and none match (no lexically-first corruption)", () => {
+  // The old behaviour returned the lexically-first spec here — which let the
+  // repair loop pick + overwrite an unrelated committed example. Now: null.
   const dir = treeWith(["alpha.spec.ts", "zeta.spec.ts"]);
   try {
-    assert.equal(basename(findGeneratedSpec(dir, "unrelated-input.spec.ts") ?? ""), "alpha.spec.ts");
+    assert.equal(findGeneratedSpec(dir, "unrelated-input.cy.js"), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("findGeneratedSpec returns the sole spec on a single-spec tree even without a name match", () => {
+  const dir = treeWith(["only.spec.ts"]);
+  try {
+    assert.equal(basename(findGeneratedSpec(dir, "whatever-input.cy.js") ?? ""), "only.spec.ts");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("findGeneratedSpec resolves a FREE-NAMED spec by its plan-provenance header (the force-clicks fix)", () => {
+  // Reproduces the real bug: input github-internet-login.cy.js, but the model
+  // named the spec internet-login.spec.ts. The resolver must NOT return the
+  // lexically-first force-clicks.spec.ts — it must follow the provenance header.
+  const dir = mkdtempSync(join(tmpdir(), "outspec-prov-"));
+  try {
+    writeFileSync(join(dir, "force-clicks.spec.ts"), "// See outputs/plans/force-clicks.spec.ts.md for plan and rationale.\n");
+    writeFileSync(join(dir, "internet-login.spec.ts"), "// See outputs/plans/github-internet-login.cy.js.md for plan and rationale.\n");
+    const got = findGeneratedSpec(dir, "github-internet-login.cy.js");
+    assert.equal(basename(got ?? ""), "internet-login.spec.ts");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

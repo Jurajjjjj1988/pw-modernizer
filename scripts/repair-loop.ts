@@ -23,8 +23,8 @@
  *       or setup error.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -61,36 +61,135 @@ function freshSnapshot(url: string): string {
   return r.status === 0 && existsSync(out) ? readFileSync(out, "utf8") : "(snapshot capture failed)";
 }
 
-/** Build the repair prompt — the execution error is the load-bearing signal. */
-export function buildRepairPrompt(spec: string, files: string[], failureTail: string, snapshot: string, url: string): string {
+/**
+ * Pull the page-snapshot YAML block out of a Playwright `error-context.md`. On a
+ * failure Playwright writes the aria tree of the page AT THE MOMENT THE LOCATOR
+ * FAILED — the exact page (already navigated + authenticated) the broken locator
+ * ran against. That is a strictly better repair signal than re-snapshotting the
+ * base URL, which only ever shows the login/landing page (IMP8). Returns the
+ * fenced ```yaml block's body, or "" if the file carries no snapshot.
+ */
+export function extractPageSnapshot(md: string): string {
+  const m = /```ya?ml\s*\n([\s\S]*?)```/.exec(md);
+  return m ? (m[1] ?? "").trim() : "";
+}
+
+/**
+ * Find the newest `error-context.md` Playwright wrote for THIS spec and return
+ * its failure-time page snapshot. Playwright names each result dir
+ * `<specStem>-<title>-<project>`, so we match dirs by the spec's kebab stem and
+ * pick the most recently modified. Returns "" when none exists (caller falls
+ * back to a fresh base-URL snapshot).
+ */
+export function findFailureSnapshot(specStem: string, root = join(REPO_ROOT, "test-results")): string {
+  if (!existsSync(root)) return "";
+  let newest: { path: string; mtime: number } | null = null;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (!(entry.name === specStem || entry.name.startsWith(`${specStem}-`))) continue;
+    const ctx = join(root, entry.name, "error-context.md");
+    if (!existsSync(ctx)) continue;
+    const mtime = statSync(ctx).mtimeMs;
+    if (!newest || mtime > newest.mtime) newest = { path: ctx, mtime };
+  }
+  if (!newest) return "";
+  return extractPageSnapshot(readFileSync(newest.path, "utf8"));
+}
+
+/** Pick the repair grounding: Playwright's failure-time page snapshot if present
+ * (the exact page the broken locator ran against), else a fresh base-URL snap. */
+function selectRepairSnapshot(spec: string, url: string): { snapshot: string; atFailure: boolean } {
+  const failSnap = findFailureSnapshot(basename(spec).replace(/\.spec\.ts$/, ""));
+  if (failSnap.length > 0) {
+    process.stdout.write("    grounding repair with the FAILURE-TIME page snapshot (error-context.md)\n");
+    return { snapshot: failSnap, atFailure: true };
+  }
+  process.stdout.write("    grounding repair with a fresh base-URL snapshot\n");
+  return { snapshot: freshSnapshot(url), atFailure: false };
+}
+
+/**
+ * Detect the "auth is not self-contained" failure class: the migrated tree
+ * references a `storageState` file (the idiomatic Playwright pre-baked-auth
+ * pattern) that NOTHING in the pipeline produces, so every test dies at setup
+ * with ENOENT before a page ever loads. The repair model can't fix this by
+ * tweaking locators — it has to make authentication self-contained (IMP9).
+ */
+export function isAuthBootstrapFailure(failureTail: string): boolean {
+  return /storage ?state|reading storage state|\.auth[/\\]|ENOENT[^\n]*auth/i.test(failureTail);
+}
+
+/** Build the repair prompt — the execution error is the load-bearing signal.
+ * When `atFailure` is true, `snapshot` is Playwright's aria tree captured at the
+ * exact moment the locator failed (the right page, already authenticated) — far
+ * more authoritative than a fresh base-URL snapshot, so we say so and show more.
+ * `source` (the original legacy test) is the INTENT reference: the behaviours +
+ * the real login steps the migration must preserve (IMP9). */
+export function buildRepairPrompt(
+  spec: string, files: string[], failureTail: string, snapshot: string, url: string,
+  atFailure = false, source = "",
+): string {
   const fileList = files.map((f) => `- ${relative(REPO_ROOT, f)}`).join("\n");
-  return [
+  const snapHeader = atFailure
+    ? "## The page's accessibility tree AT THE MOMENT OF FAILURE (the exact page the broken locator ran against — authoritative)"
+    : "## The live page's accessibility tree RIGHT NOW (the closed vocabulary — only these exist)";
+  const tail = failureTail.trim().split("\n").slice(-40).join("\n");
+  const lines = [
     "You are repairing a migrated Playwright test that COMPILES and passes every static gate",
     `but FAILS when run against the real app (${url}). The execution error is the ground truth.`,
     "",
     "## The failure (from `playwright test` against the live app)",
     "```",
-    failureTail.trim().split("\n").slice(-40).join("\n"),
+    tail,
     "```",
     "",
-    "## The live page's accessibility tree RIGHT NOW (the closed vocabulary — only these exist)",
+    snapHeader,
     "```yaml",
-    snapshot.trim().split("\n").slice(0, 60).join("\n"),
+    snapshot.trim().split("\n").slice(0, atFailure ? 90 : 60).join("\n"),
     "```",
     "",
+  ];
+  if (source.trim().length > 0) {
+    lines.push(
+      "## The SOURCE test (the INTENT reference — preserve these behaviours AND its login steps)",
+      "```",
+      source.trim().slice(0, 3000),
+      "```",
+      "",
+    );
+  }
+  // Auth-bootstrap failure: the test depends on a storageState file the pipeline
+  // never creates. Tweaking locators cannot fix it — make auth self-contained.
+  if (isAuthBootstrapFailure(tail)) {
+    lines.push(
+      "## CRITICAL — authentication is NOT self-contained (fix THIS first)",
+      "The test depends on a `storageState` auth file that this pipeline never creates, so it dies at",
+      "setup before any page loads. You MUST make authentication self-contained. Prefer the option that",
+      "matches the SOURCE: the source logs in inline (in a `beforeEach`), so:",
+      "- PREFERRED: remove the `storageState` fixture dependency and perform the login INLINE in a",
+      "  `test.beforeEach` (navigate to the login page, fill credentials, submit) using a LoginPage page",
+      "  object and the SOURCE's exact selectors/steps. The test must log itself in with no external file.",
+      "- Credentials: read from env (e.g. `process.env.SAUCE_USERNAME`) with the standard SauceDemo",
+      "  fallback (`standard_user` / `secret_sauce`) so the test runs unattended.",
+      "- Do NOT invent a storageState file path and do NOT leave a dangling auth fixture.",
+      "",
+    );
+  }
+  lines.push(
     "## Files you may edit (the spec + the page objects it reaches — edit ONLY these)",
     fileList,
     "",
     "## Your task",
-    `- Fix the locators/assertions so the test PASSES against ${url}.`,
+    `- Fix the test so it PASSES against ${url}.`,
     "- The accessible NAME in the snapshot is authoritative, but the snapshot does NOT tell you how the",
     "  name is derived. If `getByLabel(name)` fails, the field likely has a placeholder or aria-label, not a",
     "  <label>: prefer `getByRole('textbox', { name })` or `getByPlaceholder(name)` — pick the one that",
     "  actually resolves on this page.",
     "- Keep qa-master architecture (locators in the page object, web-first assertions, no hard waits).",
     "- Do NOT weaken assertions to make them pass; fix the locator/target so the real assertion holds.",
-    "- Edit the existing files in place. Do not create new files.",
-  ].join("\n");
+    "- Edit the existing files in place (you MAY add a LoginPage page object if auth needs it).",
+  );
+  return lines.join("\n");
 }
 
 function runClaude(auth: Auth, prompt: string): boolean {
@@ -104,11 +203,37 @@ function runClaude(auth: Auth, prompt: string): boolean {
   return r.status === 0;
 }
 
+/** One repair attempt after a failed run: build the prompt + (mock or) call
+ * Claude to edit in place. Returns null to continue the loop, or an exit code. */
+function handleFailure(base: string, url: string, source: string, mock: boolean, failureTail: string): number | null {
+  const spec = findGeneratedSpec(OUT_DIR, base);
+  if (!spec) { process.stderr.write(`  no spec for ${base}\n`); return 1; }
+  const files = collectEmittedFiles(spec).filter(existsSync);
+  // Prefer Playwright's failure-time page snapshot (the exact page the broken
+  // locator ran against) over a blind base-URL re-snapshot (IMP8).
+  const { snapshot, atFailure } = selectRepairSnapshot(spec, url);
+  const prompt = buildRepairPrompt(spec, files, failureTail, snapshot, url, atFailure, source);
+
+  if (mock) {
+    const mockOut = join(REPO_ROOT, "outputs/reports", "_repair-prompt.txt");
+    mkdirSync(dirname(mockOut), { recursive: true });
+    writeFileSync(mockOut, prompt);
+    process.stdout.write(`  [mock] repair prompt written to ${relative(REPO_ROOT, mockOut)} (${files.length} files in scope); no Claude call.\n`);
+    return 1;
+  }
+  const auth = detectAuth();
+  if (auth.kind === "none") { process.stderr.write("  no Claude auth (set CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY).\n"); return 1; }
+  process.stdout.write(`  ⚠ calling Claude to repair (${files.length} files in scope) ...\n`);
+  if (!runClaude(auth, prompt)) { process.stderr.write("  Claude repair call failed.\n"); return 1; }
+  return null;
+}
+
 function main(): number {
   const { values } = parseArgs({
     options: {
       "input-basename": { type: "string" },
       url: { type: "string" },
+      source: { type: "string" },
       "max-iterations": { type: "string", default: "3" },
       mock: { type: "boolean", default: false },
     },
@@ -120,6 +245,8 @@ function main(): number {
     process.stderr.write("repair-loop: --input-basename <base> and --url <sut> are required.\n");
     return 1;
   }
+  // The original legacy test — the intent reference (behaviours + login steps).
+  const source = values.source && existsSync(values.source) ? readFileSync(values.source, "utf8") : "";
   const maxIter = Math.max(1, Number(values["max-iterations"] ?? "3"));
 
   for (let iter = 1; iter <= maxIter; iter++) {
@@ -130,22 +257,8 @@ function main(): number {
       return 0;
     }
     process.stdout.write(`  ✗ failed against the live app — capturing snapshot + reaching files for repair\n`);
-    const spec = findGeneratedSpec(OUT_DIR, base);
-    if (!spec) { process.stderr.write(`  no spec for ${base}\n`); return 1; }
-    const files = collectEmittedFiles(spec).filter(existsSync);
-    const prompt = buildRepairPrompt(spec, files, gate.failureTail, freshSnapshot(url), url);
-
-    if (values.mock) {
-      const mockOut = join(REPO_ROOT, "outputs/reports", "_repair-prompt.txt");
-      mkdirSync(dirname(mockOut), { recursive: true });
-      writeFileSync(mockOut, prompt);
-      process.stdout.write(`  [mock] repair prompt written to ${relative(REPO_ROOT, mockOut)} (${files.length} files in scope); no Claude call.\n`);
-      return 1;
-    }
-    const auth = detectAuth();
-    if (auth.kind === "none") { process.stderr.write("  no Claude auth (set CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY).\n"); return 1; }
-    process.stdout.write(`  ⚠ calling Claude to repair (${files.length} files in scope) ...\n`);
-    if (!runClaude(auth, prompt)) { process.stderr.write("  Claude repair call failed.\n"); return 1; }
+    const code = handleFailure(base, url, source, values.mock === true, gate.failureTail);
+    if (code !== null) return code;
   }
   process.stdout.write(`\n  ✗ still failing after ${maxIter} repair iteration(s) — needs human review.\n`);
   return 1;

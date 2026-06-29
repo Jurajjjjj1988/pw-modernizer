@@ -100,7 +100,23 @@ function splitSections(md: string): Map<string, string> {
   return sections;
 }
 
-function parseSourceFramework(body: string): Envelope["sourceFramework"] {
+/**
+ * Robust fallback: infer the source framework from the input FILE EXTENSION when
+ * the plan body doesn't name it in a canonical form. The extension is reliable
+ * (`.cy.js`/`.cy.ts` → Cypress, `.java` → Selenium-Java, `.py` → Selenium-Python,
+ * `.spec.ts`/`.spec.js`/`.ts`/`.js` → the bad-Playwright lens). Returns null when
+ * the basename gives no signal. Exported for tests.
+ */
+export function inferFrameworkFromBasename(inputBasename: string): Envelope["sourceFramework"] | null {
+  const b = inputBasename.toLowerCase();
+  if (/\.cy\.[jt]s$/.test(b)) return "cypress";
+  if (b.endsWith(".java")) return "selenium-java";
+  if (b.endsWith(".py")) return "selenium-python";
+  if (/\.(spec|test)\.[jt]s$/.test(b) || b.endsWith(".ts") || b.endsWith(".js")) return "bad-playwright";
+  return null;
+}
+
+function parseSourceFramework(body: string, inputBasename = ""): Envelope["sourceFramework"] {
   // Look for a known framework keyword anywhere in the body — tolerant of
   // both '## Source framework\n\nbad-playwright' and '## Source → Target\n\n- Source framework: selenium-java'
   // shapes seen across plan styles.
@@ -109,7 +125,14 @@ function parseSourceFramework(body: string): Envelope["sourceFramework"] {
   if (lowered.includes("selenium-java") || lowered.includes("selenium java")) return "selenium-java";
   if (lowered.includes("selenium-python") || lowered.includes("selenium python")) return "selenium-python";
   if (lowered.includes("cypress")) return "cypress";
-  throw new Error(`Source framework not recognised in: "${body.slice(0, 200)}"`);
+  // The plan didn't name the framework in a canonical form (an LLM-variability
+  // case that previously THREW + crashed the whole derivation → envelope gate
+  // failed opaquely). Fall back to the reliable input extension before giving up
+  // — derive-envelope's contract is that an envelope ALWAYS exists (recoverable),
+  // so a missing keyword must degrade, not abort.
+  const inferred = inferFrameworkFromBasename(inputBasename);
+  if (inferred !== null) return inferred;
+  throw new Error(`Source framework not recognised in plan body or input basename "${inputBasename}": "${body.slice(0, 200)}"`);
 }
 
 /**
@@ -369,7 +392,7 @@ export function deriveEnvelope(md: string, inputBasename: string): Envelope {
   // Source framework: prefer dedicated section, but multi-file plans use
   // '## Source → Target' instead. Fall back to scanning the whole markdown.
   const frameworkBody = get("Source framework") || get("Source → Target") || md;
-  const sourceFramework = parseSourceFramework(frameworkBody);
+  const sourceFramework = parseSourceFramework(frameworkBody, inputBasename);
   const locatorTable = parseLocatorTable(get("Locator translation table"));
   const { requiredPOMs, requiredFixtures } = parseStructuralChanges(get("Structural changes"));
   const expectedMetrics = parseExpectedMetrics(get("Expected metrics"));
@@ -408,7 +431,19 @@ function main(): void {
   }
   const md = readFileSync(values.plan, "utf-8");
   const inputBasename = basename(values.plan).replace(/\.md$/, "");
-  const envelope = deriveEnvelope(md, inputBasename);
+  let envelope: Envelope;
+  try {
+    envelope = deriveEnvelope(md, inputBasename);
+  } catch (err) {
+    // A section parser threw (e.g. an unparseable framework/confidence). Emit an
+    // ACTIONABLE annotation naming the plan + the cause instead of an opaque
+    // stack trace, so an intermittent failure is diagnosable on first sight
+    // rather than lost — and exit 1 cleanly for the caller's envelope gate.
+    const reason = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`::error::derive-envelope: could not derive an envelope from ${values.plan} — ${reason}\n`);
+    process.stderr.write("  Fix: ensure the plan names the source framework (or keep the input's .cy.js/.java/.py/.spec.ts extension) and that section tables are well-formed.\n");
+    process.exit(1);
+  }
   mkdirSync(dirname(values.out), { recursive: true });
   writeFileSync(values.out, JSON.stringify(envelope, null, 2) + "\n");
   console.log(`derive-envelope: wrote ${values.out}`);

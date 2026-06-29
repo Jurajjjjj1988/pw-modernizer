@@ -39,6 +39,7 @@ import { computeCostUsd } from "./metrics.js";
 import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
 import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
 import { appKey, loadCache, renderCacheHints, recordFromReport } from "./locator-cache.js";
+import { runClaudeCli } from "./lib/claude-cli.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -392,15 +393,14 @@ function runClaude(auth: Auth, prompt: string): void {
   const env = { ...process.env };
   if (auth.kind === "oauth") { env["CLAUDE_CODE_OAUTH_TOKEN"] = auth.value; delete env["ANTHROPIC_API_KEY"]; }
   else { env["ANTHROPIC_API_KEY"] = auth.value; delete env["CLAUDE_CODE_OAUTH_TOKEN"]; }
-  const r = spawnSync("npx", [
-    "--yes", "@anthropic-ai/claude-code",
+  const r = runClaudeCli([
     "--model", "claude-sonnet-4-6",
     "--max-turns", "50",
     "--print",
     "--permission-mode", "acceptEdits",
     prompt,
-  ], { cwd: REPO_ROOT, env, stdio: ["ignore", "inherit", "inherit"] });
-  if (r.status !== 0) fail("Claude generate call failed — see output above.");
+  ], { cwd: REPO_ROOT, env });
+  if (!r.ok) fail(r.timedOut ? "Claude generate call timed out (hung CLI) — retry, or raise CLAUDE_CLI_TIMEOUT_MS." : "Claude generate call failed — see output above.");
   process.stdout.write("  [step] Claude generate done\n");
 }
 

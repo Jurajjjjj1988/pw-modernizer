@@ -32,6 +32,7 @@ import { collectEmittedFiles } from "./evaluate.js";
 import { findGeneratedSpec } from "./output-spec.js";
 import { extractPwAssertions, compareStrength, type PwAssertion, type StrengthViolation } from "./lib/assertion-ast.js";
 import { detectFailureClasses } from "./lib/failure-detectors.js";
+import { runClaudeCli } from "./lib/claude-cli.js";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const OUT_DIR = join(REPO_ROOT, "outputs/tests");
@@ -204,11 +205,12 @@ function runClaude(auth: Auth, prompt: string): boolean {
   const env = { ...process.env };
   if (auth.kind === "oauth") { env["CLAUDE_CODE_OAUTH_TOKEN"] = auth.value; delete env["ANTHROPIC_API_KEY"]; }
   else { env["ANTHROPIC_API_KEY"] = auth.value; delete env["CLAUDE_CODE_OAUTH_TOKEN"]; }
-  const r = spawnSync("npx", [
-    "--yes", "@anthropic-ai/claude-code",
-    "--model", "claude-sonnet-4-6", "--max-turns", "30", "--print", "--permission-mode", "acceptEdits", prompt,
-  ], { cwd: REPO_ROOT, env, stdio: ["ignore", "inherit", "inherit"] });
-  return r.status === 0;
+  const r = runClaudeCli(
+    ["--model", "claude-sonnet-4-6", "--max-turns", "30", "--print", "--permission-mode", "acceptEdits", prompt],
+    { cwd: REPO_ROOT, env },
+  );
+  if (r.timedOut) process.stderr.write("  ⚠ repair call timed out (hung CLI) after retries.\n");
+  return r.ok;
 }
 
 /** Run eslint (incl. eslint-plugin-playwright) on the emitted .ts files; the same

@@ -1,4 +1,4 @@
-# qa-master — production-grade style anchor
+# pwm-blueprint — production-grade style anchor
 
 Real-company production Playwright TypeScript test suite, used by PWmodernizer
 as the **target architecture style anchor** that Stage 2 generates against
@@ -13,7 +13,7 @@ as the **target architecture style anchor** that Stage 2 generates against
 2. **Style anchor** (Stage 2 prompt): `prompts/_assembled/generate.md`
    references this directory as the "what good looks like" target. The
    generated `.spec.ts` and POMs should look like they belong in this tree.
-3. **Conformance validator** (`scripts/validate-qa-master-conformance.ts`)
+3. **Conformance validator** (`scripts/validate-pwm-blueprint-conformance.ts`)
    gates Stage 2 output against the rules these files demonstrate —
    `.describe()` coverage, `[LABEL]` discipline, path-alias usage, no
    `@playwright/test` imports outside the fixture file.
@@ -59,7 +59,7 @@ This is a STYLE REFERENCE, not a runtime dependency of PWmodernizer.
 
 - PWmodernizer does NOT install or compile these files. There's no
   `npm install` from this directory.
-- Generated tests **do not import from `examples/reference/qa-master/`**.
+- Generated tests **do not import from `examples/reference/pwm-blueprint/`**.
   They import from their own target project's `helper/` tree.
 - This directory is for SONNET to read at Stage 2 generation time, not for
   `tsc` to typecheck.
@@ -67,7 +67,7 @@ This is a STYLE REFERENCE, not a runtime dependency of PWmodernizer.
 ## See also
 
 - `config/migration-rules.md` §1–§4 — the rules these files demonstrate.
-- `config/knowledge-base.md` § `qa-master/` namespace — the anti-pattern
+- `config/knowledge-base.md` § `pwm-blueprint/` namespace — the anti-pattern
   catalogue derived from CLAUDE.md + ARCHITECTURE.md.
-- `scripts/validate-qa-master-conformance.ts` — the validator that enforces
+- `scripts/validate-pwm-blueprint-conformance.ts` — the validator that enforces
   the patterns shown here.

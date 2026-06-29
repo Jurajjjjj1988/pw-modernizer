@@ -2,7 +2,7 @@ import { test, expect } from "@fixtures/base.fixture";
 
 /**
  * Migrated from inputs/selenium-java/EmployeesTest.java. The JUnit source
- * opened the employees grid and asserted a known row exists; qa-master moves
+ * opened the employees grid and asserted a known row exists; pwm-blueprint moves
  * the grid interaction into EmployeesPage and uses Playwright auto-wait.
  */
 test.describe("Employees: directory grid", { tag: ["@desktop"] }, () => {

@@ -16,7 +16,7 @@ Two things to internalize before you start:
 1. **`outputs/plans/<input-basename>.envelope.json`** — the machine-validatable contract. READ THIS FIRST. ROADMAP v1.0 "Plan envelope enforcement" guarantees this file exists (Stage 1 emits it; a derive-envelope safety net fills it in if Stage 1 didn't; `plan-envelope-validate.ts` gates both stages). It is the canonical source for:
    - `scenarios[].id` — emit one `// plan:scenario=<id>` comment on EVERY generated `test(...)` block. `scripts/plan-envelope-validate.ts --code` runs after generation and fails if any envelope scenario lacks a pin, if any pin is duplicated, or if any pin references an id not in the envelope.
    - `requiredPOMs[]` / `requiredFixtures[]` — the authoritative file list. Produce exactly those paths, no more, no less. Missing paths fail the post-generation gate.
-   - `subtractive` flag — when `true` (bad-playwright source), the envelope's tree-wide foreign-import gate (`plan-envelope-validate.ts`) only permits `@playwright/test`/`playwright`, relative paths, `node:*`, and `@`-aliases; its job is to reject ADDED frameworks (Cypress/Selenium). It does NOT relax the spec import-source rule: in `outputs/tests/*.spec.ts`, `test`+`expect` still come from `@fixtures/base.fixture` (see §16(a)), and `validate-qa-master-conformance.ts` hard-fails `from '@playwright/test'` in a spec even for subtractive migrations. Raw `@playwright/test` is legal only in `outputs/helper/fixtures/base.fixture.ts`.
+   - `subtractive` flag — when `true` (bad-playwright source), the envelope's tree-wide foreign-import gate (`plan-envelope-validate.ts`) only permits `@playwright/test`/`playwright`, relative paths, `node:*`, and `@`-aliases; its job is to reject ADDED frameworks (Cypress/Selenium). It does NOT relax the spec import-source rule: in `outputs/tests/*.spec.ts`, `test`+`expect` still come from `@fixtures/base.fixture` (see §16(a)), and `validate-pwm-blueprint-conformance.ts` hard-fails `from '@playwright/test'` in a spec even for subtractive migrations. Raw `@playwright/test` is legal only in `outputs/helper/fixtures/base.fixture.ts`.
 2. **`outputs/plans/<input-basename>.md`** — the approved plan markdown. Read end-to-end after the envelope. Use it for human-reasoned context: reviewer notes, risk callouts, anti-pattern fixes, locator translation rationale. When markdown and envelope disagree on anything machine-checked (scenario IDs, file paths, subtractive flag), the envelope wins.
 3. **The original input file** — at `inputs/<framework>/<name>/<file>`. You need this to preserve assertion behaviour and intent. **You are not migrating from the input — you are executing the plan against the input.**
 4. **`config/migration-rules.md`** — target conventions, locator priority, file structure, naming, formatting. Every rule applies.
@@ -24,17 +24,17 @@ Two things to internalize before you start:
 
 If the envelope JSON is missing or unreadable, **stop**. Emit `outputs/reports/<input-basename>.md` with body `BLOCKED: envelope file missing at outputs/plans/<input-basename>.envelope.json` and exit. Same protocol if the markdown plan is missing.
 
-## Your task — files to produce (qa-master multi-file layout)
+## Your task — files to produce (pwm-blueprint multi-file layout)
 
-Target architecture is qa-master (`config/migration-rules.md` §1). Output is always a layered tree, never a single bare spec. Stage 1 declares every file you must emit in the plan's §5 summary table; the envelope JSON's `required*` arrays MUST match what you actually write.
+Target architecture is pwm-blueprint (`config/migration-rules.md` §1). Output is always a layered tree, never a single bare spec. Stage 1 declares every file you must emit in the plan's §5 summary table; the envelope JSON's `required*` arrays MUST match what you actually write.
 
-**Style anchor — read before generating**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating EXACTLY the shape your output should take. Specifically:
-- `examples/reference/qa-master/helper/page-object/basepage.ts` — the abstract base every Page extends (NO own constructor in subclasses)
-- `examples/reference/qa-master/helper/page-object/accounts.page.ts`, `cart.page.ts` — canonical PageClass shape: readonly fields, `.describe('[LABEL] …')` on every locator, type-prefix names, `[LABEL]` message in every `expect()` inside page methods
-- `examples/reference/qa-master/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`; the only file allowed to import from `@playwright/test`
-- `examples/reference/qa-master/helper/api/accounts.api.ts` — the data-prep wrapper pattern: typed functions over HTTP, never called from a Page object
-- `examples/reference/qa-master/tests/account.sign-in.spec.ts` — the canonical spec: imports `test`/`expect` from `@fixtures/base.fixture`, uses injected page-object fixtures, asserts via UI
-- Per-layer rules — `examples/reference/qa-master/helper/<layer>/CLAUDE.md` × 7 — read the one matching each file you write:
+**Style anchor — read before generating**: `examples/reference/pwm-blueprint/` contains real-company Playwright TypeScript files demonstrating EXACTLY the shape your output should take. Specifically:
+- `examples/reference/pwm-blueprint/helper/page-object/basepage.ts` — the abstract base every Page extends (NO own constructor in subclasses)
+- `examples/reference/pwm-blueprint/helper/page-object/accounts.page.ts`, `cart.page.ts` — canonical PageClass shape: readonly fields, `.describe('[LABEL] …')` on every locator, type-prefix names, `[LABEL]` message in every `expect()` inside page methods
+- `examples/reference/pwm-blueprint/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`; the only file allowed to import from `@playwright/test`
+- `examples/reference/pwm-blueprint/helper/api/accounts.api.ts` — the data-prep wrapper pattern: typed functions over HTTP, never called from a Page object
+- `examples/reference/pwm-blueprint/tests/account.sign-in.spec.ts` — the canonical spec: imports `test`/`expect` from `@fixtures/base.fixture`, uses injected page-object fixtures, asserts via UI
+- Per-layer rules — `examples/reference/pwm-blueprint/helper/<layer>/CLAUDE.md` × 7 — read the one matching each file you write:
   - `api/CLAUDE.md` — one wrapper per endpoint, typed functions over HTTP, never called from a Page
   - `fixtures/CLAUDE.md` — `base.fixture.ts` is the ONLY `@playwright/test` importer; extension pattern for injecting Pages
   - `page-object/CLAUDE.md` — no-constructor / readonly fields / `.describe('[LABEL] …')` / type-prefix locator names / `[LABEL]` `expect` messages; Pages vs Blocks split
@@ -89,8 +89,8 @@ The envelope JSON's `required*` arrays MUST list EVERY file you write (except th
 
 ### Imports policy — STRICT (two scopes)
 
-- **In specs (`outputs/tests/*.spec.ts`): NEVER import from `@playwright/test`.** Specs import `test` + `expect` from `@fixtures/base.fixture` — the single spec-layer source. `validate-qa-master-conformance.ts` hard-fails any other shape.
-- **In helpers (`outputs/helper/**`): `expect` and type imports are ALLOWED from `@playwright/test`.** PageClass methods call `expect(this.locator, '[LABEL] WHY').toBe…()` legitimately — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1. The ONLY runtime symbol restricted in helpers is `test`: only `outputs/helper/fixtures/base.fixture.ts` may import `test` from `@playwright/test`.
+- **In specs (`outputs/tests/*.spec.ts`): NEVER import from `@playwright/test`.** Specs import `test` + `expect` from `@fixtures/base.fixture` — the single spec-layer source. `validate-pwm-blueprint-conformance.ts` hard-fails any other shape.
+- **In helpers (`outputs/helper/**`): `expect` and type imports are ALLOWED from `@playwright/test`.** PageClass methods call `expect(this.locator, '[LABEL] WHY').toBe…()` legitimately — see `examples/reference/pwm-blueprint/helper/page-object/accounts.page.ts` line 1. The ONLY runtime symbol restricted in helpers is `test`: only `outputs/helper/fixtures/base.fixture.ts` may import `test` from `@playwright/test`.
 - **Path aliases ONLY across helper boundaries.** `@page-object/pages/…`, `@actions/…`, `@fixtures/…`, `@api/…`, `@browser/…`, `@test-data/…`, `@project-types/…`, `@utilities/…`, `@logger`. No relative `../` imports between `helper/*` subdirs.
 - **Import order**: node:* → @fixtures → @actions → @api → @page-object,@browser → @test-data,@project-types,@utilities. Alphabetical within each group.
 
@@ -111,7 +111,7 @@ Procedure for every helper file you intend to write:
 
 1. Read the file path with the Read tool (relative to repo root).
 2. If Read succeeds: the file ALREADY exists on main. **EXTEND** it — preserve every existing locator field, method, and import, then APPEND your additions in topical order. Do not delete or reorder existing entries.
-3. If Read fails with "file not found": the file is new. Create it fresh per qa-master conventions.
+3. If Read fails with "file not found": the file is new. Create it fresh per pwm-blueprint conventions.
 
 This rule mirrors `base.fixture.ts` "EXTEND, never recreate" but generalizes to every shared helper. The only files exempt are per-migration outputs (`outputs/tests/<feature>.spec.ts`, `outputs/reports/<input>.md`) and the migration's own scenario-specific page (when the page name is unique to this input).
 
@@ -123,7 +123,7 @@ For SMALL inputs (a single test that touches one Page, no data prep, no parsing)
 - `outputs/tests/<feature>.spec.ts` (the spec)
 - `outputs/reports/<input-basename>.md` (the report)
 
-Plus an OPTIONAL extension of `outputs/helper/fixtures/base.fixture.ts` to inject the new PageClass fixture. Even the trivial case rests on the qa-master scaffolding — there is no "minimal mode" that skips it.
+Plus an OPTIONAL extension of `outputs/helper/fixtures/base.fixture.ts` to inject the new PageClass fixture. Even the trivial case rests on the pwm-blueprint scaffolding — there is no "minimal mode" that skips it.
 
 <!-- include-begin: selenium-multifile-rules -->
 Selenium sources are usually DIRECTORIES, not single files (e.g., `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent `base_test.py` + `pages/*.py` + `conftest.py`). Treat the directory as **one migration unit** — the plan describes the whole unit, not file-by-file.
@@ -134,7 +134,7 @@ Per-file fate — record each source file as **KEPT** (reshaped), **DROPPED** (f
 
 - **`BasePage` / `BaseTest`** (parent class with `driver`, `wait`, shared helpers) — typically **DROPPED**. `WebDriverWait` / `ExpectedConditions` helpers map to Playwright web-first matchers (`await expect(...).toBeVisible()` / `.toBeHidden()`); `try-catch-as-flow` helpers (`isVisibleSafe()`) map to the same matchers. KEEP only if helpers carry domain logic.
 - **`WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture** — **DROPPED**. Playwright's `page` fixture + worker config replace it entirely. No target file.
-- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a qa-master PageClass at `outputs/helper/page-object/pages/login.page.ts`. `PageClassLogin extends BasePage` (Playwright BasePage at `@page-object/basepage`, NOT the Java one); NO own constructor; `readonly` `Locator` fields with `.describe('[Login] …')`; role-based locators where DOM evidence supports, CSS id as documented fallback. Selenium's `@FindBy` proxies become Playwright lazy locator fields referencing `this.page`.
+- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a pwm-blueprint PageClass at `outputs/helper/page-object/pages/login.page.ts`. `PageClassLogin extends BasePage` (Playwright BasePage at `@page-object/basepage`, NOT the Java one); NO own constructor; `readonly` `Locator` fields with `.describe('[Login] …')`; role-based locators where DOM evidence supports, CSS id as documented fallback. Selenium's `@FindBy` proxies become Playwright lazy locator fields referencing `this.page`.
 - **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file under `outputs/tests/`. The spec imports `test`/`expect` from `@fixtures/base.fixture` (NEVER `@playwright/test`) and uses the injected page-object fixtures the plan declared. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the page-object fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures. Specs NEVER call `page.goto()` — navigation lives on the Page's `open()` method.
 
 Stage 1 emits the per-file fate in the plan's `## Structural changes` section. Stage 2's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory — do not produce target files for DROPPED sources.
@@ -211,7 +211,7 @@ Canonical source: `config/migration-rules.md` §5.
 
 Additional generator-specific rules (not covered by the forbidden-patterns list):
 
-- **All imports correct (v0.2.0 qa-master, two scopes).** SPECS (`outputs/tests/*.spec.ts`) import `test` + `expect` from `@fixtures/base.fixture` — NEVER `@playwright/test`. HELPERS (`outputs/helper/**`) may import `expect` and types (`type Page`, `type Locator`) from `@playwright/test` (PageClass methods use `expect` for `[LABEL]`-prefixed page-level assertions — see `examples/reference/qa-master/helper/page-object/accounts.page.ts` line 1) — but only `outputs/helper/fixtures/base.fixture.ts` may import `test`. Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
+- **All imports correct (v0.2.0 pwm-blueprint, two scopes).** SPECS (`outputs/tests/*.spec.ts`) import `test` + `expect` from `@fixtures/base.fixture` — NEVER `@playwright/test`. HELPERS (`outputs/helper/**`) may import `expect` and types (`type Page`, `type Locator`) from `@playwright/test` (PageClass methods use `expect` for `[LABEL]`-prefixed page-level assertions — see `examples/reference/pwm-blueprint/helper/page-object/accounts.page.ts` line 1) — but only `outputs/helper/fixtures/base.fixture.ts` may import `test`. Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
 - **Test titles use the `[TICKET-ID] - Check that <outcome>` form** (e.g. `[CHK-1] - Check that checkout opens when the cart has items`) — a user-perceivable outcome, never "should..." (per §1 and `migration-rules.md` §"Test titles").
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
@@ -278,7 +278,7 @@ Write exactly this structure to `outputs/reports/<input-basename>.md`:
 - Source file: <relative path>
 - Source LOC: <N>
 - Output LOC: <M> (sum across all produced files)
-- Files produced (v0.2.0 qa-master architecture — list every file you wrote):
+- Files produced (v0.2.0 pwm-blueprint architecture — list every file you wrote):
   - outputs/tests/<input-basename>.spec.ts (<X> LOC)
   - outputs/helper/fixtures/base.fixture.ts (<X> LOC) [if created or extended]
   - outputs/helper/page-object/basepage.ts (<X> LOC) [if created]
@@ -413,12 +413,12 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
 
     The same rule applies to ANY async event handler where the action depends on the handler completing (`page.on('request')`, `page.on('response')` chains, etc.) — assertions inside a handler that gates a downstream action are an ergonomic failure even when the test still detects the regression.
 
-16. **v0.2.0 qa-master spec discipline — single import source + no `page.goto` in specs.** Stage 2 retest run 27257207504 (PromptJupiter, 2026-06-10) failed the `validate-qa-master-conformance.ts` gate with two `block`-severity violations Sonnet committed despite the v0.2.0 architecture sections of `migration-rules.md` already saying so. Repeated here as hard rules with explicit forbidden examples:
+16. **v0.2.0 pwm-blueprint spec discipline — single import source + no `page.goto` in specs.** Stage 2 retest run 27257207504 (PromptJupiter, 2026-06-10) failed the `validate-pwm-blueprint-conformance.ts` gate with two `block`-severity violations Sonnet committed despite the v0.2.0 architecture sections of `migration-rules.md` already saying so. Repeated here as hard rules with explicit forbidden examples:
 
     **(a) Spec imports MUST come from `@fixtures/base.fixture`.** The conformance validator hard-fails on `from '@playwright/test'` in any spec. Only `outputs/helper/fixtures/base.fixture.ts` may import from `@playwright/test` — every spec consumes the re-exported `test` + `expect` through the fixture path alias. Why: per-test page-object injection, API user fixture, cookie injection, start/finish logging. Single source means ONE place to change the contract.
 
     ```ts
-    // ❌ WRONG — KB qa-master/architecture/import-source — block-severity fail
+    // ❌ WRONG — KB pwm-blueprint/architecture/import-source — block-severity fail
     import { test, expect } from "@playwright/test";
 
     test("[CHK-7] - Check that the prompt dialog opens", async ({ page }) => {
@@ -429,7 +429,7 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
     ```
 
     ```ts
-    // ✅ CORRECT — qa-master compliant, validator-clean
+    // ✅ CORRECT — pwm-blueprint compliant, validator-clean
     import { test, expect } from "@fixtures/base.fixture";
 
     test("[CHK-7] - Check that the prompt dialog opens", async ({ promptDialogPage }) => {
@@ -446,7 +446,7 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
 
     **(c) Always emit the v0.2.0 baseline scaffolding — even when the envelope is silent.** Sonnet on the same retest created `outputs/helper/fixtures/base.fixture.ts` but failed to create `outputs/helper/page-object/pages/<name>.page.ts`, then fell back to inline `page.goto()` because the page object it needed didn't exist.
 
-    The qa-master conformance validator treats the **minimum scaffolding** as non-negotiable for **every** migration, regardless of envelope content:
+    The pwm-blueprint conformance validator treats the **minimum scaffolding** as non-negotiable for **every** migration, regardless of envelope content:
 
     1. `outputs/helper/fixtures/base.fixture.ts` — re-exports `test` + `expect` from `@playwright/test`. If the spec uses any page-object fixture, inject it via `test = base.extend<{...}>({...})`. Even a 1-test migration needs this file.
     2. `outputs/helper/page-object/basepage.ts` — abstract `BasePage` with `readonly page: Page` parameter property + abstract `waitForPageLoad()`.

@@ -7,13 +7,13 @@
 ## Executive summary — the honest state is worse than the prior "honest baseline" said
 
 The prior session's ~0.69-confidence / 60%-auto-ship / 33%-acceptable numbers are themselves **not trustworthy**,
-and the DOM-grounding work landed today (#232–#234) is **structurally inert on real qa-master output**. The audit
+and the DOM-grounding work landed today (#232–#234) is **structurally inert on real pwm-blueprint output**. The audit
 found that on the measured pipeline you currently **cannot trust any quality number it prints**:
 
 - **CI scores the WRONG spec.** `find outputs/tests … | head -1` always returns `force-clicks.spec.ts`, so every
   migration's confidence + verify-trigger is computed against a *different, fixed* file. Report headers are
   independently mis-wired (`silent-conditionals.md` → "Output: nth-selectors").
-- **DOM grounding can never engage.** The probe is fed only the spec, but qa-master specs contain **zero**
+- **DOM grounding can never engage.** The probe is fed only the spec, but pwm-blueprint specs contain **zero**
   locators (all live in POMs) → `domGrounded` is permanently false → the 0.69 unverified-cap is a permanent
   floor. Stage 1 never captures a snapshot; no plan carries a `// dom-snapshot:` annotation. **The grounding
   half of the investment protects nothing at the point the locator is written.**
@@ -41,7 +41,7 @@ unmeasurable, not just unmet.
 
 ### S5 — severity 5 (block 96% on their own)
 
-1. **grounding-cap-permanently-unreachable** [trustworthy] · eff L — Probe is fed only the spec; qa-master specs
+1. **grounding-cap-permanently-unreachable** [trustworthy] · eff L — Probe is fed only the spec; pwm-blueprint specs
    have 0 locators → `domGrounded` permanently false → 0.69 cap is a floor; Stage 1 never captures a snapshot.
    **FIX:** make `dom-ground.ts extractLocators` accept a SET of files and feed it the same emitted tree the
    scorer credits (follow fixtures into POMs); add `--probe-extra`; wire a real Stage-1 snapshot capture so a
@@ -70,7 +70,7 @@ unmeasurable, not just unmet.
 
 6. **cypress-selenium-never-reach-output** [multi-framework] · eff L — No Stage-2 output or measured quality for
    3 of 4 frameworks; conformance fixtures are hand-authored (never call Claude); selenium-java baseline always
-   exits 0 against a golden that itself violates qa-master rules.
+   exits 0 against a golden that itself violates pwm-blueprint rules.
    **FIX:** `scripts/measure-framework.ts` mirroring the bad-PW path; run real Cypress + Selenium corpora;
    gate promotion on recorded numbers (add `framework` column). *Evidence: outputs/tests = bad-PW only, baseline.md:24.*
 
@@ -101,7 +101,7 @@ unmeasurable, not just unmet.
 
 12. **warn-checks-never-gate** [pipeline] · eff M — 17 conformance checks are warn-only and the pipeline runs
     without `--strict`, so W1/W2/W5/W15 (the exact defect classes behind 33%) never block. **FIX:** new "defect"
-    severity tier that gates these four + inline-suppression escape. *Evidence: validate-qa-master-conformance.ts:1267-1268, migrate-local.ts:383.*
+    severity tier that gates these four + inline-suppression escape. *Evidence: validate-pwm-blueprint-conformance.ts:1267-1268, migrate-local.ts:383.*
 
 13. **offline-gate-blind-on-cypress-selenium-and-noop-on-pw** [multi-framework] · eff M — Offline abstention gate
     (today's default grounding) drops pins on native `cy.get`/`driver.find_element`, skips low/med rows, and on

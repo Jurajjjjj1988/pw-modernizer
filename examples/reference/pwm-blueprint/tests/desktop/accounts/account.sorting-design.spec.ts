@@ -15,7 +15,7 @@ test.describe('Accounts: My Designs', { tag: ['@desktop', '@accounts'] }, () => 
         },
         async ({ ndxPage, designsPage, authenticatedUser: _authenticatedUser }) => {
             await test.step('Seed a saved design via NDX', async () => {
-                await ndxPage.seedDesign('qa-master-sort-design');
+                await ndxPage.seedDesign('pwm-blueprint-sort-design');
             });
 
             await test.step('Open My Designs', async () => {

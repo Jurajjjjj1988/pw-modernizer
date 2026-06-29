@@ -23,7 +23,7 @@ test.describe(
           // Anti-pattern #3 — spec drives navigation directly instead of a
           // PageClass.open(). Conformance Check 7 must block.
           await page.goto("/dashboard/orders");
-          // Anti-pattern #1 — hard wait for the list to "settle". The qa-master
+          // Anti-pattern #1 — hard wait for the list to "settle". The pwm-blueprint
           // architecture forbids hard waits anywhere under outputs/.
           // Conformance Check 8 must block.
           await page.waitForTimeout(2000);

@@ -20,7 +20,7 @@ const PASSWORD = ACCOUNT_PASSWORD;
 
 /** A unique disposable email for a brand-new account (keeps each test data-isolated). */
 export function uniqueEmail(): string {
-    return `qa-master-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mailnull.com`;
+    return `pwm-blueprint-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mailnull.com`;
 }
 
 function generateEmail(): string {

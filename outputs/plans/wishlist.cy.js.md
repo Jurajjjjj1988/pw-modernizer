@@ -7,7 +7,7 @@ cypress
 Source file is a Cypress test suite (`describe` / `it` / `cy.*` API, `.cy.js`
 extension). Cypress version not pinned in source; no `package.json` sibling.
 Target: Playwright TypeScript, latest stable (v1.x, 2026 conventions),
-qa-master layered architecture.
+pwm-blueprint layered architecture.
 
 ## Summary
 
@@ -120,7 +120,7 @@ the 3-page reuse threshold — header fields go inline on each relevant page
 class. No block extraction; flag for future extraction when more pages adopt it.
 
 Scenario 1.2 (remove flow) uses the UI to add a product as setup before the
-assertion under test (removing). Per qa-master discipline, data-prep via UI is
+assertion under test (removing). Per pwm-blueprint discipline, data-prep via UI is
 forbidden when a non-UI path exists. An API wrapper (`wishlist.api.ts`) is
 therefore required for scenario 1.2 setup — endpoint and auth shape are open
 questions; see Q7.

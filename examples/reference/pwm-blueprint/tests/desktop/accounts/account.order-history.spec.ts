@@ -9,7 +9,7 @@ import { createOrderableDesign, addDesignToCart } from '@api/checkout.api';
  *
  * `test.fixme`: order *placement* is fully implemented and verified (checkout reaches the receipt —
  * see CheckoutPage + checkout.api). The blocker is association: the cart lives in the
- * project-service (a `*.lambda-staging.customink.com` subdomain) which an APIRequestContext reaches
+ * project-service (a `*.lambda-staging.example.com` subdomain) which an APIRequestContext reaches
  * anonymously (the profiles auth is scoped to www-master), so the order is placed as a guest and
  * never surfaces in the brand-new isolated account's history. Associating it needs the app's
  * project-service OAuth token (PKCE) or a backend order-seed. Un-fixme once that exists.

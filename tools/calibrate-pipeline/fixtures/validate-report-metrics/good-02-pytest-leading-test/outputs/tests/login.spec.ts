@@ -2,7 +2,7 @@ import { test, expect } from "@fixtures/base.fixture";
 
 /**
  * Migrated from inputs/selenium-python/test_login.py. The pytest source used
- * WebDriverWait + By.id; qa-master delegates to LoginPage and relies on
+ * WebDriverWait + By.id; pwm-blueprint delegates to LoginPage and relies on
  * Playwright auto-wait. pytest's `test_login.py` maps to `login.spec.ts`
  * (test-ness lives in the .spec.ts extension, so the leading `test_` drops).
  */

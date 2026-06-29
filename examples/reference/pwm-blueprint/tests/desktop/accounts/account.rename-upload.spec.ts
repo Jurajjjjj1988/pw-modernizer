@@ -13,7 +13,7 @@ test.describe('Accounts: Uploads', { tag: ['@desktop', '@accounts'] }, () => {
             tag: ['@staging']
         },
         async ({ uploadsPage, authenticatedUser: _authenticatedUser }) => {
-            const newName = 'renamed-by-qa-master';
+            const newName = 'renamed-by-pwm-blueprint';
 
             await test.step('Upload a file', async () => {
                 await uploadsPage.open();

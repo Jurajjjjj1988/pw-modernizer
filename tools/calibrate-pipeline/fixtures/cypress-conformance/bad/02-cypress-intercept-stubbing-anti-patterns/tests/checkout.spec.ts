@@ -20,10 +20,10 @@ test.describe(
       },
       async ({ page }) => {
         // Anti-pattern #3 — route stub declared INSIDE the spec instead of
-        // the fixture barrel. qa-master §7: "Keep route stubs in a fixture
+        // the fixture barrel. pwm-blueprint §7: "Keep route stubs in a fixture
         // or browser/ helper so specs stay declarative and the same stub is
         // reused, not duplicated." The conformance validator's
-        // qa-master/architecture/route-mock-in-spec check must block.
+        // pwm-blueprint/architecture/route-mock-in-spec check must block.
         let payCallCount = 0;
         await page.route("**/api/checkout/pay", async (route) => {
           payCallCount += 1;
@@ -37,7 +37,7 @@ test.describe(
         await test.step("Open the cart with a seeded line item", async () => {
           await page.goto("/cart");
           // Anti-pattern #1 — hard wait carried over from the cypress
-          // `cy.wait('@getCart')` alias-sync. The qa-master architecture
+          // `cy.wait('@getCart')` alias-sync. The pwm-blueprint architecture
           // forbids hard waits anywhere under outputs/. Conformance Check 8
           // must block.
           await page.waitForTimeout(2000);

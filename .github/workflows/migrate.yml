@@ -317,7 +317,7 @@ jobs:
           exit 1
 
       - name: Run Claude (generate stage)
-        # Stage 2 is the heaviest LLM call (Read plan + KB + rules + qa-master
+        # Stage 2 is the heaviest LLM call (Read plan + KB + rules + pwm-blueprint
         # reference + inventory; write spec + Pages + Blocks + fixtures + API
         # wrappers + report). Cypress migrations with max-turns 50 can push
         # 15 min; 30 min is a 2x headroom on the longest observed runtime.
@@ -369,7 +369,7 @@ jobs:
 
           ## STOP — read this before any tool call
 
-          The post-generate qa-master conformance validator HARD-FAILS on the patterns
+          The post-generate pwm-blueprint conformance validator HARD-FAILS on the patterns
           below. FOUR consecutive Stage 2 runs (27257207504, 27258160013, 27260892741,
           27262055163) have committed them. Internalise the FULL shape (spec + Page +
           fixture together) BEFORE you read any other file:
@@ -466,9 +466,9 @@ jobs:
 
           1. prompts/_assembled/generate.md — your task spec (READ FIRST)
           2. $PLAN_PATH — the approved plan; follow it literally
-          3. config/migration-rules.md — style + structure contract (v0.2.0 qa-master target)
-          4. config/knowledge-base.md — anti-pattern + API translations (includes \`qa-master/architecture/*\` KB IDs)
-          5. examples/reference/qa-master/ — real-company style anchor:
+          3. config/migration-rules.md — style + structure contract (v0.2.0 pwm-blueprint target)
+          4. config/knowledge-base.md — anti-pattern + API translations (includes \`pwm-blueprint/architecture/*\` KB IDs)
+          5. examples/reference/pwm-blueprint/ — real-company style anchor:
              - tests/account.sign-in.spec.ts — spec shape (single import source = @fixtures/base.fixture)
              - helper/page-object/basepage.ts + helper/page-object/accounts.page.ts — PageClass discipline
              - helper/fixtures/base.fixture.ts — the ONLY file allowed to import from @playwright/test
@@ -491,7 +491,7 @@ jobs:
 
           $DOM_GROUNDING_BLOCK
 
-          ## Deliverables — v0.2.0 qa-master architecture (write ONLY these paths)
+          ## Deliverables — v0.2.0 pwm-blueprint architecture (write ONLY these paths)
 
           Spec (always):
           - outputs/tests/$INPUT_BASENAME — migrated Playwright TS spec
@@ -516,7 +516,7 @@ jobs:
 
           Import paths inside helper/spec files MUST use the tsconfig path aliases
           (relative \`../\` imports across helper boundaries are forbidden by the
-          qa-master conformance validator):
+          pwm-blueprint conformance validator):
           - @fixtures/base.fixture  → outputs/helper/fixtures/base.fixture
           - @page-object/...        → outputs/helper/page-object/...
           - @api/...                → outputs/helper/api/...
@@ -533,7 +533,7 @@ jobs:
           ## Runtime config the generated spec runs against
 
           A playwright config already exists at outputs/tests/playwright.config.ts. Key points:
-          - baseURL is read from MIGRATION_TARGET_URL env var (defaults to http://localhost:3000). Use RELATIVE URLs in the Page's \`open()\` method (e.g. \`await this.page.goto(this.url)\` where \`url\` is \`/login\` from \`@test-data/urls\`) — NEVER an absolute \`https://...\`. \`page.goto()\` lives in the Page class, NOT in the spec. Specs call \`pageObject.open()\` — the spec NEVER calls \`page.goto()\` (KB qa-master/architecture/page-goto-in-spec).
+          - baseURL is read from MIGRATION_TARGET_URL env var (defaults to http://localhost:3000). Use RELATIVE URLs in the Page's \`open()\` method (e.g. \`await this.page.goto(this.url)\` where \`url\` is \`/login\` from \`@test-data/urls\`) — NEVER an absolute \`https://...\`. \`page.goto()\` lives in the Page class, NOT in the spec. Specs call \`pageObject.open()\` — the spec NEVER calls \`page.goto()\` (KB pwm-blueprint/architecture/page-goto-in-spec).
           - actionTimeout: 5_000. If a plan Risk callout calls out longer backend latency (e.g. 7s rate-limit cooldown), emit a per-assertion timeout override ({ timeout: 10_000 }) with a WHY-comment citing the plan question — never bump the global timeout.
           - 3 projects: chromium, firefox, webkit. Generate browser-agnostic specs (no browser-specific shortcuts).
           - retain-on-failure for trace + screenshot + video — don't add explicit page.screenshot() unless the plan asked for it.
@@ -558,7 +558,7 @@ jobs:
           #   50 (research-backed bump, 2026-06-16) - cypress wishlist
           #     migration with API extraction + Block + Page split + spec +
           #     report + envelope = 12-14 file writes; with 6+ Read tool calls
-          #     for context (KB / rules / qa-master ref / plan / inventory /
+          #     for context (KB / rules / pwm-blueprint ref / plan / inventory /
           #     baseline) the 40-turn budget was tight, and a single retry of
           #     a malformed file pushed it over. Observed in run 27601093922.
           claude \
@@ -719,7 +719,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # qa-master v0.2.0+ renamed the local-types path alias from `@types/*`
+          # pwm-blueprint v0.2.0+ renamed the local-types path alias from `@types/*`
           # to `@type-defs/*` to avoid colliding with the npm DefinitelyTyped
           # scope (TS6137). Sonnet sometimes still emits the old `@types/`
           # prefix on complex multi-fixture migrations when the input or plan
@@ -860,15 +860,15 @@ jobs:
 
           Surgical fixes only — do NOT regenerate the entire spec.
 
-          ## qa-master baseline overrides plan when they conflict
+          ## pwm-blueprint baseline overrides plan when they conflict
 
           If lint errors include either:
-          - \`KB qa-master/architecture/page-goto-in-spec\` (\`no-restricted-syntax\` on \`page.goto\`)
-          - \`KB qa-master/architecture/import-source\` (\`no-restricted-imports\` on \`@playwright/test\`)
+          - \`KB pwm-blueprint/architecture/page-goto-in-spec\` (\`no-restricted-syntax\` on \`page.goto\`)
+          - \`KB pwm-blueprint/architecture/import-source\` (\`no-restricted-imports\` on \`@playwright/test\`)
 
-          You MUST create the qa-master baseline scaffolding for THIS migration,
+          You MUST create the pwm-blueprint baseline scaffolding for THIS migration,
           even if the plan envelope's \`requiredPOMs\` is empty. The plan is a
-          v0.1.x-shaped baseline; qa-master conformance is the v0.2.0 contract.
+          v0.1.x-shaped baseline; pwm-blueprint conformance is the v0.2.0 contract.
 
           Concretely:
           1. Create \`outputs/helper/page-object/pages/<kebab>.page.ts\` —
@@ -882,7 +882,7 @@ jobs:
              replace \`page.goto(...)\` with \`await <name>Page.open()\`.
 
           Do NOT silently fix it — write the helper files. The plan's
-          \`requiredPOMs: []\` is informational, not a ban; qa-master mandates
+          \`requiredPOMs: []\` is informational, not a ban; pwm-blueprint mandates
           at least one PageClass per spec.
 
           ## Other plan/code conflicts
@@ -894,7 +894,7 @@ jobs:
           ## Modification scope
 
           You MAY modify files under both \`outputs/tests/\` AND \`outputs/helper/\`
-          (helpers needed to satisfy the qa-master overrides above).
+          (helpers needed to satisfy the pwm-blueprint overrides above).
           EOF
           )
           claude \
@@ -1008,7 +1008,7 @@ jobs:
           # Catches the exact class of bug PR #126 SDET found: an exported
           # API helper (clearWishlist) was emitted but never wired into the
           # spec, so the test leaked state across runs. The validator wall
-          # (typecheck, eslint, qa-master conformance) didn't flag it
+          # (typecheck, eslint, pwm-blueprint conformance) didn't flag it
           # because each file was independently valid — only the missing
           # cross-file wiring was wrong.
           #
@@ -1024,12 +1024,12 @@ jobs:
           # the run summary. No `|| true` needed — the script handles it.
           npx tsx scripts/validate-helper-usage.ts
 
-      - name: qa-master architecture conformance (v0.2.0 default)
+      - name: pwm-blueprint architecture conformance (v0.2.0 default)
         if: steps.budget_guard.outputs.over_budget != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # Defense-in-depth gate for qa-master architecture compliance:
+          # Defense-in-depth gate for pwm-blueprint architecture compliance:
           # - no @playwright/test imports in specs (only base.fixture.ts may)
           # - no constructor on PageClass/BlockClass subclasses
           # - every locator field has .describe('[LABEL] ...')
@@ -1046,7 +1046,7 @@ jobs:
           # implicated in the measured ~33%-acceptable rate) now BLOCK in the
           # pipeline, not just warn. Default validator behaviour + calibration
           # are unchanged (they run without the flag).
-          npx tsx scripts/validate-qa-master-conformance.ts \
+          npx tsx scripts/validate-pwm-blueprint-conformance.ts \
             --root outputs \
             --input-basename "$BASE" \
             --block-defects
@@ -1199,7 +1199,7 @@ jobs:
           # Resolve the spec emitted FOR THIS input (basename-scoped; the old
           # `find outputs/tests/$BASE` treated the input basename as a directory,
           # so cross-language renames silently probed nothing). --probe-tree makes
-          # the probe follow fixtures into the POMs where qa-master keeps every
+          # the probe follow fixtures into the POMs where pwm-blueprint keeps every
           # locator — without it the spec has zero locators and grounding can
           # never confirm, leaving the 0.69 cap a permanent floor even with a SUT.
           OUT_SPEC=$(npx tsx scripts/resolve-output-spec.ts --input-basename "$BASE" || true)

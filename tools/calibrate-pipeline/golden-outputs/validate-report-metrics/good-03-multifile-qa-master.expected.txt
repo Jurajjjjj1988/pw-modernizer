@@ -1,4 +1,4 @@
-# Exit 0. Multi-file qa-master: validator pins the spec-specific 34-LOC
+# Exit 0. Multi-file pwm-blueprint: validator pins the spec-specific 34-LOC
 # sub-bullet (checkout-flow.spec.ts), basename + LOC + delta self-consistent.
 validate-report-metrics:
 report.md

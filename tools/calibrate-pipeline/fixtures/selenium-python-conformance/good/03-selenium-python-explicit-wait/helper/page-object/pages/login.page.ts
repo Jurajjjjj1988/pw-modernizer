@@ -12,7 +12,7 @@ const LABEL = "Login";
  * `WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH,
  * "//header//h1[contains(text(), 'Dashboard')]")))` around the dashboard
  * header check + read pass/fail via `"Welcome, Jane" in driver.page_source`.
- * The qa-master flow owns navigation through `open()`, uses
+ * The pwm-blueprint flow owns navigation through `open()`, uses
  * `getByLabel`/`getByRole` per selector priority, lifts the XPath dashboard
  * header to `getByRole('heading', { name: 'Dashboard' })`, and replaces
  * every `WebDriverWait` + `page_source` substring probe with web-first
@@ -60,7 +60,7 @@ export class PageClassLogin extends BasePage {
   /**
    * Fill the email + password fields and submit. Asserts the submit button
    * leaves the busy / disabled state after click so the method never ends
-   * on `.click()` per the qa-master `page-object/click-without-assertion`
+   * on `.click()` per the pwm-blueprint `page-object/click-without-assertion`
    * rule — the post-submit landing (dashboard vs inline error) is the
    * spec's job to assert on.
    */

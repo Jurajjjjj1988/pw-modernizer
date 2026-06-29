@@ -1,6 +1,6 @@
 # Exit 0. The good intercept-stubbing fixture moves route stubs into the fixture barrel
-# (`mockPayApi`) per qa-master rule §7, asserts on the user-perceivable /order-confirmed
+# (`mockPayApi`) per pwm-blueprint rule §7, asserts on the user-perceivable /order-confirmed
 # surface instead of internal response bodies, and obeys every locator-priority + import-source
 # + spec-page.goto rule. The validator MUST accept it as clean.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

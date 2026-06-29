@@ -6,7 +6,7 @@
 # default mode but we do NOT pin on it because the locator-priority detector is heuristic.
 # Summary line carries 5 total / 3 block / 2 warn (the naming-no-prefix on regionThemePreview is
 # the additional warn that appears once the locator is single-line enough for the prefix check).
-qa-master/architecture/import-source
-qa-master/architecture/page-goto-in-spec
-qa-master/runtime/no-hard-waits
-validate-qa-master-conformance: 5 violation(s) (3 block / 2 warn)
+pwm-blueprint/architecture/import-source
+pwm-blueprint/architecture/page-goto-in-spec
+pwm-blueprint/runtime/no-hard-waits
+validate-pwm-blueprint-conformance: 5 violation(s) (3 block / 2 warn)

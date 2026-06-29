@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from `examples/cypress-01-login-flow/input.spec.ts`. Cypress
  * source used `cy.get('div.auth-card form input[type="email"]')` chains +
- * `cy.wait(1000)` between steps; qa-master delegates form interaction to
+ * `cy.wait(1000)` between steps; pwm-blueprint delegates form interaction to
  * the LoginPage POM and relies on Playwright auto-wait.
  */
 test.describe(

@@ -22,7 +22,7 @@
  *      flag (e.g. Sonnet may correctly use more getByLabel than the golden).
  *   3. KB-ID coverage — every `// KB:` cited ID on Sonnet's side must
  *      appear in the golden's set, OR be a documented post-v0.2.0 KB ID
- *      (e.g. qa-master/* namespace). Flag IDs the golden never cites.
+ *      (e.g. pwm-blueprint/* namespace). Flag IDs the golden never cites.
  *   4. Structural delta — count of specs / POMs / fixtures / helpers on
  *      both sides. Flag drift > 0 in any bucket (the golden is the shape
  *      bar; Sonnet should emit a similar split).
@@ -212,7 +212,7 @@ function specToPlanBasename(specPath: string): string | null {
 }
 
 /**
- * Collect golden files. Categorise by qa-master shape:
+ * Collect golden files. Categorise by pwm-blueprint shape:
  *   - `.spec.ts`                   -> specs
  *   - `pages/*.page.ts`            -> poms
  *   - `fixtures/*.fixture.ts`      -> fixtures
@@ -230,7 +230,7 @@ function collectGoldenFiles(): FileBucket {
  *      `_legacy-v0.1.x` archive — that IS the v0.2.0-pre Sonnet output for
  *      this framework).
  *   B. Retain specs whose plan basename's source framework is selenium-java.
- *   C. Add the qa-master scaffolding (pages/, fixtures/, helpers/) if any
+ *   C. Add the pwm-blueprint scaffolding (pages/, fixtures/, helpers/) if any
  *      file under those dirs is non-trivial. We include all of them today
  *      because there is no per-migration provenance link from POM files
  *      back to their input plan; on a real selenium-java POM emission they
@@ -264,7 +264,7 @@ function collectSonnetFiles(): FileBucket {
 }
 
 /**
- * Categorise a flat list of TS files into qa-master buckets, relative to
+ * Categorise a flat list of TS files into pwm-blueprint buckets, relative to
  * `root` for path stability.
  */
 function categorise(files: string[], root: string): FileBucket {
@@ -310,7 +310,7 @@ function countAntiPatterns(files: FileBucket): AntiPatternCounts {
   }
   // POMs may legitimately use page.goto; only count waitForTimeout / rawNth
   // there. Raw .locator( in a POM is still a smell (POMs should prefer
-  // getBy* role-based locators per qa-master §4).
+  // getBy* role-based locators per pwm-blueprint §4).
   for (const file of [...files.poms, ...files.fixtures, ...files.helpers]) {
     const txt = readFileSync(file, "utf8");
     waitForTimeout += matchCount(txt, /\bwaitForTimeout\s*\(/g);
@@ -343,8 +343,8 @@ function countLocators(files: FileBucket): LocatorCounts {
 
 /**
  * Extract KB IDs cited in `// KB:` line comments. The convention is
- *   `// KB: KB-1.3.1, KB-1.1.14` or `// KB: qa-master/selectors/...`.
- * We accept both numeric (`KB-x.y.z`) and namespace (`qa-master/...`) forms.
+ *   `// KB: KB-1.3.1, KB-1.1.14` or `// KB: pwm-blueprint/selectors/...`.
+ * We accept both numeric (`KB-x.y.z`) and namespace (`pwm-blueprint/...`) forms.
  */
 function extractKbIds(files: FileBucket): Set<string> {
   const ids = new Set<string>();
@@ -361,8 +361,8 @@ function extractKbIds(files: FileBucket): Set<string> {
       for (const id of body.matchAll(/KB-\d+(?:\.\d+){0,3}/g)) {
         ids.add(id[0]);
       }
-      // qa-master/... namespace IDs (kebab-case path)
-      for (const id of body.matchAll(/qa-master\/[a-z0-9-]+(?:\/[a-z0-9-]+)*/g)) {
+      // pwm-blueprint/... namespace IDs (kebab-case path)
+      for (const id of body.matchAll(/pwm-blueprint\/[a-z0-9-]+(?:\/[a-z0-9-]+)*/g)) {
         ids.add(id[0]);
       }
     }

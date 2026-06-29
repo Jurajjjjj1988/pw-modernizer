@@ -8,7 +8,7 @@ const LABEL = "DashboardOrders";
  * BAD version. Same scenario as good/01 but seeded with anti-pattern #4:
  * the order-row locator is a raw `.locator('.order-row')` CSS class — the
  * cypress `cy.get('.order-row')` selector was migrated verbatim instead of
- * being lifted to `getByRole('row')` per qa-master selector priority. The
+ * being lifted to `getByRole('row')` per pwm-blueprint selector priority. The
  * conformance validator's W5 (locator-priority) must flag this row.
  */
 export class PageClassDashboardOrders extends BasePage {

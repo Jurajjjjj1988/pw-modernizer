@@ -37,9 +37,9 @@ Counts are good/bad fixtures actually on disk; Gate is where the validator runs.
 | `dom-ground`                  | 3 / 4    | CALIBRATED | migrate.yml (block under `DOM_GROUND_STRICT`) |
 | `verify-tally`                | 4 / 2    | CALIBRATED | verify.yml (consensus tally) — 2 bad cover both modes (missing SDET, malformed CR) |
 | `danger-policy`               | 3 / 3    | CALIBRATED | dangerfile.ts (PR gate; goldenless by design) |
-| `cypress-conformance`         | 4 / 4    | CALIBRATED | migrate.yml (qa-master conformance block)     |
-| `selenium-python-conformance` | 3 / 3    | CALIBRATED | migrate.yml (qa-master conformance block)     |
-| `selenium-java-conformance`   | 3 / 3    | CALIBRATED | migrate.yml (qa-master conformance block)     |
+| `cypress-conformance`         | 4 / 4    | CALIBRATED | migrate.yml (pwm-blueprint conformance block)     |
+| `selenium-python-conformance` | 3 / 3    | CALIBRATED | migrate.yml (pwm-blueprint conformance block)     |
+| `selenium-java-conformance`   | 3 / 3    | CALIBRATED | migrate.yml (pwm-blueprint conformance block)     |
 | `rag-bm25`                    | 5 / 3    | CALIBRATED | Phase-1 RAG retrieval (shadow/optional)       |
 | `helper-usage`                | 3 / 3    | CALIBRATED | migrate.yml (warn-only)                       |
 | `validate-todo-discipline`    | 3 / 3    | CALIBRATED | migrate.yml (Stage 2 block)                   |
@@ -57,7 +57,7 @@ Wired. `npm run calibrate` runs as a block-gating matrix check in
 `.github/workflows/regression-test.yml` (`- check: calibrate`), so a fixture
 regression fails CI. Several of these validators ALSO block-gate the live
 pipeline directly in `migrate.yml` (plan-envelope-validate, ast-diff-trivial-check,
-plan-code-coverage, the qa-master conformance check, validate-todo-discipline,
+plan-code-coverage, the pwm-blueprint conformance check, validate-todo-discipline,
 validate-report-metrics — no `|| true`); helper-usage runs warn-only.
 
 ## Adding a fixture

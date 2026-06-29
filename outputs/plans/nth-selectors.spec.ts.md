@@ -2,7 +2,7 @@
 
 ## Source framework
 
-**bad-playwright** — subtractive migration, no framework translation required. The source is already Playwright TypeScript; the migration removes anti-patterns (hardcoded URL, `test.only` leftover, hard wait, nth-index selectors, CSS-class selectors, sync probes, wrong import source) and reshapes the flat spec into the qa-master layered architecture (`PageClassProductListing` + `BlockClassCartDrawer` + auto-fixture for route mocking).
+**bad-playwright** — subtractive migration, no framework translation required. The source is already Playwright TypeScript; the migration removes anti-patterns (hardcoded URL, `test.only` leftover, hard wait, nth-index selectors, CSS-class selectors, sync probes, wrong import source) and reshapes the flat spec into the pwm-blueprint layered architecture (`PageClassProductListing` + `BlockClassCartDrawer` + auto-fixture for route mocking).
 
 **Source file:** `inputs/bad-playwright/nth-selectors.spec.ts`
 

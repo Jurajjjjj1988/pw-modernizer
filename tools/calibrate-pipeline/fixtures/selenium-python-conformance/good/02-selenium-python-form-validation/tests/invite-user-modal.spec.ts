@@ -7,7 +7,7 @@ import { test, expect } from "@fixtures/base.fixture";
  * (`find_elements(By.CSS_SELECTOR, ".modal input")[0]`) and the submit
  * button by index (`find_elements(By.CSS_SELECTOR, ".modal button")[1]`),
  * slept `time.sleep(1)` after every click, and read the inline error from
- * `.modal .field-error`. The qa-master flow scopes inputs through a single
+ * `.modal .field-error`. The pwm-blueprint flow scopes inputs through a single
  * dialog locator (chained `getByRole('dialog')` → `getByLabel('Email')`),
  * uses the visible button name (`Send invite`) instead of an index, and
  * relies on web-first auto-waiting assertions instead of `time.sleep`.

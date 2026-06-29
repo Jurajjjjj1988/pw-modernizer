@@ -47,9 +47,9 @@ your legacy test
       │
       ▼
 ┌─────────────┐   grounds on a live aria snapshot of the target page (closed vocabulary)
-│  2 · Generate│  emits the qa-master layered tree (spec + page objects + fixtures)
+│  2 · Generate│  emits the pwm-blueprint layered tree (spec + page objects + fixtures)
 └─────────────┘   ── a static validator wall runs: tsc · eslint-playwright · pw parse ·
-      │              plan↔code coverage · qa-master conformance · auth/network/provenance gates
+      │              plan↔code coverage · pwm-blueprint conformance · auth/network/provenance gates
       ▼
 ┌─────────────┐   RUNS the migrated test against MIGRATION_TARGET_URL
 │  3 · Run +  │   green → accept · red → feed the failure + the failure-time page snapshot
@@ -77,7 +77,7 @@ Every row is a failure that passes `tsc` and every static gate, yet ships a brok
 
 Most of these are invisible to syntax-only converters (`cy2pw`, archived 2025, handles none of the framework-semantic cases). They're the difference between "it compiled" and "it runs green on the live app, on the correct file, having corrupted nothing."
 
-## The qa-master output
+## The pwm-blueprint output
 
 Stage 2 emits a layered architecture a senior SDET would write — not a single bare `.spec.ts`:
 
@@ -94,7 +94,7 @@ outputs/
     └── test-data/ · types/              # constants + labels · data shapes
 ```
 
-The structure is anchored on a verbatim real-company production tree (`examples/reference/qa-master/`, owner-permitted) and hard-enforced by a conformance validator. Use `--profile lean` for spec + page object only.
+The structure is anchored on a verbatim real-company production tree (`examples/reference/pwm-blueprint/`, owner-permitted) and hard-enforced by a conformance validator. Use `--profile lean` for spec + page object only.
 
 ## Engineering decisions in 60 seconds
 
@@ -112,7 +112,7 @@ The structure is anchored on a verbatim real-company production tree (`examples/
 
 **Stage 1 (plan):** the JSON envelope validates against a schema; every cited knowledge-base ID must resolve; open-question IDs must bind.
 
-**Stage 2 (generate) — the validator wall, all must pass:** `tsc --noEmit` strict (no `any`) · `eslint-plugin-playwright` (+ research-backed rules, `@playwright/test` blocked outside the fixture) · `playwright test --list` parses · AST-diff-not-trivial (tree-edit distance, real tree-sitter for Java/Python) · plan↔code coverage (every scenario pinned, every required file present) · qa-master conformance · auth-self-contained · network-completeness · POM-provenance · no forbidden patterns (`waitForTimeout`, `force: true`, `.nth()`, `test.only`, `: any`, …).
+**Stage 2 (generate) — the validator wall, all must pass:** `tsc --noEmit` strict (no `any`) · `eslint-plugin-playwright` (+ research-backed rules, `@playwright/test` blocked outside the fixture) · `playwright test --list` parses · AST-diff-not-trivial (tree-edit distance, real tree-sitter for Java/Python) · plan↔code coverage (every scenario pinned, every required file present) · pwm-blueprint conformance · auth-self-contained · network-completeness · POM-provenance · no forbidden patterns (`waitForTimeout`, `force: true`, `.nth()`, `test.only`, `: any`, …).
 
 **Stage 3 (run + repair):** the execution gate against the live app; the assertion-strength gate; the lint gate on the accepted output. A low confidence score (when no live app is set) routes to the two-agent verify pass with a `SHIP IT / FIX FIRST / START OVER` ladder.
 
@@ -150,8 +150,8 @@ Realistic **$0.15–0.55 per migration**. `npm run migrate -- --input … --mock
 config/              migration-rules.md (style + structure contract) · knowledge-base.md (anti-patterns + API maps, 4 frameworks)
 prompts/             analyze · generate · verify-{sdet,code-review} + _fragments/ (shared) + _assembled/ (CI-consumed)
 inputs/              source tests by framework (bad-playwright · cypress · selenium-java · selenium-python · _stress)
-outputs/             plans/ · tests/ · helper/ (the qa-master tree) · reports/
-examples/            reference/qa-master/ (style anchor) + per-framework golden input/plan/output triples
+outputs/             plans/ · tests/ · helper/ (the pwm-blueprint tree) · reports/
+examples/            reference/pwm-blueprint/ (style anchor) + per-framework golden input/plan/output triples
 scripts/             the pipeline — evaluate · dom-ground · repair-loop · the validators + their tests
 tools/calibrate-pipeline/   the fixture corpus every validator is calibrated against
 docs/                walkthrough · troubleshooting · the closed-loop validation record

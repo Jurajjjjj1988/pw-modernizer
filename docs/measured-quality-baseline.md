@@ -10,7 +10,7 @@
 
 Two scorer bugs were inflating confidence until 2026-06-21:
 
-1. **The scorer read only the spec, not the emitted tree** (fixed in #218). qa-master
+1. **The scorer read only the spec, not the emitted tree** (fixed in #218). pwm-blueprint
    hides every locator, smell, and assertion in POM/block/helper files that the spec
    reaches by *fixture injection* (`{ loginPage, dashboardPage }`), not by direct
    import. The collector matched files by spec-stem, so for 4 of 5 migrations it saw

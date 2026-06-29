@@ -7,7 +7,7 @@ const LABEL = "Login";
 /**
  * HR admin login page. Migrated from `cypress-01-login-flow`: the cypress
  * source chained `cy.get('div.auth-card form input[type="email"]')` and
- * `cy.contains('Sign in')`; qa-master uses role-based locators for the
+ * `cy.contains('Sign in')`; pwm-blueprint uses role-based locators for the
  * form controls and waits on the dashboard greeting after submit instead
  * of `cy.wait(2000)`.
  */

@@ -1,11 +1,11 @@
-# Migration: `playwright-ui-tests` → `qa-master`
+# Migration: `playwright-ui-tests` → `pwm-blueprint`
 
 Tracks the port of the legacy suite (**761 spec files**, 54 locator files, 88 action files) into
 the layered architecture in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Layer mapping (old → new)
 
-| Legacy (`playwright-ui-tests`) | New (`qa-master`) |
+| Legacy (`playwright-ui-tests`) | New (`pwm-blueprint`) |
 |---|---|
 | `lib/locators/*.locators.ts` (separate locator classes) | locators become `readonly` **fields inside** the page/block object in `helper/page-object/{pages,blocks}/` |
 | `lib/page_actions/*.actions.ts` (action classes) | methods **on** the page object (single-page) |
@@ -111,7 +111,7 @@ side-effectful checkout-area task (and `reorder` is `test.skip` in legacy, QAE-3
 - **Saving the quoted design carries its quantities**: after saving, "Add to Cart" from My
   Designs lands a cart with real items (verified: `Subtotal (12 items)`).
 - **But "Proceed to Checkout" (`[data-testid="order-submit"]`) stays disabled for a *blank*
-  design** — CustomInk requires actual artwork to order (note the separate "quote on blank items"
+  design** — Example Shop requires actual artwork to order (note the separate "quote on blank items"
   path). So an orderable seed must **add art/text in NDX first** (canvas editing), then quote +
   save + add-to-cart, *then* the 4-step checkout + payment iframe + place order.
 - Net: order seeding needs NDX **artwork editing** on top of the quote flow, plus the full
@@ -138,7 +138,7 @@ Page objects to add: `NdxQuotePage` (art + zip + quantities), `CartPage`,
 
 **API-first attempt (per "max API, UI only where you can't continue") — findings:**
 - **Cart-add IS a clean API** (no NDX needed): the cart is the **project-service** Lambda.
-  `GET https://project-service.lambda-staging.customink.com/projects/current` establishes the
+  `GET https://project-service.lambda-staging.example.com/projects/current` establishes the
   current cart, then `POST /projects/current/designs` with body **`{"designCids":["<cid>"]}`**
   (cookie-auth, `Content-Type: application/json`) adds a saved design; its saved quote supplies
   the quantities. So **design + cart can both be seeded via API** — the reliable way to reach a
@@ -171,8 +171,8 @@ fake-valid-nonce`** (Braintree sandbox; no iframe) → `/checkout/receipt`. Veri
 checkout reaches the receipt every run.
 
 **The remaining blocker is account association, not placement.** The cart is the **project-service**
-(a `*.lambda-staging.customink.com` subdomain). The profiles auth is scoped to
-`www-master.staging.customink.com`, so an `APIRequestContext` reaches project-service
+(a `*.lambda-staging.example.com` subdomain). The profiles auth is scoped to
+`www-master.staging.example.com`, so an `APIRequestContext` reaches project-service
 **anonymously** — the cart never links to the brand-new isolated test account, so the order is
 placed as a guest and never surfaces in that account's `accounts-service` Order History
 (`GET accounts-service/accounts/{id}/orders`). The app avoids this by sending a project-service
@@ -211,7 +211,7 @@ Captured live via Playwright MCP against www-master staging:
 - My Designs renders from **GraphQL** `me { designs(first,after,sort) }`
   (query `AccountsUI_GetMyDesignsCard_Query`, fragment `DesignCardFields`: `compositeId`,
   `card.editUrl`/`editLabel`, `card.buyAction`, `quote`, …).
-  Endpoint: **`https://graphql.out.staging.customink.com/`** (prod `https://apollo.out.customink.com/`),
+  Endpoint: **`https://graphql.out.staging.example.com/`** (prod `https://apollo.out.example.com/`),
   apollo client headers (`apollographql-client-name`).
 - The legacy REST seed **`POST /api/designs?api_version=5`** (payload below) returns
   `{ success:true, design:{ composite_id } }` — **but the saved design does NOT appear in the

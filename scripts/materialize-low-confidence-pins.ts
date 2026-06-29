@@ -138,8 +138,8 @@ interface FallbackRule {
  *     [role=button] elements) so an ambiguous text match on the page
  *     (e.g., the word "Submit" appearing in body copy AND on the button)
  *     becomes unambiguous.
- *   - The qa-master architecture prefers role-based selectors (KB
- *     qa-master/selector-priority/role-over-text).
+ *   - The pwm-blueprint architecture prefers role-based selectors (KB
+ *     pwm-blueprint/selector-priority/role-over-text).
  */
 const BUTTON_LABELS_RE =
   /^(?:Submit|Save|Cancel|Continue|Sign in|Sign In|Log in|Log In|OK|Ok|Close|Confirm|Next|Back|Delete|Remove|Add|Edit|Update|Send)$/;
@@ -200,7 +200,7 @@ const ruleAmbiguousTextRegex: FallbackRule = {
  *
  * Why comment-only (NOT rewritten):
  *   - CSS classes are the most-fragile selector strategy (KB
- *     qa-master/selector-priority/no-css-class). Auto-rewriting requires
+ *     pwm-blueprint/selector-priority/no-css-class). Auto-rewriting requires
  *     knowing what the element ACTUALLY is in the DOM — that information
  *     lives in the probe but isn't structured enough for a safe automated
  *     swap. Surface the LOW verdict and let the reviewer pick a stable

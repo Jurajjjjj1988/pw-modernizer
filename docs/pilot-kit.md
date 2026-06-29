@@ -5,7 +5,7 @@ This is the operator-facing checklist for taking PWmodernizer from "I ran
 through CI". It assumes the demo + quickstart already work for you.
 
 A "pilot" here means: 5-15 real legacy tests from one project, taken from
-hand-write to qa-master output, with measured cost + verdict + reviewer
+hand-write to pwm-blueprint output, with measured cost + verdict + reviewer
 feedback. Two weeks end-to-end is realistic for a 10-test pilot.
 
 ## Phase 0 — Decide if you have a pilotable codebase

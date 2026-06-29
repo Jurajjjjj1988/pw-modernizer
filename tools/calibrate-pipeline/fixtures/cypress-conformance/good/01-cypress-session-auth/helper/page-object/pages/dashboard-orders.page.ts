@@ -7,11 +7,11 @@ const LABEL = "DashboardOrders";
 /**
  * Admin order-management dashboard. Migrated from `cypress-04-session-auth`:
  * the cypress source landed on `/dashboard/orders` after a `cy.session()`
- * cache-then-clear pre-amble; the qa-master flow assumes the context is
+ * cache-then-clear pre-amble; the pwm-blueprint flow assumes the context is
  * already authenticated via `storageState` (produced once by global-setup)
  * and only navigates here.
  *
- * Locators use role/text per qa-master selector priority — the cypress
+ * Locators use role/text per pwm-blueprint selector priority — the cypress
  * source's `.order-list` / `.order-row` CSS classes are abandoned in favour
  * of `getByRole('region'|'row')`, matching the expected-output golden
  * in `examples/cypress-04-session-auth/expected-output.spec.ts`.

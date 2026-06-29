@@ -8,7 +8,7 @@ const LABEL = "Cart";
  * Bad fixture — same cart scenario as good/03 but seeded with a single
  * block-severity violation in the addBackpack method: the assertion omits its
  * `[LABEL] WHY` message argument, which KB
- * qa-master/architecture/expect-no-label forbids. (Comments here avoid the
+ * pwm-blueprint/architecture/expect-no-label forbids. (Comments here avoid the
  * literal assertion token so only the seeded line trips the rule.)
  */
 export class PageClassCart extends BasePage {

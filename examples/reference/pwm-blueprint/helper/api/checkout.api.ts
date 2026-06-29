@@ -8,14 +8,14 @@ import { type APIRequestContext, expect } from '@playwright/test';
  * Use the **browser context's** request (`context.request`) so the session + cart cookies are
  * shared with the page; an APIRequestContext is not subject to browser CORS.
  */
-const PROJECT_SERVICE = 'https://project-service.lambda-staging.customink.com';
+const PROJECT_SERVICE = 'https://project-service.lambda-staging.example.com';
 const ORDER_STYLE = '176100';
 
 /** Create a design with a real quote (quantities) and return its composite id. */
 export async function createOrderableDesign(request: APIRequestContext): Promise<string> {
     const saveData = JSON.stringify({
         designName: `qa-order-${Date.now().toString().slice(-9)}`,
-        email: 'qa-master@example.com',
+        email: 'pwm-blueprint@example.com',
         deviceType: 'Desktop',
         sendEmail: false,
         notes: '',

@@ -29,7 +29,7 @@ A migration is **ACCEPTABLE** only when ALL hold:
    selector survives as the primary locator (a documented fallback is fine).
 4. **No POM contamination** — a shared page object's `waitForPageLoad()` gates on
    a structural invariant, not this scenario's content.
-5. **Compiles & parses** — tsc clean, `playwright test --list` succeeds, qa-master
+5. **Compiles & parses** — tsc clean, `playwright test --list` succeeds, pwm-blueprint
    conformance clean (no `import from '@playwright/test'` in a spec, etc.).
 6. **No silent no-op** — assertion count is consistent with the source's intent
    (not floored to 1).
@@ -49,7 +49,7 @@ Record one or more in `reasons[]`:
 | `pom-contamination` | shared page gates on scenario content |
 | `broken-build` | tsc / parse / conformance failure |
 | `wrong-behavior` | the flow no longer exercises the same path |
-| `style` | qa-master architecture violation that needs a real edit |
+| `style` | pwm-blueprint architecture violation that needs a real edit |
 
 ## How to label
 

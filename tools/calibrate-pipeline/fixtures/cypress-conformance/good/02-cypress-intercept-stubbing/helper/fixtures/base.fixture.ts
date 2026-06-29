@@ -3,10 +3,10 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassCheckout } from "@page-object/pages/checkout.page";
 
 /**
- * Per-migration extension of the qa-master base fixture. This file is the
+ * Per-migration extension of the pwm-blueprint base fixture. This file is the
  * ONLY one in the cypress-intercept-stubbing migration permitted to import
  * `test` from `@playwright/test`. The route stub for `/api/checkout/pay`
- * lives here (not in any spec): qa-master treats network mocks as fixtures
+ * lives here (not in any spec): pwm-blueprint treats network mocks as fixtures
  * so the same stub is reused, every spec stays declarative, and the
  * "exactly-once" call assertion can read a fixture-owned counter.
  *

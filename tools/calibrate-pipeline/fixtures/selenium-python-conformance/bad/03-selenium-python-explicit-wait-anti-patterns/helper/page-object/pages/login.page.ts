@@ -9,7 +9,7 @@ const LABEL = "Login";
  * the inline error message locator is a raw `.locator('.form-error')` CSS
  * class — the selenium `By.CSS_SELECTOR('.form-error')` selector was
  * migrated verbatim instead of being lifted to `getByRole('alert')` per
- * qa-master selector priority. The conformance validator's W5
+ * pwm-blueprint selector priority. The conformance validator's W5
  * (locator-priority) must flag this row.
  */
 export class PageClassLogin extends BasePage {

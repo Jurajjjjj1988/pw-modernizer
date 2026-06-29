@@ -102,7 +102,7 @@ test("countSmells: a clean web-first spec has zero hard waits / nth / forced cli
 });
 
 test("collectEmittedSources: scores the migration's POM (stem-matched), not just the bare spec", () => {
-  // qa-master hides locators in POMs; a scorer reading only the spec is blind.
+  // pwm-blueprint hides locators in POMs; a scorer reading only the spec is blind.
   const root = mkdtempSync(join(tmpdir(), "pwm-emit-"));
   try {
     const tests = join(root, "tests");
@@ -206,7 +206,7 @@ test("selector quality: a hedged (hallucinated) canonical scores BELOW a clean o
 });
 
 test("collectEmittedFiles: returns the spec PLUS the migration's POM PATH (so --probe-tree probes the tree)", () => {
-  // The live DOM probe reads files; it must see the POMs where qa-master keeps
+  // The live DOM probe reads files; it must see the POMs where pwm-blueprint keeps
   // locators, or the spec-only probe finds zero and grounding never confirms.
   const root = mkdtempSync(join(tmpdir(), "pwm-emitf-"));
   try {

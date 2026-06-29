@@ -246,10 +246,10 @@ function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Viol
 }
 
 // v0.1.x plans declared POMs/blocks/fixtures under `outputs/tests/{pages,
-// blocks,fixtures}/`. qa-master v0.2.0 moved them under
+// blocks,fixtures}/`. pwm-blueprint v0.2.0 moved them under
 // `outputs/helper/{page-object/pages,page-object/blocks,fixtures}/`. Old
 // envelopes (pre-2026-06-10) still reference the v0.1.x paths; Stage 2
-// emits to the new location. Map old path → equivalent qa-master path so
+// emits to the new location. Map old path → equivalent pwm-blueprint path so
 // the validator accepts the file even though the envelope is stale.
 // Observed 2026-06-16 run 27649532990 (EmployeesTest.java).
 const QA_MASTER_PATH_FALLBACKS: ReadonlyArray<readonly [string, string]> = [
@@ -290,12 +290,12 @@ function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Vi
   const scoped = filterCodePathsByInput(envelope, codePaths);
   if (scoped.length === 0) return [];
   const out: Violation[] = [];
-  // Allow Playwright core, node built-ins, relative imports, AND qa-master path
+  // Allow Playwright core, node built-ins, relative imports, AND pwm-blueprint path
   // aliases. Path aliases (@fixtures, @page-object, @api, etc.) resolve to local
   // helper files under outputs/helper/ — they're the same framework (Playwright)
-  // routed through qa-master architecture, not foreign framework imports. The
+  // routed through pwm-blueprint architecture, not foreign framework imports. The
   // subtractive flag's purpose is to prevent ADDING a new framework (Cypress,
-  // Selenium); qa-master aliases are bookkeeping for the existing one.
+  // Selenium); pwm-blueprint aliases are bookkeeping for the existing one.
   const allowed = new Set(["@playwright/test", "playwright"]);
   const allowedAliasPrefixes = [
     "@fixtures/", "@page-object/", "@page-object",
@@ -311,12 +311,12 @@ function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Vi
       if (mod.startsWith(".") || mod.startsWith("/")) continue;
       if (mod.startsWith("node:")) continue; // node built-ins always allowed
       if (allowed.has(mod)) continue;
-      // qa-master path aliases resolve to local helper files — not foreign.
+      // pwm-blueprint path aliases resolve to local helper files — not foreign.
       if (allowedAliasPrefixes.some((prefix) => mod === prefix || mod.startsWith(prefix))) continue;
       out.push({
         file: p,
         line: imp.getStartLineNumber(),
-        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test + relative + node: + qa-master path aliases allowed`,
+        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test + relative + node: + pwm-blueprint path aliases allowed`,
       });
     }
   }

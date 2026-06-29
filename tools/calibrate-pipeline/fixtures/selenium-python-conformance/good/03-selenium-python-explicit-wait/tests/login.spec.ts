@@ -5,7 +5,7 @@ import { test, expect } from "@fixtures/base.fixture";
  * The pytest source had two scenarios: `test_valid_credentials_land_on_dashboard`
  * (uses `is_on_dashboard()` which wraps `WebDriverWait + EC.presence_of_element_located`
  * around the dashboard header), and `test_invalid_credentials_show_error` (reads
- * `element.text` on a `.form-error` selector). The qa-master flow replaces every
+ * `element.text` on a `.form-error` selector). The pwm-blueprint flow replaces every
  * `WebDriverWait` with a web-first `expect(...).toBeVisible() / .toHaveURL(...)`
  * and reads the error message via `expect(textErrorMessage).toHaveText(...)`.
  */

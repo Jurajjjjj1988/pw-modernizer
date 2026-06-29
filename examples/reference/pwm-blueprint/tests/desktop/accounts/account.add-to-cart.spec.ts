@@ -13,7 +13,7 @@ test.describe('Accounts: My Designs', { tag: ['@desktop', '@accounts'] }, () => 
         },
         async ({ ndxPage, designsPage, cartPage, authenticatedUser: _authenticatedUser }) => {
             await test.step('Seed a saved design via NDX', async () => {
-                await ndxPage.seedDesign('qa-master-cart-design');
+                await ndxPage.seedDesign('pwm-blueprint-cart-design');
             });
 
             await test.step('Add the design to the cart', async () => {

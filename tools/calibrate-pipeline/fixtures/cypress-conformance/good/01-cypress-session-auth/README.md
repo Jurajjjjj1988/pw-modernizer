@@ -1,6 +1,6 @@
 # good / 01-cypress-session-auth
 
-Represents the qa-master Stage 2 output a clean migration of
+Represents the pwm-blueprint Stage 2 output a clean migration of
 `examples/cypress-04-session-auth/input.spec.ts` should produce. The cypress
 source re-ran `cy.session('admin', …, { cacheAcrossSpecs: true })` plus
 `cy.clearCookies()` / `cy.clearLocalStorage()` in `beforeEach` and used CSS

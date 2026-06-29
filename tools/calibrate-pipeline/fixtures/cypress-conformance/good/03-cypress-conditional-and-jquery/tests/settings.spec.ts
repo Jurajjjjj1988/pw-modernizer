@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from `examples/cypress-05-conditional-and-jquery/input.spec.ts`.
  * The cypress source had three tests — banner-dismiss, dark-mode toggle,
- * display-name save. The qa-master flow pre-seeds the cookie via the
+ * display-name save. The pwm-blueprint flow pre-seeds the cookie via the
  * `acceptCookies` auto-fixture (so the banner-dismiss conditional is gone),
  * asserts on user-visible surface for dark-mode + save (no jQuery escapes,
  * no Redux probes), and replaces every `cy.wait(N)` with web-first

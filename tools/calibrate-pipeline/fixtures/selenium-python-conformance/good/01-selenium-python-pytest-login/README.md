@@ -1,6 +1,6 @@
 # good / 01-selenium-python-pytest-login
 
-Represents the qa-master Stage 2 output a clean migration of
+Represents the pwm-blueprint Stage 2 output a clean migration of
 `examples/selenium-python-01-login/input.py` should produce. The pytest+
 selenium source declared a `driver` fixture (`webdriver.Chrome()` +
 `implicitly_wait(5)`), a `logged_in_driver` fixture that re-drove login on
@@ -14,5 +14,5 @@ as a `PageClassLogin` that extends `BasePage` (no own constructor,
 tests as `[QA-20x] - Check that …`, replaces every `time.sleep` and
 `WebDriverWait` with web-first auto-waiting assertions, and lifts the
 selenium CSS / XPath selectors to `getByLabel` / `getByRole` /
-`getByTestId` per qa-master selector priority. It is the calibration target
+`getByTestId` per pwm-blueprint selector priority. It is the calibration target
 the conformance validator must accept as clean.

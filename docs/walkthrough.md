@@ -1,19 +1,19 @@
-# End-to-end walkthrough (v0.2.0 qa-master)
+# End-to-end walkthrough (v0.2.0 pwm-blueprint)
 
-> A real migration, narrated against the **v0.2.0 qa-master** architecture. PromptJupiterTest from
+> A real migration, narrated against the **v0.2.0 pwm-blueprint** architecture. PromptJupiterTest from
 > [bonigarcia/selenium-webdriver-java](https://github.com/bonigarcia/selenium-webdriver-java) is the
 > canonical example — Apache-2.0 Selenium-Java code that flowed plan → multi-file Stage 2 → verify
 > end-to-end and closed the v0.2.0 calibration loop in 11 prompt-iteration cycles.
 >
 > **Result you can inspect today (2026-06-10):**
 > - Stage 1 plan + envelope on `main`: [`outputs/plans/PromptJupiterTest.java.md`](../outputs/plans/PromptJupiterTest.java.md) + sidecar JSON
-> - Stage 2 run `27265040399` — succeeded; emitted the qa-master layered output (spec + `base.fixture` extension + `PageClass` + `test-data` constants) on the `migrator/code-PromptJupiterTest` branch
+> - Stage 2 run `27265040399` — succeeded; emitted the pwm-blueprint layered output (spec + `base.fixture` extension + `PageClass` + `test-data` constants) on the `migrator/code-PromptJupiterTest` branch
 > - Verify run `27265926538` — returned **FIX FIRST** (max-severity tally across SDET + Code Review)
 > - The 11-iteration calibration loop that produced those run IDs is the closure event for v0.2.0; deltas live in `CHANGELOG.md` v0.1.1 + v0.2.0 entries
 
 ## What this walkthrough covers
 
-Stage 1 plan generation, the qa-master multi-file Stage 2 output, the seven Stage 2 gates (incl. the new `validate-qa-master-conformance.ts`), CANDOR verify with max-severity tally, and what the reviewer sees at each PR. The big shift from v0.1.x is that Stage 2 **always** emits a layered tree — there is no minimal-spec mode anymore. See [`../examples/reference/qa-master/docs/ARCHITECTURE.md`](../examples/reference/qa-master/docs/ARCHITECTURE.md) for the structural spec the generator targets, and the per-layer `CLAUDE.md` files alongside it.
+Stage 1 plan generation, the pwm-blueprint multi-file Stage 2 output, the seven Stage 2 gates (incl. the new `validate-pwm-blueprint-conformance.ts`), CANDOR verify with max-severity tally, and what the reviewer sees at each PR. The big shift from v0.1.x is that Stage 2 **always** emits a layered tree — there is no minimal-spec mode anymore. See [`../examples/reference/pwm-blueprint/docs/ARCHITECTURE.md`](../examples/reference/pwm-blueprint/docs/ARCHITECTURE.md) for the structural spec the generator targets, and the per-layer `CLAUDE.md` files alongside it.
 
 ## The input
 
@@ -29,7 +29,7 @@ inputs/selenium-java/PromptJupiterTest.java   # 81 LOC — JUnit 5, two @Test me
 gh workflow run plan.yml -f input_path=inputs/selenium-java/PromptJupiterTest.java
 ```
 
-`plan.yml` runs the v0.1.x preflight (Stage 0 sanity gate: size, encoding, test-marker grep, secret scan), assembles `prompts/_assembled/analyze.md` from fragments, calls Sonnet 4.6 with the qa-master reference plus the KB + rules + input, then writes:
+`plan.yml` runs the v0.1.x preflight (Stage 0 sanity gate: size, encoding, test-marker grep, secret scan), assembles `prompts/_assembled/analyze.md` from fragments, calls Sonnet 4.6 with the pwm-blueprint reference plus the KB + rules + input, then writes:
 
 - `outputs/plans/PromptJupiterTest.java.md` — the markdown plan
 - `outputs/plans/PromptJupiterTest.java.envelope.json` — the machine-validatable sidecar
@@ -45,14 +45,14 @@ The PR carries the v0.1.x five-item Stage-1 review checklist (framework detectio
 - **Edit the plan in-place** — Stage 2 reads the plan as-merged; surgical edits become the contract.
 - **Comment `/regenerate <feedback>`** — fires `regenerate-dispatch.yml`, closes the PR, re-runs Stage 1 with the feedback injected.
 
-## Stage 2 — qa-master multi-file output
+## Stage 2 — pwm-blueprint multi-file output
 
-Merging the plan PR fires `migrate.yml`. The shape mirrors v0.1.x but the prompt and validators are rewritten for qa-master:
+Merging the plan PR fires `migrate.yml`. The shape mirrors v0.1.x but the prompt and validators are rewritten for pwm-blueprint:
 
 1. **Guard** — confirms the merged PR carries `migrator:plan` and parses the input path.
 2. **Validate envelope BEFORE reading plan** — fails fast if the sidecar is malformed.
 3. **Build snippet inventory** — `scripts/build-inventory.ts` walks `outputs/helper/` and presents the existing scaffolding (`basepage.ts`, `baseblock.ts`, the current `base.fixture.ts`) so Sonnet reuses instead of reinventing.
-4. **Run Claude (generate)** — Sonnet 4.6, `--max-turns 30`. Reads the plan + envelope + input + KB + rules + the `examples/reference/qa-master/` style anchor. Writes the **layered** output:
+4. **Run Claude (generate)** — Sonnet 4.6, `--max-turns 30`. Reads the plan + envelope + input + KB + rules + the `examples/reference/pwm-blueprint/` style anchor. Writes the **layered** output:
    - `outputs/tests/<kebab>.spec.ts` — imports `test`/`expect` from `@fixtures/base.fixture`, NEVER from `@playwright/test`
    - `outputs/helper/page-object/pages/<name>.page.ts` — `PageClass<Name>` extends `BasePage`, declares NO own constructor, `readonly` locator fields with `.describe('[LABEL] …')`
    - `outputs/helper/fixtures/base.fixture.ts` — extended with the page-object fixture entries this migration needs (the scaffolding shell stays committed; Sonnet adds the `test.extend<{...}>({...})` entries)
@@ -64,7 +64,7 @@ Merging the plan PR fires `migrate.yml`. The shape mirrors v0.1.x but the prompt
    - `npx playwright test --list`
    - `ast-diff-trivial-check` — rejects structural mirrors
    - `plan-code-coverage` — every envelope scenario ID appears as exactly one `// plan:scenario=<id>` comment; every `required*` file exists
-   - **`validate-qa-master-conformance.ts` (new in v0.2.0)** — hard-fails on: spec importing from `@playwright/test`, `PageClass`/`BlockClass` with own constructor, locator field without `.describe('[LABEL] …')`, page-method `expect()` without `[LABEL]` arg, relative `../` cross-helper imports, `page.goto(` in a spec file. Soft-warns on missing type-prefix (`button*`/`input*`/`text*`/`array*`/`by*`) and utilities without unit tests.
+   - **`validate-pwm-blueprint-conformance.ts` (new in v0.2.0)** — hard-fails on: spec importing from `@playwright/test`, `PageClass`/`BlockClass` with own constructor, locator field without `.describe('[LABEL] …')`, page-method `expect()` without `[LABEL]` arg, relative `../` cross-helper imports, `page.goto(` in a spec file. Soft-warns on missing type-prefix (`button*`/`input*`/`text*`/`array*`/`by*`) and utilities without unit tests.
    - `validate-report-metrics.ts` — report's claimed filename + LOC must match emitted spec (the v0.1.1 falsified-100% gate)
    - `evaluate.ts` — emits aggregate confidence 0..1 via the v2 5-signal formula
 6. **Fix-lint retry** (1× cap) — if any of `tsc`/`eslint`/`pw parse` fails, errors are fed back to Sonnet with a STOP-block PROMPT wrapper for a single retry.
@@ -103,9 +103,9 @@ Recommended branch protection on `main` requires the `migrator:code` label + `co
 
 ## The 11-iteration calibration loop (what closed v0.2.0)
 
-The PromptJupiter migration was not a one-shot. Between the v0.2.0 architecture rewrite landing on main and the final FIX FIRST verdict, 11 iterations of prompt + validator + workflow calibration pinned the qa-master output shape. The headline fixes:
+The PromptJupiter migration was not a one-shot. Between the v0.2.0 architecture rewrite landing on main and the final FIX FIRST verdict, 11 iterations of prompt + validator + workflow calibration pinned the pwm-blueprint output shape. The headline fixes:
 
-- PR #47 — remove v0.1.x prompt leakage that overrode the qa-master rules
+- PR #47 — remove v0.1.x prompt leakage that overrode the pwm-blueprint rules
 - PR #48 — baseline scaffolding on disk + max-turns 30 + type-only import exemption
 - PR #49 / #50 — `migrate.yml` artifact upload on lint failure + max-turns 12 → 20
 - PR #51 — validator + wrapper PROMPT: helper `expect` imports allowed; full spec/Page/fixture triad in the STOP block
@@ -119,7 +119,7 @@ Each iteration produced one concrete failure mode → one fix → one calibrated
 
 See [`troubleshooting.md`](troubleshooting.md). For v0.2.0 specifically, the most common first-run misses are:
 
-1. Spec imports `test` from `@playwright/test` instead of `@fixtures/base.fixture` — caught by `validate-qa-master-conformance.ts`. Fix: re-prompt or hand-edit.
+1. Spec imports `test` from `@playwright/test` instead of `@fixtures/base.fixture` — caught by `validate-pwm-blueprint-conformance.ts`. Fix: re-prompt or hand-edit.
 2. `PageClass` declares its own constructor — caught by the same validator. The base class wires `page`.
 3. Locator field missing `.describe('[LABEL] …')` — same validator, hard-fail.
 4. Path-alias resolution fails (`@page-object/...` 404) — confirm `outputs/tsconfig.json` paths from PR #53 are present.
@@ -131,13 +131,13 @@ Four things to set up before the first migration:
 3. **Repository permissions** — `contents: write`, `pull-requests: write`, `id-token: write`.
 4. **Branch protection on `main`** — `migrator:code` label + `confidence:high` + human review.
 
-**Cost expectations.** Per migration, end-to-end: roughly `$0.20–$0.70`. Stage 1 Sonnet ~`$0.10`; Stage 2 Sonnet (multi-file qa-master output is ~2× the v0.1.x single-spec cost) ~`$0.20`; verify Opus CANDOR (only when confidence < 0.7) ~`$0.40` for both lenses combined.
+**Cost expectations.** Per migration, end-to-end: roughly `$0.20–$0.70`. Stage 1 Sonnet ~`$0.10`; Stage 2 Sonnet (multi-file pwm-blueprint output is ~2× the v0.1.x single-spec cost) ~`$0.20`; verify Opus CANDOR (only when confidence < 0.7) ~`$0.40` for both lenses combined.
 
 ## Where to next
 
 - [`../ROADMAP.md`](../ROADMAP.md) — shipped vs in-progress.
-- [`../examples/reference/qa-master/docs/ARCHITECTURE.md`](../examples/reference/qa-master/docs/ARCHITECTURE.md) — the structural target Stage 2 generates against.
-- [`../examples/reference/qa-master/docs/CLAUDE.md`](../examples/reference/qa-master/docs/CLAUDE.md) — the 100-line orientation alongside it.
-- [`../config/migration-rules.md`](../config/migration-rules.md) — §1–§4 are the qa-master contract in prose.
-- [`../config/knowledge-base.md`](../config/knowledge-base.md) — the `qa-master/` namespace (15 IDs) is the anti-pattern catalogue the conformance validator references.
+- [`../examples/reference/pwm-blueprint/docs/ARCHITECTURE.md`](../examples/reference/pwm-blueprint/docs/ARCHITECTURE.md) — the structural target Stage 2 generates against.
+- [`../examples/reference/pwm-blueprint/docs/CLAUDE.md`](../examples/reference/pwm-blueprint/docs/CLAUDE.md) — the 100-line orientation alongside it.
+- [`../config/migration-rules.md`](../config/migration-rules.md) — §1–§4 are the pwm-blueprint contract in prose.
+- [`../config/knowledge-base.md`](../config/knowledge-base.md) — the `pwm-blueprint/` namespace (15 IDs) is the anti-pattern catalogue the conformance validator references.
 - [`../prompts/`](../prompts/) — `analyze.md` Step 5a–5j and `generate.md` Your-task section are the v0.2.0 prompt anchors.

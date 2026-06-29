@@ -2,9 +2,9 @@
 /**
  * lean-profile.test.ts — regression guard for ADR 0002 Phase 1. Proves the
  * additive `--profile lean` relaxation: a spec importing test/expect from
- * `@playwright/test` is BLOCKED under the default qa-master profile but PASSES
+ * `@playwright/test` is BLOCKED under the default pwm-blueprint profile but PASSES
  * the import-source check under `--profile lean`. Locks the behaviour so a
- * future edit can't silently re-block lean or, worse, relax qa-master.
+ * future edit can't silently re-block lean or, worse, relax pwm-blueprint.
  *
  * Run:  npx tsx --test scripts/lean-profile.test.ts
  */
@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
-const VALIDATOR = join(REPO_ROOT, "scripts", "validate-qa-master-conformance.ts");
+const VALIDATOR = join(REPO_ROOT, "scripts", "validate-pwm-blueprint-conformance.ts");
 
 const LEAN_SPEC = [
   'import { test, expect } from "@playwright/test";',
@@ -29,20 +29,20 @@ const LEAN_SPEC = [
   "",
 ].join("\n");
 
-function runValidator(root: string, profile: "qa-master" | "lean"): string {
+function runValidator(root: string, profile: "pwm-blueprint" | "lean"): string {
   const args = ["tsx", VALIDATOR, "--root", root];
   if (profile === "lean") args.push("--profile", "lean");
   const r = spawnSync("npx", args, { cwd: REPO_ROOT, encoding: "utf8" });
   return `${r.stdout ?? ""}${r.stderr ?? ""}`;
 }
 
-test("lean profile relaxes the spec @playwright/test import-source rule (qa-master still blocks)", () => {
+test("lean profile relaxes the spec @playwright/test import-source rule (pwm-blueprint still blocks)", () => {
   const dir = mkdtempSync(join(tmpdir(), "pwm-lean-"));
   try {
     mkdirSync(join(dir, "tests"), { recursive: true });
     writeFileSync(join(dir, "tests", "lean-demo.spec.ts"), LEAN_SPEC);
-    // Default qa-master: both the @playwright/test import AND page.goto are blocked.
-    const def = runValidator(dir, "qa-master");
+    // Default pwm-blueprint: both the @playwright/test import AND page.goto are blocked.
+    const def = runValidator(dir, "pwm-blueprint");
     assert.match(def, /import-source/);
     assert.match(def, /page-goto-in-spec/);
     // Lean: a minimal spec (raw page + @playwright/test import) is fully CLEAN.
@@ -52,7 +52,7 @@ test("lean profile relaxes the spec @playwright/test import-source rule (qa-mast
   }
 });
 
-test("lean accepts a realistic spec + page object (relative import) that qa-master blocks", () => {
+test("lean accepts a realistic spec + page object (relative import) that pwm-blueprint blocks", () => {
   const dir = mkdtempSync(join(tmpdir(), "pwm-lean2-"));
   try {
     mkdirSync(join(dir, "tests"), { recursive: true });
@@ -78,8 +78,8 @@ test("lean accepts a realistic spec + page object (relative import) that qa-mast
     ].join("\n"));
     // Lean: a plain spec + page object via relative import is fully clean.
     assert.match(runValidator(dir, "lean"), /clean\./);
-    // qa-master: blocked (the relative parent-dir import among others).
-    assert.match(runValidator(dir, "qa-master"), /relative-imports/);
+    // pwm-blueprint: blocked (the relative parent-dir import among others).
+    assert.match(runValidator(dir, "pwm-blueprint"), /relative-imports/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

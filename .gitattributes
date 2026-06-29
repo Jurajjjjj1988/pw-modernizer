@@ -10,9 +10,9 @@ package-lock.json   linguist-generated  merge=union
 yarn.lock           linguist-generated  merge=union
 pnpm-lock.yaml      linguist-generated  merge=union
 
-# qa-master reference snapshot — vendor code, owner-permitted. Mark as
+# pwm-blueprint reference snapshot — vendor code, owner-permitted. Mark as
 # vendored so GitHub language stats don't double-count it.
-examples/reference/qa-master/** linguist-vendored
+examples/reference/pwm-blueprint/** linguist-vendored
 
 # Auto-generated documentation block in CHANGELOG.md sits between
 # AUTOGEN sentinels. The file as a whole is human-edited above the

@@ -33,7 +33,7 @@ test.describe(
           await page.getByLabel("Display name").fill("Alice");
           await page.getByRole("button", { name: "Save" }).click();
           // Anti-pattern #1 — hard wait carried over from the cypress
-          // `cy.wait(1500)`. The qa-master architecture forbids hard waits
+          // `cy.wait(1500)`. The pwm-blueprint architecture forbids hard waits
           // anywhere under outputs/. Conformance Check 8 must block.
           await page.waitForTimeout(1500);
           await expect(

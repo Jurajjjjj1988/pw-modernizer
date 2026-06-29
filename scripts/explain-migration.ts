@@ -3,7 +3,7 @@
  * explain-migration.ts — a zero-token, read-only CLI that explains, in plain
  * language, what a single migration did: which input it came from, the verdict
  * and confidence the scorer assigned, the KB anti-patterns the plan addressed,
- * which qa-master files were emitted, and the smell deltas (including any
+ * which pwm-blueprint files were emitted, and the smell deltas (including any
  * REGRESSIONS — smells the output added).
  *
  * It is a JOIN over parsers that already exist — it imports verdictFromReportBody

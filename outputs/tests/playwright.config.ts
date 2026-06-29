@@ -29,7 +29,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
-  // Reporter stack (adopted from qa-master):
+  // Reporter stack (adopted from pwm-blueprint):
   //   - list      → readable per-test progress locally and in CI logs
   //   - html      → on-disk report for post-run debugging (never auto-opens)
   //   - github    → CI annotations on PRs (only when process.env.CI is set)

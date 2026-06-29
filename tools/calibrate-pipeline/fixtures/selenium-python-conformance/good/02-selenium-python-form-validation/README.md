@@ -1,6 +1,6 @@
 # good / 02-selenium-python-form-validation
 
-Represents the qa-master Stage 2 output a clean migration of the
+Represents the pwm-blueprint Stage 2 output a clean migration of the
 `test_invite_user_modal_validates_email` scenario from
 `examples/selenium-python-02-modal-interaction/input.py` should produce.
 The pytest+selenium source spun up a class-scoped Chrome driver via

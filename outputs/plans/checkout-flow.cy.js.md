@@ -10,7 +10,7 @@
 
 Source version: inferred Cypress 12/13 (modern `cy.intercept`, relative `cy.visit` paths, no deprecated `cy.server()`). No `package.json` present in the input directory.
 
-Target: **Playwright TypeScript** (v1.45+), qa-master layered architecture (v0.2.0).
+Target: **Playwright TypeScript** (v1.45+), pwm-blueprint layered architecture (v0.2.0).
 
 ---
 
@@ -131,7 +131,7 @@ One pin per MED/LOW locator, ordered as they appear in the translation table abo
 
 ## Structural changes
 
-The source test is a **Cypress → Playwright TypeScript** translation (non-subtractive). The checkout journey crosses three pages (Cart → Checkout → Order Confirmation), so the qa-master Action layer is justified per `migration-rules.md` §5e.
+The source test is a **Cypress → Playwright TypeScript** translation (non-subtractive). The checkout journey crosses three pages (Cart → Checkout → Order Confirmation), so the pwm-blueprint Action layer is justified per `migration-rules.md` §5e.
 
 ### 5a — Pages
 

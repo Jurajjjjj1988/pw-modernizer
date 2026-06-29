@@ -8,7 +8,7 @@
 - **Superseded by:** —
 - **Related:** `ROADMAP.md` (v0.5 → v1.0 prompt-tuning track), `docs/playwright-mcp-integration.md` (DOM grounding sibling), `docs/beyond-v1-research.md` §2 (Claude Code SDK rewrite)
 
-> **TL;DR.** Stage 1 currently sends a ~21K-token static prompt (KB + rules + qa-master reference + analyze.md + input) to Sonnet on every migration without any awareness of the ~9 plans we have already shipped. Sonnet rediscovers the same locator-confidence calibration, the same KB-ID citation style, and the same hallucination-defense pin shape every single time, which is the dominant source of run-to-run variability. This ADR recommends **Option D (hybrid BM25 + dense embeddings + small reranker)**, **starting from a Phase 1 that ships Option B (pure BM25 retrieval) in a single 1-week sprint** so we can measure the lift before committing to vector infrastructure. The decision to go beyond Phase 1 is **gated on measuring at least a +0.05 absolute lift in `selectorQualityScore` or a -1 stddev reduction in run-to-run plan variance** across the calibration corpus before any vector-DB code is written.
+> **TL;DR.** Stage 1 currently sends a ~21K-token static prompt (KB + rules + pwm-blueprint reference + analyze.md + input) to Sonnet on every migration without any awareness of the ~9 plans we have already shipped. Sonnet rediscovers the same locator-confidence calibration, the same KB-ID citation style, and the same hallucination-defense pin shape every single time, which is the dominant source of run-to-run variability. This ADR recommends **Option D (hybrid BM25 + dense embeddings + small reranker)**, **starting from a Phase 1 that ships Option B (pure BM25 retrieval) in a single 1-week sprint** so we can measure the lift before committing to vector infrastructure. The decision to go beyond Phase 1 is **gated on measuring at least a +0.05 absolute lift in `selectorQualityScore` or a -1 stddev reduction in run-to-run plan variance** across the calibration corpus before any vector-DB code is written.
 
 ---
 
@@ -16,7 +16,7 @@
 
 ### 1.1 Sonnet variability is the last big lever
 
-Per `ROADMAP.md` "v0.5 — next" and the `MEMORY.md` `project_pwmodernizer_roadmap.md` note, **Sonnet output variability** is the largest unresolved quality slack between today's pipeline and the 70% acceptable-rate gate. The validator wall caught the deterministic failure modes (forbidden patterns, KB-ID hallucination, AST-diff triviality, qa-master conformance) — what remains is *judgement* variability:
+Per `ROADMAP.md` "v0.5 — next" and the `MEMORY.md` `project_pwmodernizer_roadmap.md` note, **Sonnet output variability** is the largest unresolved quality slack between today's pipeline and the 70% acceptable-rate gate. The validator wall caught the deterministic failure modes (forbidden patterns, KB-ID hallucination, AST-diff triviality, pwm-blueprint conformance) — what remains is *judgement* variability:
 
 - One run of `flaky-waits.spec.ts` proposes `getByRole('alert')` for the error banner at MED confidence with a fallback pin; another run proposes the same locator at HIGH confidence with no pin, or proposes `getByText(/invalid credentials/i)` at MED without a role hypothesis at all. None of these are wrong — they are points on a confidence-distribution shaped by Sonnet's sampling, the prompt's framing, and the literal absence of "what we usually do here." Each plan still passes the validators; each requires a slightly different human-review pass.
 - Run-to-run variance shows up as a **wider distribution of `selectorQualityScore` and the `confidence histogram` axis** that `scripts/semantic-regression-check.ts` flags. The 5-axis sweep is already in place — we measure variance, we just don't have a mechanism that reduces it.
@@ -37,13 +37,13 @@ outputs/plans/
 ├── FluentWaitJupiterTest.java.{md, envelope.json}        # selenium-java
 ├── PromptJupiterTest.java.{md, envelope.json}            # selenium-java, dialog handling
 ├── using_selenium_tests.py.{md, envelope.json}           # selenium-python
-└── (Stage 2 outputs in outputs/tests/_legacy-v0.1.x/ for 4 of these, qa-master rewrite pending)
+└── (Stage 2 outputs in outputs/tests/_legacy-v0.1.x/ for 4 of these, pwm-blueprint rewrite pending)
 
 examples/
 └── 17 expected-input/expected-plan/expected-output triples (5 bad-playwright + 5 cypress + 3 selenium-java + 2 selenium-python + 1 reference) — used today only by validate-examples.ts
 ```
 
-That is roughly **9 real + 17 golden = 26 (input, plan, output) tuples** the pipeline can teach itself from. We use exactly **0** of them as in-context examples to Sonnet. The closest we come is `examples/reference/qa-master/` — but that is a *style anchor*, not a similarity-retrieved example. Every migration anchors to the same one canonical reference regardless of source framework, input shape, or anti-pattern profile.
+That is roughly **9 real + 17 golden = 26 (input, plan, output) tuples** the pipeline can teach itself from. We use exactly **0** of them as in-context examples to Sonnet. The closest we come is `examples/reference/pwm-blueprint/` — but that is a *style anchor*, not a similarity-retrieved example. Every migration anchors to the same one canonical reference regardless of source framework, input shape, or anti-pattern profile.
 
 That is the leverage. The hypothesis says: if a Cypress checkout flow lands and the next migration is *also* a Cypress checkout flow, we should be feeding the prior plan into Stage 1, not asking Sonnet to rediscover that `cy.intercept` without a stub maps to `page.route` with `fulfill` for the third time in a row.
 
@@ -102,7 +102,7 @@ Reading the active workflow (`.github/workflows/plan.yml` line 618 — `claude -
 | `config/knowledge-base.md`                      | 147,506      | ~37K        | static, 125 KB IDs across 4 frameworks                                            | Yes (Anthropic cache_control) |
 | `config/migration-rules.md`                     | 39,099       | ~10K        | static, 85 rules                                                                  | Yes                     |
 | `prompts/_assembled/analyze.md`                 | 34,291       | ~9K         | static after `assemble-prompts.ts`                                                | Yes                     |
-| `examples/reference/qa-master/` style anchor    | ~25,000      | ~6K         | snapshot, owner-permitted; Sonnet reads selected files                            | Yes                     |
+| `examples/reference/pwm-blueprint/` style anchor    | ~25,000      | ~6K         | snapshot, owner-permitted; Sonnet reads selected files                            | Yes                     |
 | Input file (the test being migrated)            | 500 – 25,000 | ~0.1K – 6K  | dynamic                                                                           | No                      |
 | Plan + envelope deliverables (output, written)  | n/a          | n/a         | written via Write tool                                                            | n/a                     |
 | **Total Stage 1 input**                         | **~250K**    | **~62K**    | (~60K cacheable, ~2K dynamic)                                                     |                         |
@@ -115,7 +115,7 @@ Stage 2's `prompts/_assembled/generate.md` is even larger (45,478 bytes / ~11K t
 
 ### 3.2 What `scripts/build-inventory.ts` currently does
 
-The script enumerates existing POMs / fixtures / helpers under `outputs/tests/{pages,fixtures,helpers}` (legacy v0.1.x paths) and `outputs/helper/` (v0.2.0 qa-master paths) into a compact markdown blob injected into Stage 2's prompt — `outputs/.snippets-inventory.md`. Key design notes from re-reading the script:
+The script enumerates existing POMs / fixtures / helpers under `outputs/tests/{pages,fixtures,helpers}` (legacy v0.1.x paths) and `outputs/helper/` (v0.2.0 pwm-blueprint paths) into a compact markdown blob injected into Stage 2's prompt — `outputs/.snippets-inventory.md`. Key design notes from re-reading the script:
 
 - **Pattern: Aider repo-map / Sourcegraph Cody RAG** — extract module-level surface (class names, public method signatures, fixture shapes from `extend<{...}>`), not full file bodies. Compact representation of "what code already exists you should reuse."
 - **Caps + pruning.** Per-category mtime-pruning at 60 / 25 / 60 entries (POMs / fixtures / helpers). The comments call out Sonnet's degradation past ~150 inventory lines.
@@ -145,7 +145,7 @@ A real per-migration footprint, measured from the 9 plans on disk as of 2026-06-
 |-----------------------------|--------------------|--------|------------------------------------------------------------------|
 | `<basename>.md`             | 158 – 305          | 203    | human-reviewable plan (anti-patterns table, locator table, pins, open questions, risks) |
 | `<basename>.envelope.json`  | 33 – 224           | 59     | machine contract (scenarios + locator table + required\* arrays) |
-| `<basename>.spec.ts` (output) | 22 – 75          | ~45    | the migrated spec (4 legacy outputs at `outputs/tests/_legacy-v0.1.x/`, qa-master rewrites pending) |
+| `<basename>.spec.ts` (output) | 22 – 75          | ~45    | the migrated spec (4 legacy outputs at `outputs/tests/_legacy-v0.1.x/`, pwm-blueprint rewrites pending) |
 | `<basename>.md` report       | 48                | 48     | per-migration metrics + confidence breakdown                     |
 
 Example anatomy of one tuple (`flaky-waits.spec.ts`):
@@ -165,7 +165,7 @@ That tuple is **dense, structured, and labelled** — KB IDs in the plan cite a 
 | cypress            | 1 (checkout-flow)       | 5                    | 0 (Stage 2 pending)                  | 6                        |
 | selenium-java      | 5 (Employees, Prompt, AddCookies, ExplicitWait, FluentWait) | 3 | 3 SHIP IT (AddCookies, ExplicitWait, FluentWait) | 8 |
 | selenium-python    | 1 (using_selenium_tests) | 2                   | 1 SHIP IT                            | 4                        |
-| reference (style anchor) | n/a               | 1 (qa-master)        | n/a                                  | 1 (qa-master is style-only, NOT a retrieval candidate) |
+| reference (style anchor) | n/a               | 1 (pwm-blueprint)        | n/a                                  | 1 (pwm-blueprint is style-only, NOT a retrieval candidate) |
 | **Total**          | **8 plans**             | **15 golden**        | **4 SHIP IT**                        | **24 retrieval-eligible** |
 
 Selenium-java dominates the corpus today (6 plans + 3 golden = 8 retrieval-eligible). bad-Playwright (the v0.5 quality bar) has only 6 entries to retrieve from. **The cross-framework retrieval bridge — using shared KB IDs to retrieve a Cypress plan when handling a Selenium plan with the same anti-pattern category — is the only way to get retrieval working for bad-Playwright early.** Phase 1's BM25 over KB IDs (not raw source tokens) is designed precisely for this; without it bad-Playwright migrations would retrieve only against 6 documents until corpus growth catches up.
@@ -343,7 +343,7 @@ We pick BM25 first because:
 
 - `scripts/index-plans.ts` — walks `outputs/plans/*.{md,envelope.json}` + `examples/*/expected-plan.md` + `examples/*/expected-plan.envelope.json`, parses out (a) `sourceFramework`, (b) verify verdict from `outputs/reports/<basename>.md` if present, (c) anti-pattern KB IDs from the plan markdown (regex over `\| KB-[\d\.]+`), (d) locator-confidence histogram from envelope, (e) raw plan body. Writes a deterministic `outputs/.rag-index.json` with SHA-256 marker (same caching pattern as `build-inventory.ts`).
 - `scripts/retrieval-bm25.ts` — implements BM25 (k1=1.5, b=0.75 defaults from Lucene) over the indexed documents. Query construction: tokenize the input file's filename + framework hint (file extension) + a quick Stage-0-style anti-pattern fingerprint (regex over `waitForTimeout|Thread.sleep|cy.wait|cy.intercept|@FindBy|By\.\w+`). Filter candidates: SHIP IT verdict OR golden example. Returns top-K with `{id, score, framework, kbIds, verdict, planExcerpt}`.
-- `scripts/rag-context-render.ts` — formats top-K into a compact markdown block (~150–500 LOC per retrieved plan, anti-pattern table + locator table + open-questions sample only; full plan available via citation). Embedded in `prompts/_assembled/analyze.md` after the qa-master style anchor via a new `<!-- include-begin: rag-context -->` fragment marker that is empty unless the retrieval step wrote it.
+- `scripts/rag-context-render.ts` — formats top-K into a compact markdown block (~150–500 LOC per retrieved plan, anti-pattern table + locator table + open-questions sample only; full plan available via citation). Embedded in `prompts/_assembled/analyze.md` after the pwm-blueprint style anchor via a new `<!-- include-begin: rag-context -->` fragment marker that is empty unless the retrieval step wrote it.
 - 3 static few-shot anchors added to `prompts/_fragments/few-shot-canonical.md` (one bad-Playwright, one Cypress, one Selenium Java) included into `prompts/_assembled/analyze.md` unconditionally; cached in the prompt prefix.
 - `plan.yml` wiring: after Stage 0 sanity gate and before `claude --print`, run `npx tsx scripts/retrieval-bm25.ts --input "$INPUT_PATH" --out outputs/.rag-context.md --shadow $STAGE1_RAG`. Shadow mode (`STAGE1_RAG=shadow`) writes the retrieval output to a side-file for measurement but does NOT inject. Live mode (`STAGE1_RAG=on`) injects.
 - `outputs/.metrics.db` schema migration: add `rag_retrieved_ids TEXT, rag_score REAL, rag_mode TEXT` to the `plans` table. Dashboard gains a "RAG retrieval" panel showing per-migration retrieved-IDs + score.
@@ -479,7 +479,7 @@ We pick BM25 first because:
 - **Dangerfile rule:** add a 7th rule to `dangerfile.ts` (current 6) that blocks any PR whose diff under `outputs/.rag-index.json` contains a secret-scan match.
 - **Index entries record an `originating_pr_url`** so a reviewer can trace any indexed text back to its source PR + commit; reduces "where did this come from" investigation time.
 
-### 7.4 Drift — qa-master rule evolution invalidates old examples
+### 7.4 Drift — pwm-blueprint rule evolution invalidates old examples
 
 **Risk:** `config/migration-rules.md` and `config/knowledge-base.md` evolve. A plan from 3 months ago still uses the old POM-extraction threshold or cites a renamed KB-ID. Retrieval surfaces the stale plan; Sonnet replicates the deprecated pattern.
 
@@ -552,7 +552,7 @@ Variance is the metric, but variance is gameable (we could trivially shrink stdd
 
 1. **Fine-tune Sonnet on our corpus.** Dropped: Anthropic does not expose a fine-tune endpoint for Sonnet 4.6 / 4.7. Even if available, the corpus is too small for SFT to outperform in-context learning (literature consensus: SFT wins above ~10K examples; we have 26).
 2. **Vector retrieval over arbitrary public Playwright corpora (GitHub, npm, Playwright docs).** Dropped per NG3: too noisy, no quality control, license complexity, drift outside our control. Re-eval candidate post-v1.0 only after our own corpus is exhausted as a quality lever.
-3. **Use the existing snippet inventory as the Stage 1 retrieval.** Dropped: the inventory captures EXISTING qa-master helpers (POMs, fixtures), not past PLANS. Different artifact, different purpose. Phase 2 *extends* the inventory grain to plans, but the inventory itself stays Stage 2's.
+3. **Use the existing snippet inventory as the Stage 1 retrieval.** Dropped: the inventory captures EXISTING pwm-blueprint helpers (POMs, fixtures), not past PLANS. Different artifact, different purpose. Phase 2 *extends* the inventory grain to plans, but the inventory itself stays Stage 2's.
 4. **Retrieve via Claude's web-search tool / Claude Code SDK tool-calling.** Dropped per NG2: introduces tool-call non-determinism into Stage 1, breaking the cache and the SHA-256 replay path. Phase 1 retrieval happens *before* the LLM call by design — the LLM sees a static augmented prompt, not a tool surface.
 5. **Rolling-window summarisation (retrieve a single Claude-summarised digest of the last 10 migrations instead of K verbatim plans).** Dropped: the summarisation pass itself is an LLM call (~$0.05 per refresh), and the summary's lossiness defeats the point — the value of a retrieved plan is in its specific locator table and pin shape, not in a paraphrase. Re-considered for Phase ≥ 4 if context-budget pressure becomes the binding constraint.
 6. **Per-framework hand-curated reference plans (5 per framework, ~20 total) instead of retrieval.** Dropped: this is Option A scaled up. The maintenance burden (per-quarter human curation of 20 reference plans across 4 frameworks) consumes more reviewer attention than Phase 1's BM25 in steady state.
@@ -597,7 +597,7 @@ Variance is the metric, but variance is gameable (we could trivially shrink stdd
 - [ ] 1 entry in `ROADMAP.md` v0.5 section pointing here.
 - [ ] `npm run smoke` clean.
 
-**Files we will NOT touch in Phase 1:** `examples/reference/qa-master/` (verbatim anchor, off-limits per `CLAUDE.md`), `dangerfile.ts` (rule 7 lands in Phase 2 only), `outputs/helper/page-object/{basepage,baseblock}.ts` (committed scaffolding). Phase 1 stays inside `scripts/`, `prompts/_fragments/`, `.github/workflows/plan.yml`, and `tools/calibrate-pipeline/fixtures/`.
+**Files we will NOT touch in Phase 1:** `examples/reference/pwm-blueprint/` (verbatim anchor, off-limits per `CLAUDE.md`), `dangerfile.ts` (rule 7 lands in Phase 2 only), `outputs/helper/page-object/{basepage,baseblock}.ts` (committed scaffolding). Phase 1 stays inside `scripts/`, `prompts/_fragments/`, `.github/workflows/plan.yml`, and `tools/calibrate-pipeline/fixtures/`.
 
 **Operator interface for Phase 1:**
 
@@ -698,7 +698,7 @@ The renderer always emits the framework match, verdict, KB-ID overlap, and one o
 
 ### B.4a Comparison: what Sonnet sees TODAY (Phase 0 baseline) for the same input
 
-Today, the same input file produces a Stage 1 invocation where the prompt is the assembled `analyze.md` (~9K tokens) + KB + rules + qa-master anchor (~52K tokens cacheable) + the input itself (~0.5K tokens). Nothing about prior `silent-conditionals` migrations is in the context. Sonnet must:
+Today, the same input file produces a Stage 1 invocation where the prompt is the assembled `analyze.md` (~9K tokens) + KB + rules + pwm-blueprint anchor (~52K tokens cacheable) + the input itself (~0.5K tokens). Nothing about prior `silent-conditionals` migrations is in the context. Sonnet must:
 
 - Rediscover that `if (await locator.isVisible()) { return }` is `KB-1.1.12 conditional-in-test` from the KB alone.
 - Decide independently whether `console.log` is forbidden (yes — `prompts/_fragments/forbidden-patterns.md` says so, but Sonnet has to remember to apply it).
@@ -792,7 +792,7 @@ Rollback total elapsed time target: < 1 hour from STOP decision to fully-reverte
 | Subtractive migration | A bad-Playwright source that needs hygiene cleanup, not framework translation. Envelope's `subtractive: true`. |
 | Hallucination-defense pin | Numbered fallback contract in the plan for each MED/LOW-confidence locator. Stage 2 reads these literally. |
 | Stage 0 / 1 / 2 / verify | Pipeline stages: sanity gate / plan / generate / dual-CANDOR review. |
-| qa-master | The v0.2.0 production-grade layered architecture target output. `examples/reference/qa-master/`. |
+| pwm-blueprint | The v0.2.0 production-grade layered architecture target output. `examples/reference/pwm-blueprint/`. |
 | Snippet inventory | `outputs/.snippets-inventory.md`; existing POMs/fixtures/helpers Stage 2 sees pre-Claude. Pattern precedent for retrieval. |
 | Trajectory tracer | `scripts/trajectory-trace.ts`; walks input → plan → envelope → code → verify, emits decision JSON. |
 | Plan envelope | JSON sidecar to the markdown plan; machine-validatable contract Stage 2 reads first. |

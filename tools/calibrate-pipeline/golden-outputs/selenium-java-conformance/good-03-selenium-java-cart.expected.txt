@@ -1,4 +1,4 @@
-# Exit 0. The good cart fixture is qa-master clean — validator must report
+# Exit 0. The good cart fixture is pwm-blueprint clean — validator must report
 # no violations.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

@@ -2,7 +2,7 @@ import { test, expect } from "@fixtures/base.fixture";
 
 /**
  * Migrated from a JUnit + WebDriver login test. The source instantiated
- * ChromeDriver in @BeforeEach + WebDriverWait + By.id chains; qa-master
+ * ChromeDriver in @BeforeEach + WebDriverWait + By.id chains; pwm-blueprint
  * delegates the form interaction to LoginPage and uses Playwright auto-wait.
  */
 test.describe("Auth: login", { tag: ["@desktop", "@auth"] }, () => {

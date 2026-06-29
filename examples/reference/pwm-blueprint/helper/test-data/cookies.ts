@@ -2,7 +2,7 @@
  * Cookies injected on every test context (see base.fixture) to suppress the cookie-consent
  * banner and mark the session as automated. Captured from the legacy cookie helper.
  */
-const domain = '.customink.com';
+const domain = '.example.com';
 const path = '/';
 
 export const CONSENT_COOKIES = [

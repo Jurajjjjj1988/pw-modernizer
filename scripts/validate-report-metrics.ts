@@ -140,7 +140,7 @@ export function extractClaimedLocBlock(report: string): { sourceLoc: number | nu
   const sourceMatch = /Source LOC:\s*(\d+)/i.exec(report);
   const deltaMatch = /LOC delta:\s*(-?\d+)/i.exec(report);
 
-  // Prefer the spec-specific LOC. qa-master multi-file emissions write a
+  // Prefer the spec-specific LOC. pwm-blueprint multi-file emissions write a
   // breakdown like:
   //   - Output LOC: 398 (sum across all 12 produced files)
   //     - `outputs/tests/checkout-flow.spec.ts` (61 LOC)

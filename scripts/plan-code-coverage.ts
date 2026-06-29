@@ -298,7 +298,7 @@ function validatePomFixturePaths(
 
 // Mirror of plan-envelope-validate.ts:existsAtQaMasterFallback (PR #156).
 // Legacy v0.1.x envelopes declare POMs at `outputs/tests/{pages,blocks,
-// fixtures}/`; qa-master v0.2.0 emits at `outputs/helper/{page-object/
+// fixtures}/`; pwm-blueprint v0.2.0 emits at `outputs/helper/{page-object/
 // pages,page-object/blocks,fixtures}/`. Accept either form on disk.
 // Tracked in same dedup-refactor followup.
 const QA_MASTER_PATH_FALLBACKS: ReadonlyArray<readonly [string, string]> = [
@@ -328,11 +328,11 @@ function validateSubtractiveImports(
   outputPaths: string[],
 ): Violation[] {
   if (!envelope.subtractive) return [];
-  // Same allowlist as plan-envelope-validate.ts: qa-master path aliases
+  // Same allowlist as plan-envelope-validate.ts: pwm-blueprint path aliases
   // (@fixtures, @page-object, @api, etc.) are SAME-framework routing through
-  // qa-master architecture — not foreign framework imports. The subtractive
+  // pwm-blueprint architecture — not foreign framework imports. The subtractive
   // flag's intent is to prevent ADDING a new framework (Cypress, Selenium);
-  // qa-master aliases are bookkeeping for the existing Playwright runtime.
+  // pwm-blueprint aliases are bookkeeping for the existing Playwright runtime.
   const allowed = new Set(["@playwright/test", "playwright"]);
   const allowedAliasPrefixes = [
     "@fixtures/", "@page-object/", "@page-object",
@@ -353,7 +353,7 @@ function validateSubtractiveImports(
       out.push({
         file: p,
         line: imp.getStartLineNumber(),
-        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test, relative, node:, and qa-master path aliases allowed in a bad-playwright run`,
+        message: `subtractive migration introduced foreign framework import '${mod}' — only @playwright/test, relative, node:, and pwm-blueprint path aliases allowed in a bad-playwright run`,
       });
     }
   }

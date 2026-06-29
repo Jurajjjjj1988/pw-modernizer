@@ -15,7 +15,7 @@ test.describe('Accounts: Group Orders', { tag: ['@desktop', '@accounts'] }, () =
             let cid = '';
 
             await test.step('Seed a saved design via NDX', async () => {
-                cid = await ndxPage.seedDesign('qa-master-gof-design');
+                cid = await ndxPage.seedDesign('pwm-blueprint-gof-design');
             });
 
             await test.step('Create and launch a group order', async () => {

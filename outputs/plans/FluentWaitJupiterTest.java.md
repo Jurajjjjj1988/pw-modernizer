@@ -10,7 +10,7 @@ for browser provisioning. `FluentWait` + `ExpectedConditions` for explicit async
 (`assertThat`) for the assertion. One test method: `testFluentWait`. No Page Object Model in the
 source — all locate/wait/assert logic is inline in the test body.
 
-Target: Playwright TypeScript (latest stable, v1.45+), qa-master v0.2.0 layered architecture.
+Target: Playwright TypeScript (latest stable, v1.45+), pwm-blueprint v0.2.0 layered architecture.
 
 ---
 
@@ -24,7 +24,7 @@ in the DOM, then asserts that the element's resolved `src` property contains the
 `assertThat(getDomProperty("src"))` to a web-first `toHaveAttribute` matcher, removes the manual
 `WebDriver` lifecycle (WebDriverManager setup + `driver.quit()`), and moves the hardcoded URL
 into `playwright.config.ts`. A `PageClassLoadingImages` page object is introduced per the
-qa-master v0.2.0 requirement that every page visited gets a typed POM — even on trivial
+pwm-blueprint v0.2.0 requirement that every page visited gets a typed POM — even on trivial
 single-test migrations.
 
 ### What bug does this catch?
@@ -104,7 +104,7 @@ hallucination-defense rule. No DOM assumption is required, therefore no pin is n
 | `@AfterEach teardown()` with `driver.quit()` | **DROPPED** | Playwright auto-teardown; no target counterpart |
 | `Wait<WebDriver>` / `FluentWait` / `ExpectedConditions.presenceOfElementLocated` | **DROPPED** | Replaced by `waitForPageLoad()` web-first assertion on `imageLandscape` |
 
-No `BasePage`, `WebDriverConfig`, or POM file exists in the source input. The qa-master v0.2.0
+No `BasePage`, `WebDriverConfig`, or POM file exists in the source input. The pwm-blueprint v0.2.0
 architecture requires a page object even for single-page, single-test migrations
 (`migration-rules.md §1`: "even trivial single-test migrations land in outputs/tests/ … with an
 injected page object"). The `PageClassLoadingImages` introduced below is the minimum required POM.
@@ -113,7 +113,7 @@ injected page object"). The `PageClassLoadingImages` introduced below is the min
 
 | Layer | File path | Why it exists |
 |---|---|---|
-| Page | `outputs/helper/page-object/pages/loading-images.page.ts` | Encapsulates `imageLandscape` locator, `open()`, and `waitForPageLoad()`; replaces inline locate/FluentWait in the test body; mandatory per qa-master §1 |
+| Page | `outputs/helper/page-object/pages/loading-images.page.ts` | Encapsulates `imageLandscape` locator, `open()`, and `waitForPageLoad()`; replaces inline locate/FluentWait in the test body; mandatory per pwm-blueprint §1 |
 | Block | (none) | Single element in scope; threshold of 5+ locators not reached |
 | Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add `loadingImagesPage: PageClassLoadingImages` injectable fixture; spec imports `test`/`expect` from here — never from `@playwright/test` (CLAUDE.md hard rule) |
 | API | (none) | No data preparation; test reads page state only |

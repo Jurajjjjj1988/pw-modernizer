@@ -1,89 +1,89 @@
 #!/usr/bin/env tsx
 /**
- * validate-qa-master-conformance.ts — defense-in-depth gate for qa-master
+ * validate-pwm-blueprint-conformance.ts — defense-in-depth gate for pwm-blueprint
  * architecture compliance on Stage 2 output (v0.2.0 default).
  *
  * Checks the emitted multi-file tree under `outputs/` against the rules
  * codified in `config/migration-rules.md` §1–§4 and `config/knowledge-base.md`
- * `qa-master/...` namespace.
+ * `pwm-blueprint/...` namespace.
  *
  * Hard-fail conditions (block-severity):
  *   1. A spec under `outputs/tests/` imports `test` or `expect` from
  *      `@playwright/test` (only `outputs/helper/fixtures/base.fixture.ts`
- *      is allowed that import — KB qa-master/architecture/import-source).
+ *      is allowed that import — KB pwm-blueprint/architecture/import-source).
  *   2. A Page or Block source file declares its own constructor (only
- *      BasePage / BaseBlock may — KB qa-master/architecture/no-constructor).
+ *      BasePage / BaseBlock may — KB pwm-blueprint/architecture/no-constructor).
  *   3. A locator field on a Page/Block lacks `.describe(`
- *      (KB qa-master/architecture/locator-no-describe).
+ *      (KB pwm-blueprint/architecture/locator-no-describe).
  *   4. A page method's `expect()` lacks a `[LABEL]` message string argument
- *      (KB qa-master/architecture/expect-no-label).
+ *      (KB pwm-blueprint/architecture/expect-no-label).
  *   5. A relative cross-helper import like `../page-object/pages/x.page`
  *      instead of `@page-object/pages/x.page`
- *      (KB qa-master/architecture/relative-imports).
+ *      (KB pwm-blueprint/architecture/relative-imports).
  *   6. A locator field name without a recognised type prefix
  *      (button/input/text/heading/link/image/icon/array/by/block — KB
- *      qa-master/architecture/naming-no-prefix). Warn-only — strict-mode
+ *      pwm-blueprint/architecture/naming-no-prefix). Warn-only — strict-mode
  *      blocks; default mode prints `::warning::`.
- *   7. A spec contains `page.goto(` directly (KB qa-master/architecture/
+ *   7. A spec contains `page.goto(` directly (KB pwm-blueprint/architecture/
  *      page-goto-in-spec). Specs must call a Page's `open()`.
  *
  * Soft-fail conditions (warn-severity; printed as ::warning:: but do not
  * change exit code):
  *   - A utility file under `outputs/helper/utilities/` has no matching
- *     `outputs/tests/unit/<name>.test.ts` (KB qa-master/architecture/
+ *     `outputs/tests/unit/<name>.test.ts` (KB pwm-blueprint/architecture/
  *     utilities-coverage). Becomes block in `--strict`.
  *
  * Additional warn-severity checks (warn unless --strict). Each one regex-based,
  * grounded in per-layer CLAUDE.md rules at
- * `examples/reference/qa-master/helper/<layer>/CLAUDE.md`:
+ * `examples/reference/pwm-blueprint/helper/<layer>/CLAUDE.md`:
  *
  *   W1.  Page method ending on `.click();` — last action in a page method must
  *        be paired with an assertion ("Never end a method on click() — assert
- *        after"). KB qa-master/page-object/click-without-assertion.
+ *        after"). KB pwm-blueprint/page-object/click-without-assertion.
  *   W2.  `try { ... } catch` inside `*.page.ts` / `*.block.ts` — page objects
  *        should let Playwright auto-retry; swallowing errors hides flake.
- *        KB qa-master/page-object/no-try-catch.
+ *        KB pwm-blueprint/page-object/no-try-catch.
  *   W3.  `get <name>()` getter returning `this.page.locator/getBy` — locators
  *        must be `readonly` fields (eager or arrow-function), never accessors.
- *        KB qa-master/page-object/no-get-accessor.
+ *        KB pwm-blueprint/page-object/no-get-accessor.
  *   W4.  `this.page.getBy/locator(` built inside a method body (not a
- *        readonly field declaration). KB qa-master/page-object/locator-in-method.
+ *        readonly field declaration). KB pwm-blueprint/page-object/locator-in-method.
  *   W5.  `this.page.locator('...')` with a bare CSS/XPath selector when
  *        `getBy*` would do — selector priority is testid → role/label/text →
- *        CSS → XPath. KB qa-master/page-object/locator-priority.
+ *        CSS → XPath. KB pwm-blueprint/page-object/locator-priority.
  *   W6.  Exported function under `outputs/helper/utilities/` without a verb
  *        prefix (parse|get|calculate|verify|generate|normalize|filter|
- *        determine). KB qa-master/utilities/verb-prefix.
+ *        determine). KB pwm-blueprint/utilities/verb-prefix.
  *   W7.  Exported action under `outputs/helper/actions/` whose first param is
  *        not a destructured object containing `page`. KB
- *        qa-master/actions/page-param.
+ *        pwm-blueprint/actions/page-param.
  *   W8.  `actions/*.ts` constructing only ONE `new PageClass*` / `new *Page` —
  *        single-page logic stays on the page object, actions are cross-page.
- *        KB qa-master/actions/cross-page-only.
+ *        KB pwm-blueprint/actions/cross-page-only.
  *   W9.  `page.route(` in a spec or page object — third-party mocking belongs
  *        in a fixture (browser context level), not at the call site. KB
- *        qa-master/runtime/route-in-spec.
- *  W10.  `test(` title not matching `^\[[^\]]+\]\s*-\s*Check\b` — qa-master
+ *        pwm-blueprint/runtime/route-in-spec.
+ *  W10.  `test(` title not matching `^\[[^\]]+\]\s*-\s*Check\b` — pwm-blueprint
  *        spec titles are `[TICKET-ID] - Check that ...`. KB
- *        qa-master/specs/test-name-format.
+ *        pwm-blueprint/specs/test-name-format.
  *  W11.  More than one `test.describe(` block per spec file — one describe per
- *        feature/file. KB qa-master/specs/single-describe.
+ *        feature/file. KB pwm-blueprint/specs/single-describe.
  *  W12.  Nested `test.step(` (a step inside another step's callback). One
- *        action → one assertion, never nested. KB qa-master/specs/no-nested-steps.
+ *        action → one assertion, never nested. KB pwm-blueprint/specs/no-nested-steps.
  *  W13.  Filename under `outputs/` containing `[A-Z_]` — kebab-case only.
- *        KB qa-master/files/kebab-case.
+ *        KB pwm-blueprint/files/kebab-case.
  *  W14.  `from "./..."` cross-helper sibling imports — extends the existing
  *        parent-dir block (Check 5) to ALSO cover same-dir relative imports.
- *        KB qa-master/architecture/relative-imports-sibling.
+ *        KB pwm-blueprint/architecture/relative-imports-sibling.
  *  W15.  A shared page's `waitForPageLoad()` gating on page CONTENT (a heading
  *        text, toBeVisible on a feature locator) instead of a STRUCTURAL
  *        invariant (toHaveURL, or a navigation/main/banner landmark). A content
  *        gate couples every migration reusing the page to one scenario's data —
  *        the cross-migration POM contamination from the measured Run 2
- *        (docs/quality-research-findings.md). KB qa-master/page-object/load-gate-structural.
+ *        (docs/quality-research-findings.md). KB pwm-blueprint/page-object/load-gate-structural.
  *
  * CLI:
- *   npx tsx scripts/validate-qa-master-conformance.ts [--root outputs] [--strict]
+ *   npx tsx scripts/validate-pwm-blueprint-conformance.ts [--root outputs] [--strict]
  *
  * Exit codes:
  *   0 = clean (or only warn-severity in default mode)
@@ -100,19 +100,19 @@ interface CliArgs {
   root: string;
   strict: boolean;
   inputBasename: string | null;
-  profile: "qa-master" | "lean";
+  profile: "pwm-blueprint" | "lean";
   /** Block on the quality-defect class (W1/W2/W5/W15) without going full --strict. */
   blockDefects: boolean;
 }
 
 /**
- * Output profile (ADR 0002). Default `qa-master` is the full layered architecture
+ * Output profile (ADR 0002). Default `pwm-blueprint` is the full layered architecture
  * and is byte-identical to the historical behaviour. `lean` relaxes the spec
  * import-source rule (Check 1) so specs may import `test`/`expect` straight from
  * `@playwright/test` — for adopters who want specs + page objects without the
  * fixture barrel. ADDITIVE: nothing changes unless `--profile lean` is passed.
  */
-let activeProfile: "qa-master" | "lean" = "qa-master";
+let activeProfile: "pwm-blueprint" | "lean" = "pwm-blueprint";
 
 /**
  * Convert input basename → list of plausible emitted spec basenames.
@@ -153,7 +153,7 @@ function parseCliArgs(): CliArgs {
       root: { type: "string", default: "outputs" },
       strict: { type: "boolean", default: false },
       "input-basename": { type: "string" },
-      profile: { type: "string", default: "qa-master" },
+      profile: { type: "string", default: "pwm-blueprint" },
       "block-defects": { type: "boolean", default: false },
     },
   });
@@ -163,7 +163,7 @@ function parseCliArgs(): CliArgs {
     inputBasename: typeof values["input-basename"] === "string" && values["input-basename"].length > 0
       ? values["input-basename"]
       : null,
-    profile: values.profile === "lean" ? "lean" : "qa-master",
+    profile: values.profile === "lean" ? "lean" : "pwm-blueprint",
     blockDefects: values["block-defects"] === true,
   };
 }
@@ -186,7 +186,7 @@ function walk(dir: string, predicate: (path: string) => boolean): string[] {
       for (const entry of readdirSync(current)) {
         if (entry.startsWith(".")) continue;
         if (entry === "node_modules") continue;
-        // Skip the v0.1.x archive — specs there carry pre-qa-master imports
+        // Skip the v0.1.x archive — specs there carry pre-pwm-blueprint imports
         // (`@playwright/test` + `page.goto`) by construction. Scoping by
         // basename alone (isScopedSpec) isn't enough when a new emission
         // shares its name candidate with a legacy file. Mirrors the same
@@ -203,7 +203,7 @@ function walk(dir: string, predicate: (path: string) => boolean): string[] {
 
 /** Check 1 — restrict `@playwright/test` imports.
  *
- * The rule has TWO scopes (matches qa-master reference exactly):
+ * The rule has TWO scopes (matches pwm-blueprint reference exactly):
  *
  * In SPEC files (`outputs/tests/*.spec.ts`): blocked entirely — runtime `test` AND `expect`
  * must come from `@fixtures/base.fixture` (the single import source the spec layer uses).
@@ -211,7 +211,7 @@ function walk(dir: string, predicate: (path: string) => boolean): string[] {
  * In HELPER files (`outputs/helper/**`): `test` import is blocked everywhere except
  * `base.fixture.ts` itself. `expect` and type-only imports are ALLOWED — PageClass methods
  * legitimately call `expect(...)` for `[LABEL]`-prefixed page-level assertions, and BasePage
- * /BaseBlock need `type Page` / `type Locator`. See qa-master reference
+ * /BaseBlock need `type Page` / `type Locator`. See pwm-blueprint reference
  * `helper/page-object/accounts.page.ts` line 1 for the canonical pattern.
  *
  * Type-only imports are ALWAYS exempt regardless of file location: `import type { Page }` or
@@ -241,19 +241,19 @@ function checkSpecImports(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Helper file imports \`test\` from '@playwright/test' — KB qa-master/architecture/import-source: only 'outputs/helper/fixtures/base.fixture.ts' may import \`test\`. Helpers may import \`expect\` + types.`,
+        message: `Helper file imports \`test\` from '@playwright/test' — KB pwm-blueprint/architecture/import-source: only 'outputs/helper/fixtures/base.fixture.ts' may import \`test\`. Helpers may import \`expect\` + types.`,
         severity: "block",
       });
       break;
     }
     // Spec-file rule: ANY non-type-only import from @playwright/test is blocked.
     // Under the `lean` profile (ADR 0002), specs MAY import test/expect straight
-    // from @playwright/test — skip the spec restriction. Default qa-master unchanged.
+    // from @playwright/test — skip the spec restriction. Default pwm-blueprint unchanged.
     if (activeProfile === "lean") break;
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
-      message: `Spec imports from '@playwright/test' — KB qa-master/architecture/import-source: specs must import \`test\` + \`expect\` from \`@fixtures/base.fixture\` (the single spec-layer source).`,
+      message: `Spec imports from '@playwright/test' — KB pwm-blueprint/architecture/import-source: specs must import \`test\` + \`expect\` from \`@fixtures/base.fixture\` (the single spec-layer source).`,
       severity: "block",
     });
     break;
@@ -282,7 +282,7 @@ function checkNoConstructor(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `${className} declares its own constructor — KB qa-master/architecture/no-constructor: only BasePage/BaseBlock may declare constructors. Use readonly fields that reference \`this.page\`.`,
+        message: `${className} declares its own constructor — KB pwm-blueprint/architecture/no-constructor: only BasePage/BaseBlock may declare constructors. Use readonly fields that reference \`this.page\`.`,
         severity: "block",
       });
     }
@@ -311,7 +311,7 @@ function checkLocatorDescribe(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Locator field missing .describe('[LABEL] …') — KB qa-master/architecture/locator-no-describe.`,
+        message: `Locator field missing .describe('[LABEL] …') — KB pwm-blueprint/architecture/locator-no-describe.`,
         severity: "block",
       });
     }
@@ -363,7 +363,7 @@ function checkExpectLabel(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `expect() in a page method without [LABEL] message arg — KB qa-master/architecture/expect-no-label. Use \`expect(x, \\\`[\${LABEL}] WHY\\\`).toBe(...)\`.`,
+        message: `expect() in a page method without [LABEL] message arg — KB pwm-blueprint/architecture/expect-no-label. Use \`expect(x, \\\`[\${LABEL}] WHY\\\`).toBe(...)\`.`,
         severity: "block",
       });
     }
@@ -375,7 +375,7 @@ function checkExpectLabel(rootAbs: string, file: string): Violation[] {
 function checkRelativeImports(rootAbs: string, file: string): Violation[] {
   // Under `lean` (ADR 0002) there is no `@page-object`/`@fixtures` path-alias
   // tsconfig, so specs reference page objects by relative path — allowed.
-  // Default qa-master still requires the aliases.
+  // Default pwm-blueprint still requires the aliases.
   if (activeProfile === "lean") return [];
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -387,7 +387,7 @@ function checkRelativeImports(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Relative parent-dir import — KB qa-master/architecture/relative-imports. Use a path alias (@page-object, @api, @fixtures, @test-data, …).`,
+        message: `Relative parent-dir import — KB pwm-blueprint/architecture/relative-imports. Use a path alias (@page-object, @api, @fixtures, @test-data, …).`,
         severity: "block",
       });
     }
@@ -415,7 +415,7 @@ function checkNamingPrefix(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Locator field '${name}' has no type prefix — KB qa-master/architecture/naming-no-prefix. Use button*/input*/text*/heading*/link*/image*/icon*/array*/by* per migration-rules.md §1.`,
+        message: `Locator field '${name}' has no type prefix — KB pwm-blueprint/architecture/naming-no-prefix. Use button*/input*/text*/heading*/link*/image*/icon*/array*/by* per migration-rules.md §1.`,
         severity: "warn",
       });
     }
@@ -426,7 +426,7 @@ function checkNamingPrefix(rootAbs: string, file: string): Violation[] {
 /** Check 7 — `page.goto(` in a spec file (Page should own navigation). */
 function checkSpecPageGoto(rootAbs: string, file: string): Violation[] {
   // Under the `lean` profile (ADR 0002), specs drive a raw `page` and navigate
-  // directly — page.goto() in a spec is allowed. Default qa-master unchanged.
+  // directly — page.goto() in a spec is allowed. Default pwm-blueprint unchanged.
   if (activeProfile === "lean") return [];
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -437,7 +437,7 @@ function checkSpecPageGoto(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Spec calls page.goto() directly — KB qa-master/architecture/page-goto-in-spec. Navigation is the Page's open() method.`,
+        message: `Spec calls page.goto() directly — KB pwm-blueprint/architecture/page-goto-in-spec. Navigation is the Page's open() method.`,
         severity: "block",
       });
     }
@@ -485,7 +485,7 @@ function listPageMethods(text: string): { start: number; end: number }[] {
  * (the URL via `toHaveURL`, or a navigation/main/banner/contentinfo/region
  * landmark), NOT on scenario-specific page CONTENT.
  *
- * Why: qa-master shares one page object across migrations. A content gate (e.g.
+ * Why: pwm-blueprint shares one page object across migrations. A content gate (e.g.
  * `expect(this.headingWelcome).toBeVisible()`) couples EVERY migration that
  * reuses the page to one migration's data — so when that content is absent (an
  * A/B variant, a renamed test user), every reusing spec fails in `beforeEach`,
@@ -528,7 +528,7 @@ function checkLoadGateStructural(rootAbs: string, file: string): Violation[] {
  *
  * Heuristic: the last non-blank, non-comment, non-closing-brace statement in
  * the method body matches `await ... .click(...);`. KB
- * qa-master/page-object/click-without-assertion. */
+ * pwm-blueprint/page-object/click-without-assertion. */
 function checkClickWithoutAssertion(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -552,7 +552,7 @@ function checkClickWithoutAssertion(rootAbs: string, file: string): Violation[] 
       out.push({
         file: relative(rootAbs, file),
         line: lastIdx + 1,
-        message: `Page method ends on .click() with no following assertion — KB qa-master/page-object/click-without-assertion. Per page-object/CLAUDE.md: "Never end a method on click() — assert after."`,
+        message: `Page method ends on .click() with no following assertion — KB pwm-blueprint/page-object/click-without-assertion. Per page-object/CLAUDE.md: "Never end a method on click() — assert after."`,
         severity: "warn",
         defectClass: true,
       });
@@ -564,7 +564,7 @@ function checkClickWithoutAssertion(rootAbs: string, file: string): Violation[] 
 /** W2 — `try { ... } catch` inside a page/block file is forbidden.
  *
  * Playwright's web-first assertions auto-retry; swallowing errors hides flake.
- * KB qa-master/page-object/no-try-catch. */
+ * KB pwm-blueprint/page-object/no-try-catch. */
 function checkNoTryCatchInPage(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -575,7 +575,7 @@ function checkNoTryCatchInPage(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `try/catch in page/block — KB qa-master/page-object/no-try-catch. Let Playwright's web-first assertions auto-retry; swallowing errors hides flake.`,
+        message: `try/catch in page/block — KB pwm-blueprint/page-object/no-try-catch. Let Playwright's web-first assertions auto-retry; swallowing errors hides flake.`,
         severity: "warn",
         defectClass: true,
       });
@@ -587,7 +587,7 @@ function checkNoTryCatchInPage(rootAbs: string, file: string): Violation[] {
 /** W3 — `get <name>()` getter that returns `this.page.locator/getBy` is forbidden.
  *
  * Locators must be `readonly` fields (eager or arrow-function), never accessors.
- * KB qa-master/page-object/no-get-accessor. */
+ * KB pwm-blueprint/page-object/no-get-accessor. */
 function checkNoGetAccessor(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -602,7 +602,7 @@ function checkNoGetAccessor(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `get ${m[1]}() returns a locator — KB qa-master/page-object/no-get-accessor. Locators must be \`readonly\` fields (eager or arrow-function), never accessors.`,
+        message: `get ${m[1]}() returns a locator — KB pwm-blueprint/page-object/no-get-accessor. Locators must be \`readonly\` fields (eager or arrow-function), never accessors.`,
         severity: "warn",
       });
     }
@@ -614,7 +614,7 @@ function checkNoGetAccessor(rootAbs: string, file: string): Violation[] {
  *
  * Locators must be `readonly` class fields. Building them inside a method body
  * breaks the "every locator has a .describe()" rule and prevents reuse.
- * KB qa-master/page-object/locator-in-method. */
+ * KB pwm-blueprint/page-object/locator-in-method. */
 function checkLocatorInMethod(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -633,7 +633,7 @@ function checkLocatorInMethod(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: k + 1,
-        message: `Locator built inside method body — KB qa-master/page-object/locator-in-method. Move to a \`readonly\` field on the class so it carries a \`.describe()\` label and is reusable.`,
+        message: `Locator built inside method body — KB pwm-blueprint/page-object/locator-in-method. Move to a \`readonly\` field on the class so it carries a \`.describe()\` label and is reusable.`,
         severity: "warn",
       });
     }
@@ -645,7 +645,7 @@ function checkLocatorInMethod(rootAbs: string, file: string): Violation[] {
  *
  * Selector priority is testid → role/label/text → CSS → XPath. A `locator(`
  * call with a literal string starting with `//`, `xpath=`, `.`, `#`, or any
- * other CSS pattern flags as low-priority. KB qa-master/page-object/locator-priority. */
+ * other CSS pattern flags as low-priority. KB pwm-blueprint/page-object/locator-priority. */
 function checkLocatorPriority(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -661,7 +661,7 @@ function checkLocatorPriority(rootAbs: string, file: string): Violation[] {
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
-      message: `Bare CSS/XPath locator '${sel}' — KB qa-master/page-object/locator-priority. Prefer getByTestId → getByRole → getByLabel → getByText before falling back to .locator().`,
+      message: `Bare CSS/XPath locator '${sel}' — KB pwm-blueprint/page-object/locator-priority. Prefer getByTestId → getByRole → getByLabel → getByText before falling back to .locator().`,
       severity: "warn",
       defectClass: true,
     });
@@ -676,7 +676,7 @@ const UTILITY_VERB_PREFIXES = [
 /** W6 — exported function under `outputs/helper/utilities/` must have a verb prefix.
  *
  * Per utilities/CLAUDE.md: "Verb-prefix names: parse*, get*, calculate*,
- * verify*, generate*, normalize*". KB qa-master/utilities/verb-prefix. */
+ * verify*, generate*, normalize*". KB pwm-blueprint/utilities/verb-prefix. */
 function checkUtilityVerbPrefix(rootAbs: string, file: string): Violation[] {
   // Logger is the structured-logger exception.
   if (file.endsWith("/helper/utilities/logger.ts")) return [];
@@ -693,7 +693,7 @@ function checkUtilityVerbPrefix(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Exported utility '${name}' has no verb prefix — KB qa-master/utilities/verb-prefix. Use parse*, get*, calculate*, verify*, generate*, normalize*, filter*, determine*.`,
+        message: `Exported utility '${name}' has no verb prefix — KB pwm-blueprint/utilities/verb-prefix. Use parse*, get*, calculate*, verify*, generate*, normalize*, filter*, determine*.`,
         severity: "warn",
       });
     }
@@ -704,7 +704,7 @@ function checkUtilityVerbPrefix(rootAbs: string, file: string): Violation[] {
 /** W7 — exported action under `outputs/helper/actions/` first param must include `page`.
  *
  * Per actions/CLAUDE.md: "Signature: destructure { page, ...params }". KB
- * qa-master/actions/page-param. */
+ * pwm-blueprint/actions/page-param. */
 function checkActionPageParam(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -723,7 +723,7 @@ function checkActionPageParam(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Action '${name}' first param is not a destructured object including \`page\` — KB qa-master/actions/page-param. Per actions/CLAUDE.md: "Signature: destructure { page, ...params }".`,
+        message: `Action '${name}' first param is not a destructured object including \`page\` — KB pwm-blueprint/actions/page-param. Per actions/CLAUDE.md: "Signature: destructure { page, ...params }".`,
         severity: "warn",
       });
     }
@@ -735,7 +735,7 @@ function checkActionPageParam(rootAbs: string, file: string): Violation[] {
  *
  * Per actions/CLAUDE.md: "Cross-page (vertical) flows that compose page
  * objects. Create one when 2+ page objects are involved or a flow is shared".
- * Single-page logic belongs on the page object. KB qa-master/actions/cross-page-only. */
+ * Single-page logic belongs on the page object. KB pwm-blueprint/actions/cross-page-only. */
 function checkActionCrossPageOnly(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const out: Violation[] = [];
@@ -750,7 +750,7 @@ function checkActionCrossPageOnly(rootAbs: string, file: string): Violation[] {
     out.push({
       file: relative(rootAbs, file),
       line: 1,
-      message: `Action constructs only 1 page object (${only}) — KB qa-master/actions/cross-page-only. Single-page logic stays on the page object; actions compose 2+ pages.`,
+      message: `Action constructs only 1 page object (${only}) — KB pwm-blueprint/actions/cross-page-only. Single-page logic stays on the page object; actions compose 2+ pages.`,
       severity: "warn",
     });
   }
@@ -760,7 +760,7 @@ function checkActionCrossPageOnly(rootAbs: string, file: string): Violation[] {
 /** W9 — `page.route(` in a spec or page object is misplaced.
  *
  * Third-party mocking should be set up at the browser-context level in a
- * fixture, not at every call site. KB qa-master/runtime/route-in-spec. */
+ * fixture, not at every call site. KB pwm-blueprint/runtime/route-in-spec. */
 function checkRouteInSpec(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -771,7 +771,7 @@ function checkRouteInSpec(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `page.route() outside fixtures — KB qa-master/runtime/route-in-spec. Per fixtures/CLAUDE.md: third-party mocking is a fixture concern (browser context level), not per-spec or per-page.`,
+        message: `page.route() outside fixtures — KB pwm-blueprint/runtime/route-in-spec. Per fixtures/CLAUDE.md: third-party mocking is a fixture concern (browser context level), not per-spec or per-page.`,
         severity: "warn",
       });
     }
@@ -781,7 +781,7 @@ function checkRouteInSpec(rootAbs: string, file: string): Violation[] {
 
 /** W10 — spec test titles must match `[TICKET-ID] - Check that ...`.
  *
- * KB qa-master/specs/test-name-format. Per architecture/should-test-name:
+ * KB pwm-blueprint/specs/test-name-format. Per architecture/should-test-name:
  * "Check that <user-perceivable outcome>". Never imperative, never "should". */
 function checkTestNameFormat(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
@@ -799,7 +799,7 @@ function checkTestNameFormat(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Test title '${title}' not in '[TICKET-ID] - Check that ...' form — KB qa-master/specs/test-name-format.`,
+        message: `Test title '${title}' not in '[TICKET-ID] - Check that ...' form — KB pwm-blueprint/specs/test-name-format.`,
         severity: "warn",
       });
     }
@@ -810,7 +810,7 @@ function checkTestNameFormat(rootAbs: string, file: string): Violation[] {
 /** W11 — multiple `test.describe(` per spec file.
  *
  * One describe per feature/file. Multiple describes signal a file that should
- * be split. KB qa-master/specs/single-describe. */
+ * be split. KB pwm-blueprint/specs/single-describe. */
 function checkSingleDescribe(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -829,7 +829,7 @@ function checkSingleDescribe(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line,
-        message: `Spec has ${describeLines.length} test.describe() blocks — KB qa-master/specs/single-describe. One describe per feature/file; split or merge.`,
+        message: `Spec has ${describeLines.length} test.describe() blocks — KB pwm-blueprint/specs/single-describe. One describe per feature/file; split or merge.`,
         severity: "warn",
       });
     }
@@ -840,7 +840,7 @@ function checkSingleDescribe(rootAbs: string, file: string): Violation[] {
 /** W12 — `test.step(` nested inside another `test.step(`.
  *
  * Each `test.step()` is one action → one expectation. Nesting muddies that
- * contract. KB qa-master/specs/no-nested-steps. */
+ * contract. KB pwm-blueprint/specs/no-nested-steps. */
 function checkNoNestedSteps(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
@@ -874,7 +874,7 @@ function checkNoNestedSteps(rootAbs: string, file: string): Violation[] {
         out.push({
           file: relative(rootAbs, file),
           line: k + 1,
-          message: `Nested test.step() — KB qa-master/specs/no-nested-steps. Each test.step() is one action → one assertion; no nesting.`,
+          message: `Nested test.step() — KB pwm-blueprint/specs/no-nested-steps. Each test.step() is one action → one assertion; no nesting.`,
           severity: "warn",
         });
         break;
@@ -886,8 +886,8 @@ function checkNoNestedSteps(rootAbs: string, file: string): Violation[] {
 
 /** W13 — filename under `outputs/` contains uppercase or underscore.
  *
- * qa-master convention: kebab-case filenames everywhere (`accounts.page.ts`,
- * `sign-in.spec.ts`). KB qa-master/files/kebab-case. */
+ * pwm-blueprint convention: kebab-case filenames everywhere (`accounts.page.ts`,
+ * `sign-in.spec.ts`). KB pwm-blueprint/files/kebab-case. */
 function checkKebabCaseFilename(rootAbs: string, file: string): Violation[] {
   const base = file.split("/").pop() ?? "";
   // Strip the final `.ts` (or `.spec.ts` / `.page.ts` / `.block.ts` / `.test.ts`) before checking.
@@ -897,7 +897,7 @@ function checkKebabCaseFilename(rootAbs: string, file: string): Violation[] {
     return [{
       file: relative(rootAbs, file),
       line: 1,
-      message: `Filename '${base}' contains uppercase or underscore — KB qa-master/files/kebab-case. Use kebab-case throughout outputs/.`,
+      message: `Filename '${base}' contains uppercase or underscore — KB pwm-blueprint/files/kebab-case. Use kebab-case throughout outputs/.`,
       severity: "warn",
     }];
   }
@@ -910,7 +910,7 @@ function checkKebabCaseFilename(rootAbs: string, file: string): Violation[] {
  * bans intra-directory relative imports between different concerns (e.g.
  * `./checkout.api` from a page object). Same-file-stem imports (e.g. from a
  * paired `.block.ts` to its barrel `./index`) are still flagged — promote to
- * `@page-object/...` alias instead. KB qa-master/architecture/relative-imports-sibling. */
+ * `@page-object/...` alias instead. KB pwm-blueprint/architecture/relative-imports-sibling. */
 function checkSiblingRelativeImports(rootAbs: string, file: string): Violation[] {
   // Lean (ADR 0002) uses relative paths, not aliases — see checkRelativeImports.
   if (activeProfile === "lean") return [];
@@ -925,7 +925,7 @@ function checkSiblingRelativeImports(rootAbs: string, file: string): Violation[]
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Sibling relative import (./…) — KB qa-master/architecture/relative-imports-sibling. Use a path alias (@page-object, @api, @fixtures, @test-data, …) for cross-helper references.`,
+        message: `Sibling relative import (./…) — KB pwm-blueprint/architecture/relative-imports-sibling. Use a path alias (@page-object, @api, @fixtures, @test-data, …) for cross-helper references.`,
         severity: "warn",
       });
     }
@@ -952,7 +952,7 @@ function checkHardWaits(rootAbs: string, file: string): Violation[] {
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
-      message: `Hard-wait 'page.waitFor${m[1]}(' — KB qa-master/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`,
+      message: `Hard-wait 'page.waitFor${m[1]}(' — KB pwm-blueprint/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`,
       severity: "block",
     });
   }
@@ -974,7 +974,7 @@ function checkNoConsole(rootAbs: string, file: string): Violation[] {
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
-      message: `console.${m[1]}() in test/helper code — KB qa-master/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`,
+      message: `console.${m[1]}() in test/helper code — KB pwm-blueprint/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`,
       severity: "block",
     });
   }
@@ -996,7 +996,7 @@ function checkUtilityPure(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Utility imports from '@playwright/test' — KB qa-master/layer/utilities-pure. Utilities must be pure (no browser, no HTTP, no fs). Move browser interaction to a page object.`,
+        message: `Utility imports from '@playwright/test' — KB pwm-blueprint/layer/utilities-pure. Utilities must be pure (no browser, no HTTP, no fs). Move browser interaction to a page object.`,
         severity: "block",
       });
       continue;
@@ -1005,7 +1005,7 @@ function checkUtilityPure(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Utility imports fs / axios — KB qa-master/layer/utilities-pure. Utilities must be pure. Move IO to an api helper.`,
+        message: `Utility imports fs / axios — KB pwm-blueprint/layer/utilities-pure. Utilities must be pure. Move IO to an api helper.`,
         severity: "block",
       });
       continue;
@@ -1014,7 +1014,7 @@ function checkUtilityPure(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Utility calls fetch() — KB qa-master/layer/utilities-pure. Utilities must be pure. Move HTTP calls to outputs/helper/api/.`,
+        message: `Utility calls fetch() — KB pwm-blueprint/layer/utilities-pure. Utilities must be pure. Move HTTP calls to outputs/helper/api/.`,
         severity: "block",
       });
     }
@@ -1035,7 +1035,7 @@ function checkTestDataConstantsOnly(rootAbs: string, file: string): Violation[] 
     out.push({
       file: relative(rootAbs, file),
       line: i + 1,
-      message: `test-data file exports '${kind}' — KB qa-master/layer/test-data-constants-only. test-data must be \`export const\` only. Move logic to a utility or api helper.`,
+      message: `test-data file exports '${kind}' — KB pwm-blueprint/layer/test-data-constants-only. test-data must be \`export const\` only. Move logic to a utility or api helper.`,
       severity: "block",
     });
   }
@@ -1053,7 +1053,7 @@ function checkApiNotInPage(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Page object calls fetch() — KB qa-master/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
+        message: `Page object calls fetch() — KB pwm-blueprint/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
         severity: "block",
       });
       continue;
@@ -1062,7 +1062,7 @@ function checkApiNotInPage(rootAbs: string, file: string): Violation[] {
       out.push({
         file: relative(rootAbs, file),
         line: i + 1,
-        message: `Page object uses page.request.* — KB qa-master/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
+        message: `Page object uses page.request.* — KB pwm-blueprint/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
         severity: "block",
       });
     }
@@ -1082,7 +1082,7 @@ function checkUtilitiesCoverage(rootAbs: string): Violation[] {
       out.push({
         file: relative(rootAbs, uf),
         line: 1,
-        message: `Utility has no matching unit test '${relative(rootAbs, expectedTest)}' — KB qa-master/architecture/utilities-coverage. 100% coverage gate.`,
+        message: `Utility has no matching unit test '${relative(rootAbs, expectedTest)}' — KB pwm-blueprint/architecture/utilities-coverage. 100% coverage gate.`,
         severity: "warn",
       });
     }
@@ -1173,7 +1173,7 @@ function main(): number {
   }
 
   // Warn-severity W1/W2/W3/W4/W5 — page-object discipline (rules in
-  // examples/reference/qa-master/helper/page-object/CLAUDE.md). Scoped to the
+  // examples/reference/pwm-blueprint/helper/page-object/CLAUDE.md). Scoped to the
   // current input's page/block files; base.fixture / basepage / baseblock /
   // helpers under utilities/test-data/api don't carry these rules.
   for (const file of [...pageFiles, ...blockFiles]) {
@@ -1267,7 +1267,7 @@ function main(): number {
 
   if (violations.length === 0) {
     process.stdout.write(
-      `validate-qa-master-conformance: ${specFiles.length} spec(s) + ${pageFiles.length} page(s) + ${blockFiles.length} block(s) checked — clean.\n`,
+      `validate-pwm-blueprint-conformance: ${specFiles.length} spec(s) + ${pageFiles.length} page(s) + ${blockFiles.length} block(s) checked — clean.\n`,
     );
     return 0;
   }
@@ -1282,12 +1282,12 @@ function main(): number {
   // Summary line kept byte-for-byte (calibration goldens pin it): defects stay
   // counted under "warn" here; only the extra line + exit code below act on them.
   process.stderr.write(
-    `validate-qa-master-conformance: ${violations.length} violation(s) (${blockCount} block / ${violations.length - blockCount} warn)\n`,
+    `validate-pwm-blueprint-conformance: ${violations.length} violation(s) (${blockCount} block / ${violations.length - blockCount} warn)\n`,
   );
   if (args.strict) return violations.length > 0 ? 1 : 0;
   if (args.blockDefects && defectCount > 0) {
     process.stderr.write(
-      `validate-qa-master-conformance: ${defectCount} quality-defect(s) (W1/W2/W5/W15) — blocked by --block-defects.\n`,
+      `validate-pwm-blueprint-conformance: ${defectCount} quality-defect(s) (W1/W2/W5/W15) — blocked by --block-defects.\n`,
     );
     return 1;
   }

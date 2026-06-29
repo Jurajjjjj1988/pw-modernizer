@@ -1,5 +1,5 @@
 {
-  "name": "qa-master",
+  "name": "pwm-blueprint",
   "version": "1.0.0",
   "description": "Automated functional tests (UI + API) for all www-platform services. Runs against www-master staging and production.",
   "private": true,

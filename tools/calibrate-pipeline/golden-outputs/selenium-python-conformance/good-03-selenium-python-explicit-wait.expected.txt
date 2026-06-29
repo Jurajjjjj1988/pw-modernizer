@@ -3,5 +3,5 @@
 # dashboard header to getByRole('heading', { name: 'Dashboard' }), and asserts the inline sign-in
 # error via getByRole('alert') (no `.form-error` CSS class survives). The validator MUST accept it
 # as clean.
-validate-qa-master-conformance:
+validate-pwm-blueprint-conformance:
 checked — clean.

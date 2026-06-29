@@ -1,5 +1,5 @@
 {
-  "name": "qa-master",
+  "name": "pwm-blueprint",
   "description": "Full layered architecture (default). Specs + page-objects + the base.fixture barrel + api/actions/utilities/test-data/types. This is the historical, byte-identical default.",
   "specImportSource": "@fixtures/base.fixture",
   "allowPlaywrightTestInSpec": false,

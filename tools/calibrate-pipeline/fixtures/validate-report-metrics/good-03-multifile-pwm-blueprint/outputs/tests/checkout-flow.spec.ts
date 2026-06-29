@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from inputs/selenium-java/CheckoutFlow.java. The JUnit source ran
  * a full add-to-cart → checkout → confirmation flow with Thread.sleep between
- * steps; qa-master splits the work across CartPage + CheckoutPage POMs and an
+ * steps; pwm-blueprint splits the work across CartPage + CheckoutPage POMs and an
  * orders API wrapper, replacing every sleep with a web-first assertion.
  */
 test.describe("Checkout: happy path", { tag: ["@desktop", "@checkout"] }, () => {

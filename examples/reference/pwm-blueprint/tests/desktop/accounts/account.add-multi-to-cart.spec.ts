@@ -13,8 +13,8 @@ test.describe('Accounts: My Designs', { tag: ['@desktop', '@accounts'] }, () => 
         },
         async ({ ndxPage, designsPage, cartPage, authenticatedUser: _authenticatedUser }) => {
             await test.step('Seed two saved designs via NDX', async () => {
-                await ndxPage.seedDesign('qa-master-multi-1');
-                await ndxPage.seedDesign('qa-master-multi-2');
+                await ndxPage.seedDesign('pwm-blueprint-multi-1');
+                await ndxPage.seedDesign('pwm-blueprint-multi-2');
             });
 
             await test.step('Select both designs', async () => {

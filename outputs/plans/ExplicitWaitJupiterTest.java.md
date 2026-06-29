@@ -8,7 +8,7 @@ Selenium WebDriver 4 (`org.openqa.selenium.*`; `getDomProperty` is a Selenium 4+
 WebDriverManager (`io.github.bonigarcia.wdm.WebDriverManager`) for automatic ChromeDriver provisioning.
 AssertJ (`org.assertj.core.api.Assertions.assertThat`) as the assertion library.
 
-**Target:** Playwright TypeScript, latest stable (v1.x, 2026 conventions), qa-master v0.2.0 layered architecture.
+**Target:** Playwright TypeScript, latest stable (v1.x, 2026 conventions), pwm-blueprint v0.2.0 layered architecture.
 
 **Input:** single file `ExplicitWaitJupiterTest.java` (~61 LOC including license header).
 
@@ -24,7 +24,7 @@ Per-file fate (single file input):
 
 This test exercises dynamic image loading: it navigates to a demo page that adds `<img>` elements to the DOM asynchronously via JavaScript, waits for the landscape photograph element to be present, and asserts that its `src` DOM property resolves to a path containing the string "landscape". The test validates that the browser correctly processes asynchronously injected images and that the correct image URL is assigned.
 
-The migration replaces the `WebDriverWait` + `ExpectedConditions.presenceOfElementLocated` pattern with Playwright's built-in auto-retrying `toHaveAttribute` assertion, removes all JUnit 5 driver-lifecycle boilerplate, extracts the page into a `PageClassLoadingImages` following qa-master §5a (every page the test visits gets a `PageClass<Name>`), and wires the page object via the base fixture.
+The migration replaces the `WebDriverWait` + `ExpectedConditions.presenceOfElementLocated` pattern with Playwright's built-in auto-retrying `toHaveAttribute` assertion, removes all JUnit 5 driver-lifecycle boilerplate, extracts the page into a `PageClassLoadingImages` following pwm-blueprint §5a (every page the test visits gets a `PageClass<Name>`), and wires the page object via the base fixture.
 
 ### What bug does this catch?
 
@@ -72,7 +72,7 @@ The single locator `By.id("landscape")` maps mechanically to `page.locator('#lan
 
 ## Structural changes
 
-The qa-master architecture requires at least one `PageClass<Name>` per visited page (`analyze.md §5a`). Even though the source is trivial, the page is extracted to `loading-images.page.ts` so the test can use the injected fixture and the POM can be extended if the scope expands.
+The pwm-blueprint architecture requires at least one `PageClass<Name>` per visited page (`analyze.md §5a`). Even though the source is trivial, the page is extracted to `loading-images.page.ts` so the test can use the injected fixture and the POM can be extended if the scope expands.
 
 ### 5a — Page: `outputs/helper/page-object/pages/loading-images.page.ts`
 
@@ -134,7 +134,7 @@ None — no new API response shapes or internal value objects.
 
 | Layer | File path | Why it exists |
 |---|---|---|
-| Page | `outputs/helper/page-object/pages/loading-images.page.ts` | qa-master §5a mandate; exposes `#landscape` locator + `open()` + `waitForPageLoad()` with 10 s tolerance |
+| Page | `outputs/helper/page-object/pages/loading-images.page.ts` | pwm-blueprint §5a mandate; exposes `#landscape` locator + `open()` + `waitForPageLoad()` with 10 s tolerance |
 | Block | (none) | Single locator — block threshold not reached |
 | Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add `loadingImagesPage: PageClassLoadingImages` fixture injection |
 | API | (none) | No data preparation needed |

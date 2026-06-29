@@ -3,7 +3,7 @@ import { test, expect } from "@fixtures/base.fixture";
 /**
  * Migrated from `examples/cypress-04-session-auth/input.spec.ts`. The cypress
  * source re-ran `cy.session()` + cookie/localStorage clears in `beforeEach`;
- * the qa-master flow relies on a project-level `storageState` produced once
+ * the pwm-blueprint flow relies on a project-level `storageState` produced once
  * by global-setup, so the spec only navigates and asserts UI behaviour.
  */
 test.describe(

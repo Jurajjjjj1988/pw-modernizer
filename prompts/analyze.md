@@ -14,7 +14,7 @@ Before doing anything else, read these files end-to-end:
 
 1. **`config/knowledge-base.md`** — the full anti-pattern catalog. Every anti-pattern in the source must be matched to an entry here and cited by ID.
 2. **`config/migration-rules.md`** — the target Playwright TypeScript conventions, the plan schema (see §9), and the locator priority order.
-3. **`examples/reference/qa-master/helper/<layer>/CLAUDE.md` × 7** — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser). Read the layer files that match the structural decisions you're about to propose in §5 — they bind the plan's `requiredApi` / `requiredPages` / `requiredFixtures` / `requiredUtilities` / `requiredActions` / `requiredTestData` arrays to the rules Stage 2 will be checked against (e.g. when planning API wrappers, `helper/api/CLAUDE.md` says one wrapper per endpoint, typed, never called from a Page).
+3. **`examples/reference/pwm-blueprint/helper/<layer>/CLAUDE.md` × 7** — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser). Read the layer files that match the structural decisions you're about to propose in §5 — they bind the plan's `requiredApi` / `requiredPages` / `requiredFixtures` / `requiredUtilities` / `requiredActions` / `requiredTestData` arrays to the rules Stage 2 will be checked against (e.g. when planning API wrappers, `helper/api/CLAUDE.md` says one wrapper per endpoint, typed, never called from a Page).
 4. **The input file** — passed to you as `inputs/<framework>/<name>/<file>`. Read it line-by-line, not just skim the top.
 5. **Sibling files in the input directory** — there may be a `README.md` describing intent, a `package.json` showing dependencies, or supporting files (fixtures, page objects, config) you need to migrate together.
 
@@ -174,11 +174,11 @@ The pin is a contract for Stage 2: it tells the code generator EXACTLY what sele
 
 If your locator table contains zero MED/LOW rows (rare, only happens on subtractive bad-Playwright migrations where every original locator is already on the canonical hierarchy), emit the section with body "N/A — all locators are HIGH confidence." The section MUST be present even when empty so the schema validator doesn't reject the plan.
 
-### Step 5 — Structural decisions (qa-master multi-file layout)
+### Step 5 — Structural decisions (pwm-blueprint multi-file layout)
 
-The target architecture is qa-master (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
+The target architecture is pwm-blueprint (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
 
-**Style anchor — open this before planning**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating the EXACT shape Stage 2 generates against. Look at `helper/page-object/accounts.page.ts` for the canonical PageClass pattern (no-constructor, readonly fields with `.describe('[LABEL] …')`, type-prefix names, `[LABEL]` expects in page methods), `helper/fixtures/base.fixture.ts` for the single import source, and `tests/account.sign-in.spec.ts` for the canonical spec. Your plan should propose a file structure that, after Stage 2 executes it, lands code that would belong in this reference tree.
+**Style anchor — open this before planning**: `examples/reference/pwm-blueprint/` contains real-company Playwright TypeScript files demonstrating the EXACT shape Stage 2 generates against. Look at `helper/page-object/accounts.page.ts` for the canonical PageClass pattern (no-constructor, readonly fields with `.describe('[LABEL] …')`, type-prefix names, `[LABEL]` expects in page methods), `helper/fixtures/base.fixture.ts` for the single import source, and `tests/account.sign-in.spec.ts` for the canonical spec. Your plan should propose a file structure that, after Stage 2 executes it, lands code that would belong in this reference tree.
 
 For each input, decide what goes in which directory:
 

@@ -1,8 +1,8 @@
 /**
  * Minimal logger — single import source via the `@logger` alias.
  *
- * v0.2.0 qa-master baseline scaffolding. Mirrors the qa-master reference shape
- * (examples/reference/qa-master/helper/utilities/logger.ts). Pure default export so callers
+ * v0.2.0 pwm-blueprint baseline scaffolding. Mirrors the pwm-blueprint reference shape
+ * (examples/reference/pwm-blueprint/helper/utilities/logger.ts). Pure default export so callers
  * write `import logger from "@logger"`.
  */
 

@@ -19,7 +19,7 @@ PWmodernizer try-it — 5-minute first migration
 
   What just happened
   ------------------
-  Stage 1 read the demo spec, the knowledge base, and the qa-master
+  Stage 1 read the demo spec, the knowledge base, and the pwm-blueprint
   style anchor; it produced a structured migration plan with:
     - a table of detected anti-patterns (severity + KB-ID)
     - a locator translation table with HIGH/MED/LOW confidence

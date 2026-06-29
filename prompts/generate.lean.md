@@ -1,11 +1,11 @@
 # Stage 2 — Generate (Lean profile)
 
 > **Profile: lean (ADR 0002).** This is the relaxed output profile for quick,
-> one-off migrations. It trades the qa-master layered architecture (fixture
+> one-off migrations. It trades the pwm-blueprint layered architecture (fixture
 > barrel + per-layer helpers) for a simple **spec + page object** shape. The
 > quality bar on the *code itself* is unchanged: no hard waits, no `nth()`, no
 > `force: true`, web-first assertions, stable locators. Use the default
-> qa-master prompt (`generate.md`) when you want the full layered architecture.
+> pwm-blueprint prompt (`generate.md`) when you want the full layered architecture.
 
 ## Role
 
@@ -38,17 +38,17 @@ Produce a **minimum of two** code files plus the report:
    - Keep locators in the page object, not inline in the spec — this is the one structural rule lean keeps, because it is what makes the test maintainable.
 3. **`outputs/reports/<input-basename>.md`** — the migration report (schema below).
 
-Do **not** produce the fixture barrel, api/, actions/, utilities/, test-data/, or types/ layers — those are qa-master-only. If the plan's §5 file table lists them, collapse their intent into the spec/page object (e.g. inline a constant the plan would have put in `test-data/`).
+Do **not** produce the fixture barrel, api/, actions/, utilities/, test-data/, or types/ layers — those are pwm-blueprint-only. If the plan's §5 file table lists them, collapse their intent into the spec/page object (e.g. inline a constant the plan would have put in `test-data/`).
 
 For a multi-file Selenium/Cypress source, do not reproduce the source's class
 hierarchy. Collapse each source page class into one lean `*.page.ts` (a plain
 class, own constructor allowed, `readonly` Locator fields — no `extends
-BasePage`, no `.describe('[LABEL]')`). The qa-master layering rules do not apply
+BasePage`, no `.describe('[LABEL]')`). The pwm-blueprint layering rules do not apply
 in lean mode.
 
 ## Hard constraints (these are non-negotiable)
 
-These apply to lean output exactly as they do to qa-master output — the relaxation is purely architectural, never about code quality.
+These apply to lean output exactly as they do to pwm-blueprint output — the relaxation is purely architectural, never about code quality.
 
 {{include:_fragments/web-first-assertions.md}}
 

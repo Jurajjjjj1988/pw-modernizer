@@ -23,7 +23,7 @@ test.describe('Accounts: Sign In', { tag: ['@desktop', '@accounts'] }, () => {
             });
 
             await test.step('Continue with email routes to the email-code step', async () => {
-                await accountsPage.continueWithEmail('qa-master-signin-probe@mailnull.com');
+                await accountsPage.continueWithEmail('pwm-blueprint-signin-probe@mailnull.com');
                 await expect(accountsPage.headingEmailCode,
                     'Sign-in should advance to the email-code step').toBeVisible();
             });

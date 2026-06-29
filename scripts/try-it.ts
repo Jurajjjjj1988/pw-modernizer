@@ -272,7 +272,7 @@ function summarisePlan(steps: StepResult[]): void {
   process.stdout.write("\n");
   process.stdout.write("  What just happened\n");
   process.stdout.write("  ------------------\n");
-  process.stdout.write("  Stage 1 read the demo spec, the knowledge base, and the qa-master\n");
+  process.stdout.write("  Stage 1 read the demo spec, the knowledge base, and the pwm-blueprint\n");
   process.stdout.write("  style anchor; it produced a structured migration plan with:\n");
   process.stdout.write("    - a table of detected anti-patterns (severity + KB-ID)\n");
   process.stdout.write("    - a locator translation table with HIGH/MED/LOW confidence\n");

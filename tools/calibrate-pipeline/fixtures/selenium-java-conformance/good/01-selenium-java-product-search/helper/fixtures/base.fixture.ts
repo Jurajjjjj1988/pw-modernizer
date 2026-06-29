@@ -3,7 +3,7 @@ import { test as base, expect } from "@playwright/test";
 import { PageClassProductSearch } from "@page-object/pages/product-search.page";
 
 /**
- * Per-migration extension of the qa-master base fixture. This file is the
+ * Per-migration extension of the pwm-blueprint base fixture. This file is the
  * ONLY one in the selenium-java-product-search migration allowed to import
  * `test` from `@playwright/test`; every spec imports from
  * `@fixtures/base.fixture` (this barrel).

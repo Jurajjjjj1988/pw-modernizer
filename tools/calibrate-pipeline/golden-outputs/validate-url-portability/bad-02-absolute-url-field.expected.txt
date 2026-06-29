@@ -1,0 +1,3 @@
+# Exit 1. A Page whose `url` field is an absolute URL cannot be repointed via baseURL.
+URL portability ✗
+url/path field = absolute

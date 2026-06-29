@@ -527,6 +527,12 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     // presence diff; Cypress-only, self-gates to a trivial pass otherwise.
     { name: "network completeness (no dropped cy.intercept stubs)", cmd: "npx", args: ["tsx", "scripts/validate-network-completeness.ts", "--root", "outputs", "--input-basename", p.base, "--source", p.input] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
+    // URL portability: an absolute http(s):// in a goto / Page url field pins the
+    // output to ONE host, so a migration green against staging can't be repointed
+    // at prod by swapping baseURL. Converts the soft prompt rule (forbidden-patterns
+    // + §1.4.12) into a hard structural gate. Relative URLs (what outputs already
+    // emit) pass; only absolute navigation fails.
+    { name: "URL portability (relative paths + baseURL)", cmd: "npx", args: ["tsx", "scripts/validate-url-portability.ts", "--root", "outputs"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
     // Live-SUT gates (prior-art levers BP2 + BP1), only when MIGRATION_TARGET_URL
     // is set — the static gates above always run.

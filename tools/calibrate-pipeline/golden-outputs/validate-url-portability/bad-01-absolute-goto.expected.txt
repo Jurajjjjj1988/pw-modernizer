@@ -1,0 +1,3 @@
+# Exit 1. page.goto('https://www.saucedemo.com/...') pins the spec to one host.
+URL portability ✗
+goto(absolute)

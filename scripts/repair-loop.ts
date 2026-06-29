@@ -203,6 +203,65 @@ function runClaude(auth: Auth, prompt: string): boolean {
   return r.status === 0;
 }
 
+/** Run eslint (incl. eslint-plugin-playwright) on the emitted .ts files; the same
+ * gate CI's lint-output workflow runs. Returns clean + the eslint output. */
+function runLintGate(files: string[]): { clean: boolean; output: string } {
+  const tsFiles = files.filter((f) => f.endsWith(".ts"));
+  if (tsFiles.length === 0) return { clean: true, output: "" };
+  const r = spawnSync("npx", ["eslint", ...tsFiles], { cwd: REPO_ROOT, encoding: "utf8" });
+  return { clean: r.status === 0, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+/** Lint-repair prompt: the test is ALREADY green on the live app — fix only the
+ * lint errors without touching behaviour (IMP5). */
+export function buildLintRepairPrompt(files: string[], lintOutput: string): string {
+  const fileList = files.map((f) => `- ${relative(REPO_ROOT, f)}`).join("\n");
+  return [
+    "A migrated Playwright test RUNS GREEN against the live app, but it FAILS the lint gate",
+    "(eslint + eslint-plugin-playwright). Fix ONLY the lint errors, without changing behaviour.",
+    "",
+    "## eslint output",
+    "```",
+    lintOutput.trim().split("\n").slice(-40).join("\n"),
+    "```",
+    "",
+    "## Files you may edit",
+    fileList,
+    "",
+    "## Rules",
+    "- Fix the reported errors at the cause (e.g. remove an unused `expect` import / dead var).",
+    "- Do NOT change assertions, locators, or behaviour — the test is green; keep it green.",
+    "- Do NOT add eslint-disable comments to silence a rule.",
+    "- Keep qa-master architecture (spec imports from @fixtures/base.fixture; locators in POMs).",
+  ].join("\n");
+}
+
+/** After execution-green, best-effort lint-repair so the accepted output is ALSO
+ * lint-clean (CI's lint-output gate). Execution stays the primary signal — this
+ * cleans the green, never fails it. Re-verifies execution after any edit (IMP5). */
+function ensureLintClean(base: string, url: string, mock: boolean): void {
+  const spec = findGeneratedSpec(OUT_DIR, base);
+  if (!spec) return;
+  const files = collectEmittedFiles(spec).filter(existsSync);
+  let lint = runLintGate(files);
+  if (lint.clean) { process.stdout.write("    lint: clean ✓\n"); return; }
+  if (mock) { process.stdout.write("    [mock] green but lint-dirty — would lint-repair.\n"); return; }
+  const auth = detectAuth();
+  if (auth.kind === "none") return;
+  let edited = false;
+  for (let i = 1; i <= 2 && !lint.clean; i++) {
+    process.stdout.write(`    lint-repair ${i}/2 — green but not lint-clean; fixing lint errors\n`);
+    if (!runClaude(auth, buildLintRepairPrompt(files, lint.output))) break;
+    edited = true;
+    lint = runLintGate(files);
+  }
+  if (edited && !runExecutionGate(base, url).green) {
+    process.stdout.write("    ⚠ lint-repair edits regressed execution — review (the pre-lint output was green).\n");
+    return;
+  }
+  process.stdout.write(lint.clean ? "    lint: clean after repair ✓\n" : "    lint: still flagged after repair — accepted on execution-green; flag for human.\n");
+}
+
 /** One repair attempt after a failed run: build the prompt + (mock or) call
  * Claude to edit in place. Returns null to continue the loop, or an exit code. */
 function handleFailure(base: string, url: string, source: string, mock: boolean, failureTail: string): number | null {
@@ -254,6 +313,7 @@ function main(): number {
     const gate = runExecutionGate(base, url);
     if (gate.green) {
       process.stdout.write(`  ✅ GREEN — ${base} passes against ${url}${iter > 1 ? ` (repaired in ${iter - 1} iteration(s))` : " (no repair needed)"}.\n`);
+      ensureLintClean(base, url, values.mock === true); // IMP5: green AND lint-clean
       return 0;
     }
     process.stdout.write(`  ✗ failed against the live app — capturing snapshot + reaching files for repair\n`);
@@ -268,6 +328,7 @@ function main(): number {
   const final = runExecutionGate(base, url);
   if (final.green) {
     process.stdout.write(`  ✅ GREEN — ${base} passes against ${url} (repaired on the final iteration, ${maxIter}/${maxIter}).\n`);
+    ensureLintClean(base, url, values.mock === true); // IMP5: green AND lint-clean
     return 0;
   }
   process.stdout.write(`\n  ✗ still failing after ${maxIter} repair iteration(s) — needs human review.\n`);

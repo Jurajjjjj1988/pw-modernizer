@@ -38,6 +38,7 @@ import { parseArgs } from "node:util";
 import { computeCostUsd } from "./metrics.js";
 import { listOutputSpecs, findGeneratedSpec } from "./output-spec.js";
 import { deriveNavUrls, buildSnapshotFlow } from "./lib/nav-urls.js";
+import { appKey, loadCache, renderCacheHints, recordFromReport } from "./locator-cache.js";
 
 // Re-exported from the shared resolver so existing importers of this symbol
 // (validate-report-metrics, plan-code-coverage, conformance, tests) keep working.
@@ -323,12 +324,22 @@ function domGroundingBlock(snapshotPath: string | null): string {
   ].join("\n");
 }
 
+/** Verified-locator hints from the per-app cache (IMP6): locators a prior
+ * migration of THIS app confirmed resolve uniquely against the live DOM. Purely
+ * additive — empty string when there's no cache for the host or no url. */
+function cacheHintsBlock(url: string | null): string {
+  if (!url) return "";
+  const block = renderCacheHints(loadCache(url), appKey(url));
+  return block.length > 0 ? `\n${block}` : "";
+}
+
 /** The Stage-2 wrapper prompt — points Claude at the assembled spec + context,
  * mirroring migrate.yml. Profile-aware: lean drops the qa-master triad/STOP
  * block + style anchor and states the relaxed contract; qa-master is unchanged.
  * When a DOM snapshot was captured (MIGRATION_TARGET_URL set), it is injected as
- * a closed vocabulary so Stage 2 cannot hallucinate locators. */
-export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: string | null = null): string {
+ * a closed vocabulary so Stage 2 cannot hallucinate locators; plus any
+ * previously-verified locators for this app from the cache (IMP6). */
+export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: string | null = null, url: string | null = null): string {
   const assembledRel = profile === "lean"
     ? "prompts/_assembled/generate.lean.md"
     : "prompts/_assembled/generate.md";
@@ -367,6 +378,7 @@ export function buildPrompt(p: Paths, profile: Args["profile"], snapshotPath: st
     "## Context to load (in this order)",
     ...context,
     domGroundingBlock(snapshotPath),
+    cacheHintsBlock(url),
     "",
     `Write a migration report to ${p.report} per the report schema.`,
   ].join("\n");
@@ -417,6 +429,10 @@ function validatorWall(p: Paths, profile: Args["profile"]): WallStep[] {
     // real app. Catch it deterministically (zero tokens) instead of at the live
     // execution gate. Found by validating the closed loop on a real GitHub test.
     { name: "auth self-contained", cmd: "npx", args: ["tsx", "scripts/validate-auth-self-contained.ts", "--root", "outputs", "--input-basename", p.base] },
+    // A shared page object co-authored by >1 migration is cross-app contamination
+    // (the unambiguous half of the batch-mode race a multi-agent hunt found).
+    // Deterministic, zero-token; does NOT flag legitimate single-owner reuse.
+    { name: "POM provenance (single-migration authorship)", cmd: "npx", args: ["tsx", "scripts/validate-pom-provenance.ts", "--root", "outputs"] },
     { name: "TODO discipline", cmd: "npx", args: ["tsx", "scripts/validate-todo-discipline.ts", "--root", "outputs/tests", "--root", "outputs/helper"] },
     { name: "report metrics", cmd: "npx", args: ["tsx", "scripts/validate-report-metrics.ts", "--report", p.report, "--input", p.input] },
     // Live-SUT gates (prior-art levers BP2 + BP1), only when MIGRATION_TARGET_URL
@@ -648,21 +664,28 @@ function runOne(args: Args): { base: string; code: number } {
   // accessibility tree and feed it to Stage 2 as a closed vocabulary so it cannot
   // hallucinate locators. Zero model tokens (a Playwright launch); ~free.
   const snapshotPath = captureDomSnapshot(p);
+  const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
   // No SUT to ground against → run the offline abstention gate on the plan before
   // spending Stage-2 tokens. When a snapshot exists, snapshot grounding governs instead.
   if (snapshotPath === null && !offlineAbstentionGate(p)) {
     return { base: p.base, code: 1 };
   }
-  runClaude(auth, buildPrompt(p, args.profile, snapshotPath));
+  // IMP6: inject locators a prior migration of THIS app verified against the live DOM.
+  runClaude(auth, buildPrompt(p, args.profile, snapshotPath, sut.length > 0 ? sut : null));
 
   process.stdout.write("\n  Validator wall (mirrors CI; CI remains authoritative):\n");
   const results = runWall(validatorWall(p, args.profile));
   let code = reportOutcome(p, results);
+  // IMP6: persist the locators the DOM-probe gate confirmed resolve-unique for this
+  // host, so the next migration of the same app reuses them (cheaper + consistent).
+  if (sut.length > 0) {
+    const n = recordFromReport(sut, join(REPO_ROOT, "outputs/reports", `${p.base}-dom-probe.json`));
+    if (n > 0) process.stdout.write(`  [step] locator cache — ${appKey(sut)} now holds ${n} verified locator(s)\n`);
+  }
   // --repair (execution-guided closed loop): if a gate failed and a live SUT is
   // set, run the repair loop — run the migrated test against the SUT, feed the
   // failure + a fresh snapshot back to Claude, re-run, until green (<=3 iter).
   // This makes the proven generate->run->repair loop the default path.
-  const sut = (process.env["MIGRATION_TARGET_URL"] ?? "").trim();
   if (code !== 0 && args.repair && sut.length > 0) {
     process.stdout.write("\n  --repair: a gate failed + a live SUT is set → running execution-guided repair loop ...\n");
     const r = spawnSync("npx", ["tsx", "scripts/repair-loop.ts", "--input-basename", p.base, "--url", sut, "--source", p.input], { cwd: REPO_ROOT, stdio: "inherit" });

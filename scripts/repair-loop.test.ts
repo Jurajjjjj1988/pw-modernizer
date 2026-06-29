@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure } from "./repair-loop.js";
+import { buildRepairPrompt, extractPageSnapshot, findFailureSnapshot, isAuthBootstrapFailure, buildLintRepairPrompt } from "./repair-loop.js";
 
 test("repair prompt carries the execution error, the live snapshot, the file list, and the getByLabel hint", () => {
   const p = buildRepairPrompt(
@@ -107,4 +107,18 @@ test("buildRepairPrompt: a plain locator failure does NOT add the auth directive
   const p = buildRepairPrompt("/r/x.spec.ts", [], "waiting for getByRole('heading', { name: /products/i })",
     "- text: Products", "https://app", true);
   assert.ok(!/authentication is NOT self-contained/i.test(p), "locator failures must not trigger the auth block");
+});
+
+// ---- IMP5: lint-repair (green AND lint-clean).
+
+test("buildLintRepairPrompt: carries the eslint output + files and forbids behaviour changes / disable-comments", () => {
+  const p = buildLintRepairPrompt(
+    ["/r/outputs/tests/x.spec.ts", "/r/outputs/helper/page-object/pages/login.page.ts"],
+    "x.spec.ts\n  4:16  error  'expect' is defined but never used  @typescript-eslint/no-unused-vars",
+  );
+  assert.match(p, /RUNS GREEN against the live app, but it FAILS the lint gate/);
+  assert.match(p, /'expect' is defined but never used/); // the real eslint signal
+  assert.match(p, /login\.page\.ts/);                      // file in scope
+  assert.match(p, /keep it green/);                        // don't change behaviour
+  assert.match(p, /Do NOT add eslint-disable/);            // no silencing
 });

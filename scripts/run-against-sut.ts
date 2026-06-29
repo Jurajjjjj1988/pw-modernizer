@@ -45,10 +45,25 @@ interface SutResult {
  * browser/config) — the former feeds the repair loop, the latter is an infra error.
  */
 export function parsePlaywrightVerdict(out: string, status: number | null): { ran: boolean; passed: boolean } {
-  const hasTally = /\d+\s+passed|\d+\s+failed/i.test(out);
+  const count = (re: RegExp): number => { const m = re.exec(out); return m ? Number(m[1]) : 0; };
+  const passedN = count(/(\d+)\s+passed/i);
+  const failedN = count(/(\d+)\s+failed/i);
+  const skippedN = count(/(\d+)\s+skipped/i);
+  const flakyN = count(/(\d+)\s+flaky/i);
+  const interruptedN = count(/(\d+)\s+interrupted/i);
+  const didNotRunN = count(/(\d+)\s+did not run/i);
+  const hasTally = /\d+\s+(passed|failed|skipped|flaky|interrupted)/i.test(out);
   const infraError = /command not found|Cannot find module|No tests found|Executable doesn't exist|browserType\.launch/i.test(out);
   if (infraError && !hasTally) return { ran: false, passed: false };
-  const passed = status === 0 && /\bpassed\b/i.test(out) && !/\bfailed\b/i.test(out);
+  if (!hasTally && status !== 0) return { ran: false, passed: false };
+  // GREEN is HONEST only when at least one test REALLY passed and NOTHING was
+  // failed, skipped, flaky, interrupted, or did-not-run. The old check —
+  // `status===0 && /passed/ && !/failed/` — let "1 passed, 2 skipped" (green!),
+  // an all-skipped run, a flaky pass, and even the word "passed" in a test title
+  // through as a false green. Count the tally instead.
+  const passed = status === 0
+    && passedN >= 1
+    && failedN === 0 && skippedN === 0 && flakyN === 0 && interruptedN === 0 && didNotRunN === 0;
   return { ran: true, passed };
 }
 

@@ -218,7 +218,34 @@ function captureDomSnapshot(p: Paths): string | null {
  * scaffolding: basepage/baseblock/base.fixture/logger), removing every generated
  * POM/block/spec/test-data. Git is the source of truth for the baseline. Used by
  * --isolate so a migration cannot inherit a sibling migration's locators. */
+/**
+ * UNCOMMITTED edits to TRACKED files under outputs/helper + outputs/tests that a
+ * --isolate reset (`git checkout HEAD --`) would silently discard. Untracked
+ * generated files (`??`) are EXPECTED to be wiped, so they are excluded — only
+ * tracked changes (hand-edited scaffolding/examples) are at risk. Pure: takes
+ * `git status --porcelain` text. Exported for tests.
+ */
+export function isolateDiscards(porcelain: string): string[] {
+  return porcelain
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .filter((l) => l.length > 3 && !l.startsWith("??")) // tracked changes only
+    .map((l) => l.slice(3).trim())
+    .map((l) => (l.includes(" -> ") ? l.split(" -> ")[1] ?? l : l))
+    .filter((p) => p.startsWith("outputs/helper/") || p.startsWith("outputs/tests/"));
+}
+
 function resetSharedTree(): void {
+  // Safety: --isolate's `git checkout HEAD --` reverts uncommitted edits to TRACKED
+  // files (the committed scaffolding/examples) without asking. Surface exactly what
+  // is being discarded instead of losing it silently (was a data-loss footgun).
+  const status = spawnSync("git", ["status", "--porcelain", "--", "outputs/helper", "outputs/tests"], { cwd: REPO_ROOT, encoding: "utf8" });
+  const discards = isolateDiscards(status.stdout ?? "");
+  if (discards.length > 0) {
+    process.stdout.write(`\n  ⚠ --isolate is discarding ${discards.length} uncommitted change(s) to tracked file(s) — commit/stash to keep them:\n`);
+    for (const d of discards) process.stdout.write(`      ${d}\n`);
+    process.stdout.write("  ");
+  }
   process.stdout.write("  [step] --isolate: resetting outputs/helper + outputs/tests to the committed baseline ... ");
   // Restore tracked baseline files (base.fixture gets extended per migration), then
   // remove untracked generated files. -q keeps it quiet; scoped to the two dirs.

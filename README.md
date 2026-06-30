@@ -79,6 +79,10 @@ Every row is a failure that passes `tsc` and every static gate, yet ships a brok
 
 Most of these are invisible to syntax-only converters (`cy2pw`, archived 2025, handles none of the framework-semantic cases). They're the difference between "it compiled" and "it runs green on the live app, on the correct file, having corrupted nothing."
 
+### What a *caught* false-green looks like
+
+A real one from the validation record: an early run reported `1 passed` — green — but the repair had edited a *different* committed example than the spec under migration, so the pass was on the wrong file. The loop re-resolves every spec by its plan-provenance header before accepting, refused the misattributed green, and the fix re-ran against the correct file where it went green for the right reason — **no committed example corrupted**. A green you can't trace to the right file is exactly the failure this exists to stop. ([docs/REAL-GITHUB-VALIDATION.md](docs/REAL-GITHUB-VALIDATION.md))
+
 ## The pwm-blueprint output
 
 Stage 2 emits a layered architecture a senior SDET would write — not a single bare `.spec.ts`:

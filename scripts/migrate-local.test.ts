@@ -25,6 +25,7 @@ import {
   isStructuralGroundingCap,
   parseDirtyPaths,
   archiveIsolatedOutput,
+  isolateDiscards,
   codemodDraftBlock,
   shouldAcceptAfterRepair,
   type Args,
@@ -306,4 +307,25 @@ test("shouldAcceptAfterRepair: empty wall + execution-green is vacuously accepte
   // code alone governs. Documents the boundary so a future empty-wall path is intentional.
   assert.equal(shouldAcceptAfterRepair(0, []), true);
   assert.equal(shouldAcceptAfterRepair(1, []), false);
+});
+
+// ---- --isolate data-loss guard: warn about tracked edits a reset would discard.
+
+test("isolateDiscards: tracked modifications under the two dirs are flagged", () => {
+  const porcelain = [
+    " M outputs/helper/fixtures/base.fixture.ts", // hand-edited committed scaffolding
+    " M outputs/tests/example.spec.ts",
+  ].join("\n");
+  assert.deepEqual(isolateDiscards(porcelain), [
+    "outputs/helper/fixtures/base.fixture.ts",
+    "outputs/tests/example.spec.ts",
+  ]);
+});
+
+test("isolateDiscards: untracked generated files (??) are NOT flagged (expected to be wiped)", () => {
+  assert.deepEqual(isolateDiscards("?? outputs/tests/generated.spec.ts\n?? outputs/helper/page-object/pages/new.page.ts"), []);
+});
+
+test("isolateDiscards: changes outside the two dirs are ignored", () => {
+  assert.deepEqual(isolateDiscards(" M scripts/migrate-local.ts\n M config/migration-rules.md"), []);
 });

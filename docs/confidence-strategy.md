@@ -27,7 +27,7 @@ live execution gate. So if **every gate is independently proven** (it accepts th
 goods and rejects the bads), then every migration the loop accepts is certified
 by construction — you trust the *gate*, not 300 manual reviews.
 
-- **DONE.** 16 validators are calibrated against a good/bad fixture corpus
+- **DONE.** 19 validators are calibrated against a good/bad fixture corpus
   (`npm run calibrate`); an uncalibrated validator is worse than none (false
   confidence), so each one proves accept-goods/reject-bads before it can block.
 - **DONE (this round).** `validate-url-portability` converts the soft "use

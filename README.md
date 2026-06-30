@@ -14,6 +14,8 @@ The point isn't "convert the syntax" — every codemod does that and produces te
 > [!TIP]
 > Skip to [What the closed loop catches](#what-the-closed-loop-catches) for the failure modes this exists to stop — that's the substance.
 
+**Where it stands (measured, honestly):** on the bad-Playwright corpus the scorer reports ~0.69 mean confidence — **~60% auto-ship, ~40% routed to the human-reviewed verify pass**. That number was *lowered* from an inflated ~0.75 when two scorer bugs were found and fixed ([docs/measured-quality-baseline.md](docs/measured-quality-baseline.md)). 17 real public-GitHub tests have migrated green end-to-end across Cypress / Selenium-Java / Selenium-Python ([docs/REAL-GITHUB-VALIDATION.md](docs/REAL-GITHUB-VALIDATION.md)); 19 validators are calibrated against a 113-fixture good/bad corpus. It's a working safety net under human review — not a finished hands-off converter.
+
 ## Quick start
 
 ```bash

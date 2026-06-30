@@ -1,12 +1,12 @@
 # PWmodernizer — Claude orientation
 
-> Read this first on every new session. ~100 lines, scannable. Reflects v0.2.0 pwm-blueprint architecture.
+> Read this first on every new session. ~100 lines, scannable. Reflects the v0.3.0 pwm-blueprint architecture (19 calibrated validators / 113 fixtures).
 
 ## What this repo is
 
 PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (bad Playwright TS, Cypress, Selenium Java, Selenium Python) into **clean modern Playwright TypeScript** you own. As of v0.2.0 every migration emits the **pwm-blueprint layered architecture** by default — a spec under `outputs/tests/`, a `PageClass` under `outputs/helper/page-object/pages/`, a base-fixture extension under `outputs/helper/fixtures/`, plus optional blocks / API wrappers / actions / utilities / test-data / types. **Human review is required** before merge. Step 1 (bad-Playwright) is the active quality bar — 70% acceptable rate gates promotion of Cypress / Selenium beyond example status.
 
-## Quick map (v0.2.0)
+## Quick map (v0.3.0)
 
 - `inputs/` — source tests by framework (`bad-playwright/`, `cypress/`, `selenium-java/`, `selenium-python/`, `_stress/`)
 - `outputs/` — pipeline deliverables
@@ -61,7 +61,7 @@ npm run migrate -- --check     # ZERO-TOKEN preflight: Node 22+/auth/gh/plan set
 npm run migrate -- --input <p> # Stage 2 LOCALLY (no CI/fork) — generate + full validator wall. --mock = zero-token wiring check. SPENDS TOKENS without --mock.
 npm run triage <pr#>           # ZERO-TOKEN: freeze a failing migrator PR + print triage digest
 npm run smoke                  # typecheck:all + validate:all + lint — run before any commit
-npm run calibrate              # run 100-fixture corpus (15 validators) locally
+npm run calibrate              # run the calibration corpus (19 validators / 113 fixtures) locally
 npm run validate:all           # kb + examples + assemble + envelope (×2) + derive + coverage + calibrate
 npm run check:kb               # verify all KB IDs referenced in prompts/examples resolve
 npm run check:examples         # strict mode — examples must be plan/output coherent

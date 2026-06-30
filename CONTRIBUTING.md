@@ -34,7 +34,7 @@ In rough order of impact per LOC:
 ## Pre-push checklist
 
 ```bash
-npm run smoke            # MUST pass — typecheck + validate:all (calibration: 16 validators / 104 fixtures, plus the standalone kb/examples/envelope/derive/coverage/assertion/helper-usage/url-portability checks) + eslint + the scripts/*.test.ts unit suite
+npm run smoke            # MUST pass — typecheck + validate:all (calibration: 19 validators / 113 fixtures, plus the standalone kb/examples/envelope/derive/coverage/assertion/helper-usage/url-portability checks) + eslint + the scripts/*.test.ts unit suite
 git push
 ```
 

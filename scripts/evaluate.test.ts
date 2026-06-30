@@ -25,6 +25,7 @@ import {
   countSmells,
   domProbeConfirmed,
   findForbidden,
+  findHardForbidden,
   planConfidence,
   sliceReachablePom,
   extractCalledMethods,
@@ -259,6 +260,71 @@ test("findForbidden: does NOT flag the word TODO inside a comment or string lite
 test("findForbidden: flags test.todo / it.fixme pending-test placeholders", () => {
   assert.ok(findForbidden("test.todo('add edge case');").some((f) => /placeholder/.test(f)));
   assert.ok(findForbidden("it.fixme('broken case', async () => {});").some((f) => /placeholder/.test(f)));
+});
+
+// ---- Hard-forbidden subset: the correctness-defect patterns promoted to a HARD reject.
+
+test("findHardForbidden: flags the correctness-defect subset, keeps console.log/`: any` SOFT", () => {
+  // force:true, page.pause(), test.only, as-unknown-as, runtime test.skip and
+  // test.todo/test.fixme placeholders are correctness lies → hard subset.
+  const hard = [
+    "test.only('[X-1] - isolates', async ({ page }) => {",
+    "  await page.getByRole('button').click({ force: true });",
+    "  await page.pause();",
+    "  const n = (x as unknown as number);",
+    "  await expect(page.getByText('ok')).toBeVisible();",
+    "});",
+    "test.skip('[X-2] - later', async ({ page }) => { await expect(page.locator('body')).toBeVisible(); });",
+    "test.todo('[X-3] - pending');",
+  ].join("\n");
+  const labels = findHardForbidden(hard);
+  for (const want of ["force: true", "page.pause()", "test.only", "as unknown as cast", "test.skip", "test.todo/test.fixme placeholder"]) {
+    assert.ok(labels.includes(want), `hard subset must include ${want}`);
+  }
+
+  // console.log and `: any` are SOFT — present in findForbidden, absent from the hard subset.
+  const soft = "console.log('debug'); const x: any = 1;";
+  assert.deepEqual(findHardForbidden(soft), [], "console.log and `: any` stay SOFT (no hard reject)");
+  const softHits = findForbidden(soft);
+  assert.ok(softHits.includes("console.log") && softHits.includes("`: any` type"),
+    "soft patterns are still reported by findForbidden (they keep docking confidence)");
+});
+
+test("findHardForbidden: a clean web-first emitted tree yields no hard-reject patterns", () => {
+  const clean = [
+    "import { test, expect } from '@fixtures/base.fixture';",
+    "test('[X-1] - loads', async ({ homePage }) => {",
+    "  await homePage.open();",
+    "  await expect(homePage.heading).toBeVisible();",
+    "});",
+  ].join("\n");
+  assert.deepEqual(findHardForbidden(clean), [], "the 17-green class contains none of the hard subset");
+});
+
+test("evaluate main(): an emitted tree with a hard-forbidden pattern is rejected with a non-zero exit", () => {
+  // Integration: prove the hard-forbidden gate fires end-to-end. Spec ASSERTS (so it
+  // clears the assertion floor) but ships `force: true` — a correctness defect that
+  // must hard-reject regardless of an otherwise-green scorecard. Unique stem so no
+  // real outputs/helper file joins the emitted tree.
+  const root = mkdtempSync(join(tmpdir(), "pwm-hardforbid-"));
+  try {
+    const input = join(root, "old.spec.ts");
+    const spec = join(root, "hard-forbidden-fixture.spec.ts");
+    const plan = join(root, "plan.md");
+    const reportOut = join(root, "report.md");
+    writeFileSync(input, "test('old', async () => { await page.click({ force: true }); expect(x).toBe(1); });\n");
+    writeFileSync(spec,
+      "import { test, expect } from '@fixtures/base.fixture';\n"
+      + "test('[X-1] - clicks', async ({ p }) => { await p.button.click({ force: true }); await expect(p.ok).toBeVisible(); });\n");
+    writeFileSync(plan, "## Source framework\nbad-playwright\n\n| locator | confidence |\n|---|---|\n| getByRole | HIGH |\n");
+    const r = spawnSync("npx", ["tsx", EVALUATE,
+      "--input", input, "--output", spec, "--plan", plan, "--report-out", reportOut,
+    ], { cwd: REPO_ROOT, encoding: "utf8" });
+    assert.notEqual(r.status, 0, "hard-forbidden emitted tree must exit non-zero");
+    assert.match(`${r.stderr ?? ""}`, /hard-forbidden|force: true/i, "stderr must explain the hard-forbidden rejection");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // ---- 1D: assertion floor.

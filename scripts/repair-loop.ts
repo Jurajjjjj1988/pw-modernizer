@@ -46,9 +46,13 @@ function detectAuth(): Auth {
   return { kind: "none", value: "" };
 }
 
-/** Run the execution gate; return whether it's green + the failure tail. */
+/** Run the execution gate; return whether it's green + the failure tail. This is
+ * the DIAGNOSIS run: pass --retries=0 so a clean single failure is the repair
+ * signal (a retry would only mask the very error this loop must capture and fix).
+ * The acceptance gate (run-against-sut's default, --retries=1) keeps the opposite
+ * policy — there a retried pass means flaky ⇒ not accepted. */
 function runExecutionGate(base: string, url: string): { green: boolean; failureTail: string } {
-  const r = spawnSync("npx", ["tsx", "scripts/run-against-sut.ts", "--input-basename", base, "--url", url], {
+  const r = spawnSync("npx", ["tsx", "scripts/run-against-sut.ts", "--input-basename", base, "--url", url, "--retries=0"], {
     cwd: REPO_ROOT, encoding: "utf8",
   });
   const failPath = join(REPO_ROOT, "outputs/reports", `${base.replace(/[^\w.-]/g, "_")}-sut-failure.txt`);

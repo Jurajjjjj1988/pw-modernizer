@@ -11,6 +11,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 interface Step {
   label: string;
@@ -18,7 +19,16 @@ interface Step {
   hint: string;
 }
 
-const steps: Step[] = [
+// Measured against the live calibration registry (tools/calibrate-pipeline/
+// run-calibration.ts VALIDATORS) + fixture corpus. quickstart-check.test.ts
+// re-derives these numbers from disk and fails if this label drifts, so the
+// figure stays honest without a per-run filesystem scan here.
+export const CALIBRATION_VALIDATOR_COUNT = 19;
+export const CALIBRATION_FIXTURE_COUNT = 113;
+export const calibrationStepLabel = (): string =>
+  `Validators calibrated (${CALIBRATION_VALIDATOR_COUNT} validators, ${CALIBRATION_FIXTURE_COUNT} fixtures)`;
+
+export const steps: Step[] = [
   {
     label: "Node version",
     cmd: "node --version",
@@ -65,39 +75,45 @@ const steps: Step[] = [
     hint: "scripts/derive-envelope.ts can't parse some example plan into a schema-valid envelope. Either the plan markdown drifted from §9 schema or the derive parser needs updating.",
   },
   {
-    label: "Validators calibrated (24 fixtures)",
+    label: calibrationStepLabel(),
     cmd: "npx tsx tools/calibrate-pipeline/run-calibration.ts",
     hint: "A validator accepted a bad fixture or rejected a good one. Calibration is required before promoting --warn → --strict per Sakasegawa 2026.",
   },
 ];
 
-let passed = 0;
-let failed = 0;
-for (const step of steps) {
-  process.stdout.write(`  ${step.label} ... `);
-  try {
-    execSync(step.cmd, { stdio: "pipe" });
-    process.stdout.write("OK\n");
-    passed += 1;
-  } catch (err) {
-    process.stdout.write("FAIL\n");
-    console.error(`    hint: ${step.hint}`);
-    const msg = err instanceof Error ? err.message : String(err);
-    const lines = msg.split("\n").slice(0, 5).join("\n      ");
-    console.error(`    error excerpt:\n      ${lines}`);
-    failed += 1;
+function main(): void {
+  let passed = 0;
+  let failed = 0;
+  for (const step of steps) {
+    process.stdout.write(`  ${step.label} ... `);
+    try {
+      execSync(step.cmd, { stdio: "pipe" });
+      process.stdout.write("OK\n");
+      passed += 1;
+    } catch (err) {
+      process.stdout.write("FAIL\n");
+      console.error(`    hint: ${step.hint}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      const lines = msg.split("\n").slice(0, 5).join("\n      ");
+      console.error(`    error excerpt:\n      ${lines}`);
+      failed += 1;
+    }
   }
+
+  if (!existsSync("outputs/tests/playwright.config.ts")) {
+    console.warn("  note: outputs/tests/playwright.config.ts missing — local 'npx playwright test' won't work until you pull main.");
+  }
+
+  console.log("");
+  console.log(`Summary: ${passed} passed, ${failed} failed`);
+  if (failed > 0) {
+    console.log("Fix the failing checks before opening a PR. CI runs the same gates.");
+    process.exit(1);
+  }
+  console.log("All checks green. You're ready to contribute.");
+  console.log("Next: drop a bad Playwright spec into inputs/bad-playwright/ and push to fire Stage 1.");
 }
 
-if (!existsSync("outputs/tests/playwright.config.ts")) {
-  console.warn("  note: outputs/tests/playwright.config.ts missing — local 'npx playwright test' won't work until you pull main.");
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
 }
-
-console.log("");
-console.log(`Summary: ${passed} passed, ${failed} failed`);
-if (failed > 0) {
-  console.log("Fix the failing checks before opening a PR. CI runs the same gates.");
-  process.exit(1);
-}
-console.log("All checks green. You're ready to contribute.");
-console.log("Next: drop a bad Playwright spec into inputs/bad-playwright/ and push to fire Stage 1.");

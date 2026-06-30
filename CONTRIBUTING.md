@@ -8,7 +8,7 @@ Thanks for your interest. This document is the onboarding shortcut.
 git clone https://github.com/Jurajjjjj1988/PWmodernizer.git
 cd PWmodernizer
 npm ci
-npm run smoke   # typecheck:all + validate:all (no Claude session needed)
+npm run smoke   # typecheck:all + validate:all + lint + the scripts/*.test.ts unit suite (no Claude session needed)
 ```
 
 If `npm run smoke` exits 0, your local environment is ready. Everything is gated by it.
@@ -34,7 +34,7 @@ In rough order of impact per LOC:
 ## Pre-push checklist
 
 ```bash
-npm run smoke            # MUST pass — typecheck + 6 validators + calibration (46 fixtures) + eslint
+npm run smoke            # MUST pass — typecheck + validate:all (calibration: 16 validators / 104 fixtures, plus the standalone kb/examples/envelope/derive/coverage/assertion/helper-usage/url-portability checks) + eslint + the scripts/*.test.ts unit suite
 git push
 ```
 

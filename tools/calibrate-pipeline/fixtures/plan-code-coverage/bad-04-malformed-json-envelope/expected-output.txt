@@ -1,0 +1,4 @@
+# Exit 1. Envelope JSON is truncated mid-array — the json-guard rejects it before inspecting code.
+::error file=
+envelope is not valid JSON / missing required arrays
+not valid JSON

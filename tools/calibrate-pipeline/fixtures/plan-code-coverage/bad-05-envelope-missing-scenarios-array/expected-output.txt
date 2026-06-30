@@ -1,0 +1,4 @@
+# Exit 1. Envelope is valid JSON but omits the required `scenarios` array.
+::error file=
+envelope is not valid JSON / missing required arrays
+missing required array 'scenarios'

@@ -12,14 +12,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import {
+  loadEnvelopeRaw,
   expectedSpecBasenames,
   filterCodePathsByInput,
   validateScenarioCoverage,
   type Envelope,
 } from "./plan-envelope-validate.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const VALIDATOR = join(HERE, "plan-envelope-validate.ts");
 
 function mkEnvelope(inputBasename: string, scenarioIds: string[]): Envelope {
   return {
@@ -39,6 +45,52 @@ function mkEnvelope(inputBasename: string, scenarioIds: string[]): Envelope {
     expectedMetrics: { selectorQualityScore: 1, smellCountDelta: 0, locDelta: 0, antiPatternCoverage: "n/a" },
   };
 }
+
+test("loadEnvelopeRaw: valid JSON parses to the same value the bare JSON.parse produced", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pev-"));
+  try {
+    const p = join(dir, "envelope.json");
+    writeFileSync(p, '{"inputBasename":"input.spec.ts","scenarios":[{"id":"1.1"}]}');
+    const r = loadEnvelopeRaw(p);
+    assert.equal(r.ok, true);
+    assert.ok(r.ok);
+    assert.deepEqual(r.raw, { inputBasename: "input.spec.ts", scenarios: [{ id: "1.1" }] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadEnvelopeRaw: truncated sidecar yields ok=false with a reason instead of throwing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pev-"));
+  try {
+    const p = join(dir, "envelope.json");
+    // A sidecar cut off mid-write — Stage 1 max-turns / partial-flush shape.
+    writeFileSync(p, '{\n  "inputBasename": "input.spec.ts",\n  "scenarios": [\n    {\n      "id": "1.1",\n');
+    const r = loadEnvelopeRaw(p);
+    assert.equal(r.ok, false);
+    assert.ok(!r.ok);
+    assert.ok(r.reason.length > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: truncated envelope exits 1 with an actionable ::error:: containing 'not valid JSON'", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pev-"));
+  try {
+    const p = join(dir, "envelope.json");
+    writeFileSync(p, '{\n  "inputBasename": "input.spec.ts",\n  "scenarios": [\n    {\n      "id": "1.1",\n');
+    const r = spawnSync("npx", ["tsx", VALIDATOR, "--envelope", p], { encoding: "utf8" });
+    assert.equal(r.status, 1);
+    const out = `${r.stdout}\n${r.stderr}`;
+    assert.match(out, /::error/);
+    assert.match(out, /not valid JSON/);
+    // No raw uncaught SyntaxError stack — the guard turned it into a message.
+    assert.doesNotMatch(out, /at JSON\.parse \(<anonymous>\)/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("expectedSpecBasenames drops trailing -test and leading test-", () => {
   assert.ok(expectedSpecBasenames("LoginTest.java").includes("login.spec.ts"));

@@ -112,11 +112,58 @@ export function extractPwAssertions(source: string): PwAssertion[] {
 }
 
 export interface StrengthViolation {
-  kind: "count-drop" | "negation-drop" | "strength-drop";
+  kind: "count-drop" | "negation-drop" | "strength-drop" | "retarget";
   detail: string;
 }
 
 const sumTier = (a: PwAssertion[]): number => a.reduce((s, x) => s + x.tier, 0);
+
+/** Tier at or above which a content matcher carries a literal anchor worth tracking
+ * for re-targeting (exact + partial content; state/presence don't bind a value). */
+const STRONG_TIER = 3;
+
+/** The strongest matcher tier asserted against a given target text in a set. */
+function maxTierForTarget(set: PwAssertion[], target: string): number {
+  let max = 0;
+  for (const a of set) if (a.target === target && a.tier > max) max = a.tier;
+  return max;
+}
+
+/**
+ * Detect assertion RE-TARGETING: a repair moves a strong matcher's literal anchor
+ * onto a DIFFERENT target while the original target — still present in the after —
+ * loses its strong assertion. The aggregate sum/count/negation guards are blind to
+ * this (the relocated strong matcher keeps the sum level or even raises it), yet the
+ * test no longer verifies the original element. We flag ONLY with full target-identity
+ * evidence, so the two legitimate repairs both pass:
+ *  - same-target VALUE correction (toHaveText('3')→toHaveText('2')): the anchor leaves
+ *    its target entirely (no relocation to a different target) AND the original target
+ *    keeps a strong assertion — neither retarget condition holds.
+ *  - LOCATOR-only fix (same anchor/tier, different selector): the original target text
+ *    is REPLACED 1:1, so it is absent from the after — we cannot (and must not) call a
+ *    clean 1:1 swap a retarget, so it passes.
+ */
+function detectRetargets(before: PwAssertion[], after: PwAssertion[]): StrengthViolation[] {
+  const out: StrengthViolation[] = [];
+  const afterTargets = new Set(after.map((a) => a.target));
+  for (const b of before) {
+    if (b.tier < STRONG_TIER || b.anchor === null) continue;
+    // The SAME strong (matcher, anchor) pair now asserted against a DIFFERENT target.
+    const relocated = after.find(
+      (a) => a.anchor === b.anchor && a.matcher === b.matcher && a.tier === b.tier && a.target !== b.target,
+    );
+    if (!relocated) continue;
+    // The original target must still be present (a 1:1 locator swap removes it → not a retarget),
+    // and its strongest assertion must have weakened (its strong matcher was stripped off it).
+    if (!afterTargets.has(b.target)) continue;
+    if (maxTierForTarget(after, b.target) >= b.tier) continue;
+    out.push({
+      kind: "retarget",
+      detail: `${b.matcher}(${b.anchor}) re-targeted from ${b.target} → ${relocated.target} while ${b.target} lost its strong assertion`,
+    });
+  }
+  return out;
+}
 
 /**
  * Compare the assertions BEFORE a repair edit against AFTER, flagging weakenings
@@ -130,6 +177,12 @@ const sumTier = (a: PwAssertion[]): number => a.reduce((s, x) => s + x.tier, 0);
  *    (toHaveText→toBeVisible) or an assertion removed. So a falling sum, at any
  *    count, means net weakening — with no false-positive on a changed locator or
  *    a corrected literal value (the per-anchor pairing those would have tripped).
+ *  - retarget: a strong matcher's literal anchor was MOVED onto a different target
+ *    while the original target (still present) lost its strong assertion — a green
+ *    bought by pointing a strong matcher at a trivially-true element. The sum/count
+ *    guards are blind here (the relocated matcher keeps the sum level or raises it);
+ *    `detectRetargets` catches it with target-identity evidence. See that helper for
+ *    why a same-target value correction and a 1:1 locator swap both pass.
  */
 export function compareStrength(before: PwAssertion[], after: PwAssertion[]): StrengthViolation[] {
   const v: StrengthViolation[] = [];
@@ -146,5 +199,6 @@ export function compareStrength(before: PwAssertion[], after: PwAssertion[]): St
   if (sa < sb) {
     v.push({ kind: "strength-drop", detail: `total assertion strength ${sb} → ${sa} (a matcher was weakened, e.g. toHaveText→toBeVisible)` });
   }
+  v.push(...detectRetargets(before, after));
   return v;
 }

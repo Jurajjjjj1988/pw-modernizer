@@ -289,7 +289,7 @@ test('checkout', async ({ page }) => {
 ```ts
 // CANONICAL — baseURL in playwright.config.ts + relative goto
 // playwright.config.ts:
-//   use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000' }
+//   use: { baseURL: process.env.MIGRATION_TARGET_URL ?? 'http://localhost:3000' }
 test('checkout', async ({ page }) => {
   await page.goto('/login');
   // ...
@@ -1944,7 +1944,7 @@ driver.get("https://staging.example.com/login")
 
 ```ts
 // CANONICAL — baseURL + relative path
-// playwright.config.ts: use: { baseURL: process.env.APP_BASE_URL }
+// playwright.config.ts: use: { baseURL: process.env.MIGRATION_TARGET_URL }
 await page.goto('/login');
 ```
 
@@ -2842,7 +2842,7 @@ export default defineConfig({
   workers: process.env.CI ? 4 : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: process.env.APP_BASE_URL ?? 'http://localhost:3000',
+    baseURL: process.env.MIGRATION_TARGET_URL ?? 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

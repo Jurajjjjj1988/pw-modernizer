@@ -57,12 +57,14 @@ const IFRAME_SNAPSHOT = /^\s*-\s*iframe:/m;
 
 /**
  * POPUPS / NEW TABS. Source token covers the Cypress workarounds for new windows
- * (`removeAttr('target')`, `cy.stub(win, 'open')`, `window:before:load` /
- * `onBeforeLoad`, `cy.origin(`) and Selenium window handling
- * (`getWindowHandles()`, `switchTo().window(`).
+ * (`removeAttr('target')`, `cy.invoke('removeAttr', 'target')`, `cy.stub(win,
+ * 'open')`, `window:before:load` / `onBeforeLoad`, `cy.origin(`) and Selenium
+ * window handling in both Java (`getWindowHandles()`, `switchTo().window(`) and
+ * Python (`window_handles`, `switch_to.window(`). Controls like `set_window_size`
+ * and `removeAttr('disabled')` deliberately do NOT match.
  */
 const POPUP_SOURCE =
-  /removeAttr\(['"]?\s*,?\s*['"]target|cy\.stub\([^)]*,\s*['"]open['"]|window:before:load|onBeforeLoad|cy\.origin\(|getWindowHandles\(|switchTo\(\)\.window\(/;
+  /removeAttr\(['"]?\s*,?\s*['"]target|invoke\(\s*['"]removeAttr['"]\s*,\s*['"]target|cy\.stub\([^)]*,\s*['"]open['"]|window:before:load|onBeforeLoad|cy\.origin\(|getWindowHandles\(|switchTo\(\)\.window\(|window_handles|switch_to\.window\(/;
 
 /**
  * NETWORK INTERCEPTION. Source token covers Cypress route interception / aliasing

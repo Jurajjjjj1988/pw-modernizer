@@ -2,4 +2,4 @@
 # conventionally add it) must validate, not be rejected by additionalProperties:false.
 plan-envelope-validate:
 1 scenario(s)
-clean (schema only)
+clean (schema only — scenario-coverage

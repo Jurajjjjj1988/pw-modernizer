@@ -77,3 +77,41 @@ test("compareStrength: NEGATION-DROP — a .not assertion was flipped/removed", 
   const after = extractPwAssertions("await expect(badge).toBeVisible();");
   assert.ok(compareStrength(before, after).some((x) => x.kind === "negation-drop"));
 });
+
+test("compareStrength: RETARGET — strong matcher's anchor moved to another target; original kept but downgraded (sum UP, count UP — aggregate guards are blind)", () => {
+  const before = extractPwAssertions(
+    "await expect(page.getByTestId('cart-badge')).toHaveText('3');",
+  );
+  // Repair points toHaveText('3') at a trivially-true element while cart-badge is left with only a presence check.
+  const after = extractPwAssertions(
+    "await expect(page.getByTestId('cart-badge')).toBeVisible(); await expect(page.getByTestId('page-title')).toHaveText('3');",
+  );
+  const v = compareStrength(before, after);
+  // Aggregate-only guards do NOT fire here: count 1→2 (up), sum 4→5 (up), no negation change.
+  assert.equal(v.filter((x) => x.kind === "count-drop" || x.kind === "strength-drop" || x.kind === "negation-drop").length, 0, "this attack is invisible to the sum/count/negation guards");
+  assert.ok(v.some((x) => x.kind === "retarget"), "the re-targeting must be flagged on target identity, not anchor presence");
+});
+
+test("compareStrength: RETARGET passes a SAME-TARGET value correction toHaveText('3') → toHaveText('2') (the JSDoc-safe case)", () => {
+  const before = extractPwAssertions("await expect(page.getByTestId('cart')).toHaveText('3');");
+  const after = extractPwAssertions("await expect(page.getByTestId('cart')).toHaveText('2');");
+  assert.deepEqual(compareStrength(before, after), [], "same target, same tier, corrected value is not a weakening");
+});
+
+test("compareStrength: RETARGET passes a LOCATOR-only fix (same anchor + tier, different selector — anchor legitimately rides the repaired locator)", () => {
+  const before = extractPwAssertions("await expect(page.getByLabel('Username')).toHaveValue('bob');");
+  const after = extractPwAssertions("await expect(page.getByPlaceholder('Username')).toHaveValue('bob');");
+  assert.deepEqual(compareStrength(before, after), [], "a 1:1 locator swap replaces the original target — not a retarget");
+});
+
+test("compareStrength: RETARGET does not fire on a same-target value correction even when a sibling assertion shares the new value", () => {
+  // The corrected value '2' also appears on a different, pre-existing target — but the original
+  // target keeps its strong assertion (toHaveText('2')), so no retarget is flagged.
+  const before = extractPwAssertions(
+    "await expect(page.getByTestId('cart')).toHaveText('3'); await expect(page.getByTestId('total')).toHaveText('2');",
+  );
+  const after = extractPwAssertions(
+    "await expect(page.getByTestId('cart')).toHaveText('2'); await expect(page.getByTestId('total')).toHaveText('2');",
+  );
+  assert.equal(compareStrength(before, after).filter((x) => x.kind === "retarget").length, 0);
+});

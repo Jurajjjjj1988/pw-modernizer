@@ -41,8 +41,8 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   use: {
-    // Migrations rely on a configured baseURL — set MIGRATION_TARGET_URL
-    // in the environment (or via .env) when running. Defaults to localhost
+    // Migrations rely on a configured baseURL — export MIGRATION_TARGET_URL
+    // in the shell environment when running. Defaults to localhost
     // for dev iteration; CI should ALWAYS provide the explicit env var.
     baseURL: process.env.MIGRATION_TARGET_URL ?? "http://localhost:3000",
     actionTimeout: 5_000,

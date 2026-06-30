@@ -68,6 +68,27 @@ export interface AssertionVerdict {
   matchedFraction: number;
 }
 
+/**
+ * Is a distinctive anchor token PRESENT in the emitted tree?
+ *
+ * Pure-alpha tokens keep the lenient substring/squashed path: that path exists so
+ * a camelCase identifier whose pieces are split across a separator in the output
+ * (anchor `loginButton` → emitted `login button`, or `userName` → `username`) still
+ * counts as covered. The squashed tree (separators removed) is what re-joins them.
+ *
+ * Digit-containing tokens MUST NOT use that path. A dropped money assertion `$42.00`
+ * tokenises to `42` + `00`; if an unrelated digit run like `4200` (a viewport width,
+ * an id) is anywhere in the output, the squashed tree contains `42` and `00` as
+ * substrings and the dropped assertion is falsely "covered". For digit-bearing
+ * tokens we therefore require a WORD-BOUNDARY hit: exact membership in the
+ * space-normalised token set (`normalizedTree` already splits on non-alphanumerics,
+ * so `'$42.00'` in the output yields the tokens `42` and `00` as their own words).
+ */
+function tokenPresent(token: string, normalizedTokenSet: ReadonlySet<string>, normalizedTree: string, squashedTree: string): boolean {
+  if (/\d/.test(token)) return normalizedTokenSet.has(token);
+  return normalizedTree.includes(token) || squashedTree.includes(token);
+}
+
 /** Coverage of one expectedAssertion against the normalized emitted source. */
 export function coverAssertion(assertion: string, scenario: string, normalizedTree: string, squashedTree: string): AssertionVerdict {
   const anchors = literalAnchors(assertion);
@@ -77,7 +98,8 @@ export function coverAssertion(assertion: string, scenario: string, normalizedTr
   const distinctive = [...new Set(anchors.flatMap((a) => tokens(a, 2)))];
   const checkable = anchors.length > 0 && distinctive.length > 0;
   if (!checkable) return { assertion, scenario, checkable: false, covered: true, matchedFraction: 1 };
-  const present = distinctive.filter((t) => normalizedTree.includes(t) || squashedTree.includes(t)).length;
+  const normalizedTokenSet = new Set(normalizedTree.split(" ").filter((t) => t.length > 0));
+  const present = distinctive.filter((t) => tokenPresent(t, normalizedTokenSet, normalizedTree, squashedTree)).length;
   const matchedFraction = present / distinctive.length;
   return { assertion, scenario, checkable: true, covered: matchedFraction >= 0.5, matchedFraction };
 }

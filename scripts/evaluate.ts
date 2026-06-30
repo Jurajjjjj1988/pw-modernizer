@@ -313,6 +313,44 @@ export function findForbidden(rawSource: string): string[] {
   return hits;
 }
 
+// ---- Hard-forbidden subset (gate).
+//
+// Most forbidden patterns merely DOCK confidence (forbiddenAbsence * 0.1) so an
+// imperfect migration is routed to verify rather than auto-shipped. But a defined
+// SUBSET is not a "lower-quality" signal — it is a CORRECTNESS DEFECT that makes a
+// green run a lie, and no amount of high plan/selector/web-first score should let
+// it auto-ship:
+//   - `force: true`     bypasses actionability — the test passes against a broken UI
+//   - `page.pause()`    halts CI forever (debug surface left in)
+//   - `test.only`       silently DROPS every other test in the file
+//   - `as unknown as`   defeats the type system the migration is supposed to honour
+//   - test.skip / test.todo / test.fixme placeholders never RUN their body — a
+//     pending stub that asserts nothing yet reads as smell-free (same class as the
+//     assertion-floor no-op, surfaced here because it's a forbidden literal)
+// These six labels are promoted from the 0.1 dock to a HARD reject (exit 1), exactly
+// like the assertion floor. `console.log` and `: any` stay SOFT (style, not a
+// correctness lie) — they keep docking confidence via forbiddenAbsence only.
+//
+// Subset is expressed as the precise label strings findForbidden already emits, so
+// detection (incl. comment-stripping + the out-of-scope guarantee for
+// examples/reference/pwm-blueprint/** — this runs only over collectEmittedSources)
+// is single-sourced; this function never re-scans, it filters.
+export const HARD_FORBIDDEN_LABELS: ReadonlySet<string> = new Set([
+  "force: true",
+  "page.pause()",
+  "test.only",
+  "as unknown as cast",
+  "test.skip",
+  "test.todo/test.fixme placeholder",
+]);
+
+/** The hard-reject subset of forbidden hits present in the emitted tree. Pure +
+ * exported for unit testing the gate decision; filters findForbidden's labels so
+ * the underlying detection (and its scope) is single-sourced. */
+export function findHardForbidden(rawSource: string): string[] {
+  return findForbidden(rawSource).filter((label) => HARD_FORBIDDEN_LABELS.has(label));
+}
+
 // ---- Assertion floor (gate).
 //
 // A migrated test whose combined emitted tree asserts NOTHING passes silently —
@@ -566,7 +604,11 @@ function renderReport(r: Report): string {
 ${smellTable}
 
 ## Forbidden patterns in output
-${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\``).join("\n")}
+${r.forbidden.length === 0
+  ? "✅ None."
+  : r.forbidden
+    .map((f) => `- ❌ \`${f}\`${HARD_FORBIDDEN_LABELS.has(f) ? " — HARD REJECT (correctness defect)" : ""}`)
+    .join("\n")}
 
 ## AST diff
 - **Trivial (cosmetic-only)?** ${r.trivial ? "❌ YES — REJECT THIS MIGRATION" : "✅ no"}
@@ -932,6 +974,21 @@ function main(): void {
       `::error::evaluate: emitted tree has ${assertionFloor.emitted} assertion(s); `
       + `floor is ${assertionFloor.floor}. A test that asserts nothing passes `
       + `silently — REJECT.\n`,
+    );
+    process.exit(1);
+  }
+
+  // Hard gate: a defined subset of forbidden patterns is a CORRECTNESS defect, not a
+  // confidence dock — they make a green run a lie (force:true bypasses actionability,
+  // page.pause() hangs CI, test.only drops other tests, as-unknown-as defeats types,
+  // a pending test.skip/todo/fixme never runs its body). Promote them from the 0.1
+  // dock to a hard reject. Report written FIRST (above) so the scorecard is visible.
+  const hardForbidden = findHardForbidden(emittedSrc);
+  if (hardForbidden.length > 0) {
+    process.stderr.write(
+      `::error::evaluate: emitted tree contains hard-forbidden pattern(s): `
+      + `${hardForbidden.join(", ")}. These are correctness defects that ship a `
+      + `green-but-lying test — REJECT.\n`,
     );
     process.exit(1);
   }

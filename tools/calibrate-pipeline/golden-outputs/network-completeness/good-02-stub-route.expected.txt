@@ -1,0 +1,3 @@
+# A STUB reflected by a fulfilled page.route + a waitForResponse reading the response.
+network completeness ✓
+all 1 source intercept(s) are reflected

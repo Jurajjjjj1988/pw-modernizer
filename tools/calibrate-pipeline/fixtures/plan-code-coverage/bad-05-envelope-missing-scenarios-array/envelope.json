@@ -1,0 +1,7 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "requiredPOMs": [],
+  "requiredFixtures": []
+}

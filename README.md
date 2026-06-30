@@ -157,7 +157,7 @@ tools/calibrate-pipeline/   the fixture corpus every validator is calibrated aga
 docs/                walkthrough · troubleshooting · the closed-loop validation record
 ```
 
-A fresh session should read `CLAUDE.md` first (a scannable orientation), then `docs/`.
+A fresh session should read `CLAUDE.md` first (a scannable orientation), then `docs/`. New to the tool? **[docs/quickstart.md](docs/quickstart.md)** is the 5-minute first-migration walkthrough.
 
 ## Contributing
 

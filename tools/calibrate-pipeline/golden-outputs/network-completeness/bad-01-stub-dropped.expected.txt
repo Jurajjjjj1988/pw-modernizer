@@ -1,0 +1,4 @@
+# The codemod dropped the stub: no page.route and no response read — both flagged.
+network completeness ✗
+has no page.route() for it
+the response assertion was dropped

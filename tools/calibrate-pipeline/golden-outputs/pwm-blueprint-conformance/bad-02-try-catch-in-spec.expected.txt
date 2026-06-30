@@ -1,0 +1,6 @@
+# Exit 1. (b) WIDENED W2: a spec wrapping an action in try/catch is the no-try-catch
+# defect — historically scanned page/block only, so this slipped through. Run with
+# --block-defects, the W2 defect now blocks. Pins the no-try-catch KB id + the
+# quality-defect block line.
+pwm-blueprint/page-object/no-try-catch
+quality-defect

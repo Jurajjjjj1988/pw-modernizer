@@ -22,8 +22,6 @@
 name: Changelog auto-update
 
 on:
-  schedule:
-    - cron: '13 7 * * *'
   pull_request:
     types: [closed]
   workflow_dispatch:
